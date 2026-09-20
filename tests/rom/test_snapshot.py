@@ -2,7 +2,7 @@ import pytest
 
 from jevplays.emulator.pyboy import Emulator
 from jevplays.state.modes import Mode
-from jevplays.state.snapshot import snapshot
+from jevplays.state.snapshot import Battle, snapshot
 
 
 @pytest.mark.parametrize(
@@ -55,3 +55,27 @@ def test_prompt_state_offers_yes_no(rom, state_path):
         state = snapshot(emu)
         assert state.menu_items == ("YES", "NO")
         assert "SAVE the game?" in state.text
+
+
+def test_trainer_battle_state(rom, state_path):
+    with Emulator(rom) as emu:
+        emu.load(state_path("battle_trainer"))
+        state = snapshot(emu)
+        assert state.battle == Battle(kind="trainer", trainer_class="RIVAL1")
+        assert state.active.name == "CHARMANDER" and state.active.types == ("Fire",)
+        assert [m.name for m in state.active.moves] == ["SCRATCH", "GROWL"]
+        assert state.enemy.name == "SQUIRTLE" and state.enemy.level == 5
+        assert state.party[0].nickname == "CHARMANDER"
+        assert (
+            18 <= state.active.max_hp <= 22
+        )  # random DVs; the exact value varies between state regenerations
+
+
+def test_wild_battle_state(rom, state_path):
+    with Emulator(rom) as emu:
+        emu.load(state_path("battle_wild"))
+        state = snapshot(emu)
+        assert state.battle.kind == "wild"
+        # Route 1's wild species depend on the RNG at the encounter frame; both are Normal types.
+        assert state.enemy.name in ("RATTATA", "PIDGEY") and "Normal" in state.enemy.types
+        assert state.active.name == "CHARMANDER" and state.active.hp == state.active.max_hp
