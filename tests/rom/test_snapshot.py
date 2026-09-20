@@ -79,3 +79,12 @@ def test_wild_battle_state(rom, state_path):
         # Route 1's wild species depend on the RNG at the encounter frame; both are Normal types.
         assert state.enemy.name in ("RATTATA", "PIDGEY") and "Normal" in state.enemy.types
         assert state.active.name == "CHARMANDER" and state.active.hp == state.active.max_hp
+
+
+def test_route1_state_carries_flags_and_size(rom, state_path):
+    with Emulator(rom) as emu:
+        emu.load(state_path("route1"))
+        state = snapshot(emu)
+        assert state.map_size == (20, 36)
+        assert "got_starter" in state.flags and "got_pokedex" not in state.flags
+        assert all(0 <= s.x < 20 and 0 <= s.y < 36 for s in state.sprites)

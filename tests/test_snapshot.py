@@ -1,7 +1,18 @@
 from jevplays.emulator import ram
 from jevplays.emulator.text import encode
+from jevplays.state.events import flag_index
 from jevplays.state.modes import Mode
-from jevplays.state.snapshot import BagItem, Battle, GameState, Mon, Move, dialog_text, menu_items, snapshot
+from jevplays.state.snapshot import (
+    BagItem,
+    Battle,
+    GameState,
+    Mon,
+    Move,
+    Sprite,
+    dialog_text,
+    menu_items,
+    snapshot,
+)
 from tests.support import FakeEmulator, FakeMemory, rows_from, write_mon
 
 
@@ -251,3 +262,18 @@ def test_to_dict_serializes_nested_records():
         "max_pp": 35,
     }
     assert d["active"] is None and d["bag"] == []
+
+
+def test_sprites_flags_and_map_size_are_parsed():
+    emu = FakeEmulator()
+    bedroom(emu)
+    emu.mem[ram.wCurMapWidth] = 10
+    emu.mem[ram.wCurMapHeight] = 18
+    emu.set_sprites([(1, 72, 18, 9), (5, 3, 5, 2)])
+    n = flag_index("got_starter")
+    emu.mem[ram.wEventFlags + n // 8] = 1 << (n % 8)
+    state = snapshot(emu)
+    assert state.map_size == (20, 36)
+    assert state.sprites == (Sprite(slot=1, picture=72, x=18, y=9), Sprite(slot=5, picture=3, x=5, y=2))
+    assert state.flags == frozenset({"got_starter"})
+    assert state.to_dict()["flags"] == ["got_starter"]

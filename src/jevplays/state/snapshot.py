@@ -10,6 +10,7 @@ from typing import Protocol
 
 from jevplays.emulator import ram
 from jevplays.emulator.text import ARROW, NON_TEXT, decode_cells, has_text, row_text
+from jevplays.state.events import flags_set
 from jevplays.state.modes import DIALOG_ROWS, Mode, detect, is_blank
 from jevplays.state.names import item_name, map_name, move_data, species_name, trainer_class_name, type_name
 
@@ -49,6 +50,14 @@ class Battle:
 
 
 @dataclass(frozen=True)
+class Sprite:
+    slot: int
+    picture: int
+    x: int
+    y: int
+
+
+@dataclass(frozen=True)
 class BagItem:
     name: str
     quantity: int
@@ -80,10 +89,14 @@ class GameState:
     """Index into `party` of the Pokémon currently out in battle. None outside battle."""
     enemy: Mon | None
     battle: Battle | None
+    flags: frozenset[str]
+    sprites: tuple[Sprite, ...]
+    map_size: tuple[int, int]
 
     def to_dict(self) -> dict:
         d = _listify(asdict(self))
         d["mode"] = str(self.mode)
+        d["flags"] = sorted(self.flags)
         return d
 
 
@@ -208,6 +221,24 @@ def read_bag(mem: ram.Memory) -> tuple[BagItem, ...]:
     return tuple(items)
 
 
+def read_sprites(mem: ram.Memory) -> tuple[Sprite, ...]:
+    out = []
+    for slot in range(1, ram.SPRITE_SLOTS + 1):
+        picture = mem[ram.wSpriteStateData1 + ram.SPRITE_SLOT_SIZE * slot]
+        if picture == 0:
+            continue
+        base = ram.wSpriteStateData2 + ram.SPRITE_SLOT_SIZE * slot
+        out.append(
+            Sprite(
+                slot=slot,
+                picture=picture,
+                x=mem[base + 5] - ram.SPRITE_COORD_OFFSET,
+                y=mem[base + 4] - ram.SPRITE_COORD_OFFSET,
+            )
+        )
+    return tuple(out)
+
+
 def snapshot(emu: EmulatorLike) -> GameState:
     mem = emu.mem
     raw = emu.tilemap()
@@ -246,4 +277,7 @@ def snapshot(emu: EmulatorLike) -> GameState:
         active_slot=active_slot,
         enemy=enemy,
         battle=battle,
+        flags=flags_set(mem),
+        sprites=read_sprites(mem),
+        map_size=(mem[ram.wCurMapWidth] * 2, mem[ram.wCurMapHeight] * 2),
     )

@@ -9,9 +9,13 @@ from jevplays.emulator.ram import (
     MON_STATUS,
     MON_TYPE1,
     MON_TYPE2,
+    SPRITE_COORD_OFFSET,
+    SPRITE_SLOT_SIZE,
     TILEMAP_HEIGHT,
     TILEMAP_SIZE,
     TILEMAP_WIDTH,
+    wSpriteStateData1,
+    wSpriteStateData2,
     wTileMap,
     wXCoord,
     wYCoord,
@@ -80,6 +84,22 @@ class FakeEmulator:
 
     def set_rows(self, lines: list[str]) -> None:
         write_tilemap(self.mem, lines)
+
+    def set_sprites(self, specs: list[tuple[int, int, int, int]]) -> None:
+        """Write sprite table entries. specs: [(slot, picture, x, y), ...]."""
+        # Zero both sprite tables for slots 1..15
+        for slot in range(1, 16):
+            addr1 = wSpriteStateData1 + SPRITE_SLOT_SIZE * slot
+            addr2 = wSpriteStateData2 + SPRITE_SLOT_SIZE * slot
+            for i in range(SPRITE_SLOT_SIZE):
+                self.mem[addr1 + i] = 0
+                self.mem[addr2 + i] = 0
+        # Write the specified sprites
+        for slot, picture, x, y in specs:
+            self.mem[wSpriteStateData1 + SPRITE_SLOT_SIZE * slot] = picture
+            base = wSpriteStateData2 + SPRITE_SLOT_SIZE * slot
+            self.mem[base + 4] = y + SPRITE_COORD_OFFSET
+            self.mem[base + 5] = x + SPRITE_COORD_OFFSET
 
     def tilemap(self) -> bytes:
         return bytes(self.mem.data[wTileMap : wTileMap + TILEMAP_SIZE])

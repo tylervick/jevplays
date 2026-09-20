@@ -73,6 +73,9 @@ def make_state(*, kind="wild", bench=(), bag=()):
         enemy=BULBASAUR,
         battle=Battle(kind=kind, trainer_class=None if kind == "wild" else "RIVAL1"),
         bag=tuple(bag),
+        flags=frozenset(),
+        sprites=(),
+        map_size=(20, 18),
     )
 
 
