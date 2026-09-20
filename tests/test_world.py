@@ -64,3 +64,15 @@ def test_warps_connections_and_walkable_warps():
 
 def test_direction_to():
     assert direction_to((1, 1), (1, 0)) == "up" and direction_to((1, 1), (2, 1)) == "right"
+
+
+def test_build_grid_reads_a_home_bank_collision_list_through_bank_zero():
+    emu = FakeEmulator()
+    install_map(emu, ROWS, tileset=(25, 0x4000, 0x1749))  # the bedroom's real collision pointer is 0x1749
+    grid = build_grid(emu)
+    assert [["." if grid.walkable(x, y) else "#" for x in range(6)] for y in range(6)] == [
+        list(r) for r in ROWS
+    ]
+    # and reading it through the tileset bank would have found nothing walkable
+    emu.mem.rom[(25, 0x1749)] = 0xFF
+    assert build_grid(emu).walkable(0, 0)

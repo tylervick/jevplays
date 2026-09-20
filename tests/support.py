@@ -190,9 +190,16 @@ def write_mon(
     mem[nick_addr : nick_addr + len(name)] = name
 
 
-def install_map(emu, rows, warps=(), connections=None):
-    """A synthetic map for the fake: '.' walkable, '#' wall; two blocks in the fake ROM."""
-    bank, blocks_addr, collision_addr = 25, 0x4000, 0x5000
+def install_map(emu, rows, warps=(), connections=None, tileset=(25, 0x4000, 0x5000)):
+    """A synthetic map for the fake: '.' walkable, '#' wall; two blocks in the fake ROM.
+
+    `tileset` is (bank, blocks_addr, collision_addr). The collision list is written under
+    `(0, collision_addr)` when `collision_addr < 0x4000` and under `(bank, collision_addr)`
+    otherwise, mirroring how the real game stores it: the fixed home bank for low addresses,
+    the tileset's own switchable bank for addresses in the banked window.
+    """
+    bank, blocks_addr, collision_addr = tileset
+    collision_bank = 0 if collision_addr < 0x4000 else bank
     m = emu.mem
     m[wTilesetBank] = bank
     m[wTilesetBlocksPtr] = blocks_addr & 0xFF
@@ -203,8 +210,8 @@ def install_map(emu, rows, warps=(), connections=None):
     for i in range(16):
         m.rom[(bank, blocks_addr + i)] = 1  # block 0: every tile is 1 (walkable)
         m.rom[(bank, blocks_addr + 16 + i)] = 2  # block 1: every tile is 2 (wall)
-    m.rom[(bank, collision_addr)] = 1
-    m.rom[(bank, collision_addr + 1)] = COLLISION_END
+    m.rom[(collision_bank, collision_addr)] = 1
+    m.rom[(collision_bank, collision_addr + 1)] = COLLISION_END
     height, width = len(rows) // 2, len(rows[0]) // 2
     m[wCurMapWidth], m[wCurMapHeight] = width, height
     stride = width + 2 * MAP_BORDER_BLOCKS
