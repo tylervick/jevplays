@@ -582,7 +582,7 @@
 "type": "Normal"
 },
 "38": {
-"name": "DOUBLE EDGE",
+"name": "DOUBLE-EDGE",
 "power": 100,
 "pp": 15,
 "type": "Normal"
@@ -954,7 +954,7 @@
 "type": "Psychic"
 },
 "94": {
-"name": "PSYCHIC M",
+"name": "PSYCHIC",
 "power": 90,
 "pp": 10,
 "type": "Psychic"

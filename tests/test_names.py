@@ -45,9 +45,16 @@ def test_type_item_and_trainer_names():
     assert trainer_class_name(25) == "RIVAL1" and trainer_class_name(60) == "Trainer 60"
 
 
-def test_every_move_type_is_a_known_type_name():
-    from jevplays.state.names import MOVES, TYPES
+def test_move_names_and_types_match_what_the_game_prints():
+    import re
+
+    from jevplays.state.names import MOVES, SPECIES, TYPES
 
     assert move_data(60).type == "Psychic"  # PSYBEAM; pokered spells the constant PSYCHIC_TYPE
     unknown = {m.type for m in MOVES.values()} - set(TYPES.values())
     assert unknown == set()
+
+    assert move_data(94).name == "PSYCHIC" and move_data(38).name == "DOUBLE-EDGE"
+    assert all(re.fullmatch(r"[A-Z0-9 '\-]+", m.name) for m in MOVES.values())
+    assert species_name(64) == "FARFETCH'D" and species_name(3) == "NIDORAN♂"
+    assert all(re.fullmatch(r"[A-Z0-9 '.♂♀\-]+", s) for s in SPECIES.values())
