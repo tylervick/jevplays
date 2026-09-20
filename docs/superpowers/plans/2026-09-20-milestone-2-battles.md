@@ -940,6 +940,7 @@ def test_trainer_battle_state(rom, state_path):
         assert [m.name for m in state.active.moves] == ["SCRATCH", "GROWL"]
         assert state.enemy.name == "SQUIRTLE" and state.enemy.level == 5
         assert state.party[0].nickname == "CHARMANDER"
+        assert 18 <= state.active.max_hp <= 22  # random DVs; the exact value varies between state regenerations
 
 
 def test_wild_battle_state(rom, state_path):
@@ -947,7 +948,9 @@ def test_wild_battle_state(rom, state_path):
         emu.load(state_path("battle_wild"))
         state = snapshot(emu)
         assert state.battle.kind == "wild"
-        assert state.enemy.name == "RATTATA" and state.enemy.types == ("Normal",)
+        # Route 1's wild species depend on the RNG at the encounter frame; both are Normal types.
+        assert state.enemy.name in ("RATTATA", "PIDGEY") and "Normal" in state.enemy.types
+        assert state.active.name == "CHARMANDER" and state.active.hp == state.active.max_hp
 ```
 
 - [ ] **Step 2: Run the unit tests to verify they fail**
