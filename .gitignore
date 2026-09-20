@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Per-machine settings: the TypeSafe key and the ROM path (see README.md).
+mise.local.toml
+.mise.local.toml
+
+# Game data never enters the repository. The ROM is the player's own dump; save
+# states and PyBoy battery files are copies of its memory; runs/ holds per-run
+# logs and checkpoints.
+roms/
+states/
+runs/
+*.gb
+*.gbc
+*.state
+*.ram
+
+# brainstorming visual companion sessions
+.superpowers/
+.worktrees/
+.agents/

@@ -1,0 +1,31 @@
+name: Idea
+description: A feature, improvement, or follow-on to keep track of. Fill in what you know; leave the rest.
+labels: [enhancement, idea]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: One or two sentences. What would exist or change?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: Who wants it and what it fixes or enables.
+  - type: dropdown
+    id: size
+    attributes:
+      label: Rough size
+      options:
+        - unknown
+        - an afternoon
+        - a plan (one branch, one PR)
+        - a spec first (several plans)
+      default: 0
+  - type: textarea
+    id: waits-on
+    attributes:
+      label: Waits on
+      description: Anything this cannot start without (another issue, a decision, a release). Add the `blocked` label if so.

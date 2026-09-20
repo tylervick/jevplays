@@ -1,0 +1,81 @@
+amends "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Builtins.pkl"
+
+// Python tooling goes through `uv run` rather than hk's Builtins.ruff so that the
+// hooks, CI and a bare `uv run ruff` all use the one ruff pinned by pyproject.toml's
+// dev dependency-group. A mise-managed ruff would be a second pin, free to drift.
+local ruff: Step = new Step {
+  glob = "**/*.py"
+  check = "uv run ruff check {{files}}"
+  fix = "uv run ruff check --fix {{files}}"
+}
+
+local ruffFormat: Step = new Step {
+  glob = "**/*.py"
+  check = "uv run ruff format --check {{files}}"
+  fix = "uv run ruff format {{files}}"
+  // The linter rewrites code (import sorting, `B` autofixes); the formatter
+  // rewrites layout. Ordering them keeps the two from racing on one file.
+  depends = "ruff"
+}
+
+local gitleaks: Step = new Step {
+  // Deliberately not Builtins.gitleaks, which runs `gitleaks dir ... {{files}}`:
+  // `gitleaks dir` accepts one positional path and, handed more than one, silently
+  // scans the working directory instead. Scanning git objects is both what a
+  // secret check means and structurally out of reach of untracked files such as
+  // mise.local.toml, which holds the TypeSafe key.
+  check = "gitleaks git --redact --verbose --no-banner"
+}
+
+local pytest: Step = new Step {
+  // No glob: tests/rom/ loads save states, so a change to a fixture or a state
+  // can break the suite as easily as a change to a .py file.
+  exclusive = true
+  check = "uv run pytest -q"
+}
+
+// Fast enough to sit in front of every commit -- all of these are either
+// incremental over the staged files or pure local I/O.
+local fast = new Mapping<String, Step> {
+  ["ruff"] = ruff
+  ["ruff-format"] = ruffFormat
+  ["trailing-whitespace"] = Builtins.trailing_whitespace
+  ["newlines"] = Builtins.newlines
+  ["merge-conflict"] = Builtins.check_merge_conflict
+  ["private-key"] = Builtins.detect_private_key
+  ["large-files"] = Builtins.check_added_large_files
+}
+
+// What `hk check --all` means, and therefore what CI enforces. The three added
+// here scan the workflow, or the repository's whole history, rather than one
+// edited file, so they are worth a couple of seconds on push and in CI but not on
+// every commit.
+local lint = (fast) {
+  ["actionlint"] = Builtins.actionlint
+  ["zizmor"] = Builtins.zizmor
+  ["gitleaks"] = gitleaks
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps = fast
+  }
+  ["pre-push"] {
+    // Everything CI will run, run before the push rather than after it.
+    steps = (lint) {
+      ["pytest"] = pytest
+    }
+  }
+  // `hk check --all` / `mise run lint`. pytest is deliberately absent: CI runs it
+  // as its own step so a test failure reads separately from a lint failure.
+  ["check"] {
+    steps = lint
+  }
+  ["fix"] {
+    fix = true
+    steps = lint
+  }
+}
