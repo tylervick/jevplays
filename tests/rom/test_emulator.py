@@ -1,3 +1,7 @@
+from io import BytesIO
+
+from PIL import Image
+
 from jevplays.emulator.pyboy import BUTTONS, Emulator
 from jevplays.emulator.ram import TILEMAP_HEIGHT, TILEMAP_SIZE, TILEMAP_WIDTH, wCurMap
 
@@ -23,6 +27,7 @@ def test_frame_is_a_jpeg(rom):
         emu.tick(120)
         jpeg = emu.frame_jpeg()
         assert jpeg[:2] == b"\xff\xd8"
+        assert Image.open(BytesIO(jpeg)).size == (160, 144)
 
 
 def test_press_returns_frames_spent_and_rejects_unknown_buttons(rom):
