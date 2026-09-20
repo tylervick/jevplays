@@ -32,3 +32,21 @@ def power_bucket(power: int) -> str:
     if power < 80:
         return "medium"
     return "strong"
+
+
+def money_bucket(money: int) -> str:
+    if money < 500:
+        return "broke"
+    if money < 2000:
+        return "some"
+    if money < 10000:
+        return "comfortable"
+    return "rich"
+
+
+def quantity_bucket(n: int) -> str:
+    if n <= 0:
+        return "none"
+    if n <= 3:
+        return "few"
+    return "plenty"

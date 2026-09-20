@@ -1,45 +1,8 @@
 from jevplays.executor.goals import GOALS, available_goals, goal_by_id, legs_to  # noqa: F401
 from jevplays.executor.maps import OAKS_LAB, PALLET_TOWN, ROUTE_1, VIRIDIAN_CITY
-from jevplays.state.modes import Mode
-from jevplays.state.snapshot import BagItem, GameState, Mon, Move, Sprite
-
-CHAR = Mon(
-    name="CHARMANDER",
-    nickname="CHARMANDER",
-    level=5,
-    types=("Fire",),
-    hp=19,
-    max_hp=19,
-    status="none",
-    moves=(Move("SCRATCH", "Normal", 40, 35, 35),),
-)
-
-
-def state(map_id=PALLET_TOWN, x=5, y=6, flags=(), party=(CHAR,), bag=(), money=3000, sprites=()):
-    return GameState(
-        mode=Mode.OVERWORLD,
-        map_id=map_id,
-        map="x",
-        tile=(x, y),
-        player_name="RED",
-        party_count=len(party),
-        badges=0,
-        money=money,
-        bag_count=len(bag),
-        bag=tuple(bag),
-        in_battle=False,
-        text="",
-        menu_items=(),
-        cursor=None,
-        party=tuple(party),
-        active=None,
-        active_slot=None,
-        enemy=None,
-        battle=None,
-        flags=frozenset(flags),
-        sprites=tuple(sprites),
-        map_size=(20, 18),
-    )
+from jevplays.state.snapshot import BagItem, Mon, Sprite
+from tests.support import OVERWORLD_LEAD as CHAR
+from tests.support import overworld_state as state
 
 
 def test_fresh_game_offers_only_the_starter_and_the_always_goals():

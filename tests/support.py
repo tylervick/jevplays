@@ -35,6 +35,51 @@ from jevplays.emulator.ram import (
     wYCoord,
 )
 from jevplays.emulator.text import NON_TEXT, encode
+from jevplays.executor.maps import PALLET_TOWN
+from jevplays.state.modes import Mode
+from jevplays.state.snapshot import GameState, Mon, Move
+
+OVERWORLD_LEAD = Mon(
+    name="CHARMANDER",
+    nickname="CHARMANDER",
+    level=5,
+    types=("Fire",),
+    hp=19,
+    max_hp=19,
+    status="none",
+    moves=(Move("SCRATCH", "Normal", 40, 35, 35),),
+)
+
+
+def overworld_state(
+    map_id=PALLET_TOWN, x=5, y=6, flags=(), party=(OVERWORLD_LEAD,), bag=(), money=3000, sprites=()
+) -> GameState:
+    """A minimal overworld GameState for tests that don't need the emulator, e.g. goal tables
+    and the goal/prompt/menu brain. `party` defaults to a single level-5 CHARMANDER."""
+    return GameState(
+        mode=Mode.OVERWORLD,
+        map_id=map_id,
+        map="x",
+        tile=(x, y),
+        player_name="RED",
+        party_count=len(party),
+        badges=0,
+        money=money,
+        bag_count=len(bag),
+        bag=tuple(bag),
+        in_battle=False,
+        text="",
+        menu_items=(),
+        cursor=None,
+        party=tuple(party),
+        active=None,
+        active_slot=None,
+        enemy=None,
+        battle=None,
+        flags=frozenset(flags),
+        sprites=tuple(sprites),
+        map_size=(20, 18),
+    )
 
 
 class FakeMemory:
