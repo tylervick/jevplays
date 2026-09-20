@@ -174,6 +174,10 @@ class Navigator:
             return self._fail_step(emu, state, None)
         path = world.astar(grid, here, target, blocked)
         if not path:
+            if grid.walkable(*target) and target in world.blocked_by_sprites(state.sprites):
+                # A sprite is standing on the goal tile, not an unreachable target: wait it out
+                # like any other blocked step instead of charging a whole leg failure.
+                return self._wait_for_sprite(emu, state)
             return self._fail_leg(emu)
         nxt = path[0]
         if step(emu, world.direction_to(here, nxt)):
@@ -198,8 +202,10 @@ class Navigator:
             return world.reachable_edge(grid, here, leg.direction, blocked)
         if leg.kind == "warp":
             candidates = world.walkable_warps(grid, world.read_warps(mem), leg.dest_map)
-            candidates.sort(key=lambda w: abs(w.x - here[0]) + abs(w.y - here[1]))
-            return (candidates[0].x, candidates[0].y) if candidates else None
+            if not candidates:
+                return None
+            nearest = min(candidates, key=lambda w: abs(w.x - here[0]) + abs(w.y - here[1]))
+            return (nearest.x, nearest.y)
         return None
 
     @staticmethod
@@ -226,6 +232,19 @@ class Navigator:
             self.blocked.add(cell)
         self.failed_steps += 1
         if self.failed_steps >= STUCK_STEPS:
+            return self._fail_leg(emu)
+        return "moving"
+
+    def _wait_for_sprite(self, emu, state) -> str:
+        # An NPC is standing on the goal tile. Give it the same patient wait as a blocked step,
+        # but never mark the target blocked -- it is still walkable once the sprite moves on.
+        emu.tick(30)
+        from jevplays.state.snapshot import snapshot as _snapshot
+
+        if _snapshot(emu).mode is not Mode.OVERWORLD:
+            return "interrupted"
+        self.failed_steps += 1
+        if self.failed_steps > STUCK_STEPS:
             return self._fail_leg(emu)
         return "moving"
 

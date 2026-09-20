@@ -1,5 +1,5 @@
 from jevplays.emulator import ram
-from jevplays.executor.navigate import Leg, Navigator
+from jevplays.executor.navigate import STUCK_STEPS, Leg, Navigator
 from jevplays.state.snapshot import snapshot
 from tests.support import FakeEmulator, install_map
 
@@ -64,6 +64,26 @@ def test_interruption_keeps_the_plan_for_later():
     emu.press = press
     assert nav.step(emu, snapshot(emu)) == "interrupted"
     assert nav.busy and nav.current.target == (3, 5)
+
+
+def test_sprite_on_the_goal_tile_waits_instead_of_failing_the_leg():
+    emu = walker()
+    emu.set_sprites([(1, 61, 1, 5)])  # standing right on the walk leg's target
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="walk", target=(1, 5), label="blocked corner")])
+    leg = nav.current
+    for _ in range(STUCK_STEPS):
+        assert nav.step(emu, snapshot(emu)) == "moving"
+    assert not emu.presses
+    assert nav.current is leg
+    assert nav.failed_legs == 0
+    emu.set_sprites([])
+    for _ in range(10):
+        result = nav.step(emu, snapshot(emu))
+        if result == "done":
+            break
+    assert result == "done"
+    assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == (1, 5)
 
 
 def test_edge_leg_walks_to_the_north_edge_and_crosses():
