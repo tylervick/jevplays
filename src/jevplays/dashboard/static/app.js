@@ -28,7 +28,7 @@ function renderChoice(id, q, a) {
   const box = el("div", `question${a.applied ? "" : " unused"}`);
   const head = el("div", "qhead");
   head.append(el("span", "qid", id), el("span", "badge", `confidence ${a.confidence.toFixed(2)}`));
-  if (!a.applied) head.append(el("span", "badge na", "not applicable"));
+  if (!a.applied) head.append(el("span", "badge na", "not used"));
   box.append(head, el("p", "instructions", q.instructions));
   const options = Object.entries(a.probabilities).sort((x, y) => y[1] - x[1]);
   for (const [name, p] of options) {
@@ -45,7 +45,7 @@ function renderNoul(id, q, a) {
   const box = el("div", `question${a.applied ? "" : " unused"}`);
   const head = el("div", "qhead");
   head.append(el("span", "qid", id));
-  if (!a.applied) head.append(el("span", "badge na", "not applicable"));
+  if (!a.applied) head.append(el("span", "badge na", "not used"));
   box.append(head, el("p", "instructions", q.instructions));
   const row = el("div", "split");
   const yes = el("div", "yes", `yes ${pct(a.noul)}`);

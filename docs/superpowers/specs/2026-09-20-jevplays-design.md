@@ -293,8 +293,9 @@ Decision
 
 `macros.py` turns an action into button presses using the current `GameState` for cursor
 positions: FIGHT then the move's slot, PKMN then the bench slot, ITEM then the item's slot, RUN.
-It reads `wCurrentMenuItem` after each press and retries once if the cursor is not where it
-expected before giving up and marking the decision as failed in the log.
+It reads the cursor's label from the screen buffer before every A press, so a wrong cursor
+position is caught before it can select anything; the loop retries a failed macro once, then uses
+the first move, then pauses until the screen changes.
 
 `navigate.py` owns overworld movement. The collision window from PyBoy's Gen 1 wrapper covers the
 visible screen, so navigation is waypoint-based: `maps.py` lists, per map, the tiles that matter
@@ -328,7 +329,7 @@ The page, plain ES modules with no build step:
   bars, so a viewer reads the outcome first. One horizontal bar per option for each Choice,
   winner highlighted, the probability as a label. Each Noul as a single yes/no split bar. A
   confidence badge on each Choice. Questions whose `applied` is false are dimmed and labelled
-  "not applicable". Latency and token count small at the bottom. Below the panel: the current
+  "not used". Latency and token count small at the bottom. Below the panel: the current
   goal, and a scrolling log of the last 50 decisions with kind, action, and confidence.
 - A `?layout=stream` query switches to a fixed 1920x1080 arrangement for OBS.
 
@@ -389,7 +390,8 @@ Each is a separate plan and pull request set.
 2. **Battles.** The battle builder, policy, macros, and the decision panel with bars, and the
    executor's window pathfinder (`executor/navigate.py`), delivered early because the save-state
    script needs to reach a battle; milestone 3 adds the waypoint graph on top of it. Demo: start
-   from a save state on Route 1 and watch Jev fight and catch.
+   from a save state on Route 1 and watch Jev fight; catching lands with the ITEM macros in
+   milestone 4.
 3. **Goals and navigation.** Goal table through Brock, waypoint maps for Pallet, Route 1,
    Viridian, Route 2, Viridian Forest, Pewter, the goal builder, prompts and menus, run logging
    and resume, replay.
