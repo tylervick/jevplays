@@ -138,7 +138,7 @@ GameState
   mode: Mode                  OVERWORLD | BATTLE_MENU | BATTLE_WAIT | DIALOG | PROMPT | MENU | TRANSITION
   map: str                    "Pallet Town"
   tile: (x, y)                player tile, used by the executor only, never sent to Jev
-  party: [Mon]                name, nickname, level, types, hp_bucket, status, moves: [Move]
+  party: [Mon]                name, nickname, level, types, hp, max_hp, status, moves: [Move]
   enemy: Mon | None           present in battle; includes level and types
   battle: Battle | None       is_trainer, trainer_class
   badges: [str]
@@ -147,12 +147,14 @@ GameState
   text: str                   decoded on-screen text, empty when none
   menu_items: [str]           decoded items when a menu is open
   flags: EventFlags           the subset the goal table reads
-Move: name, type, category (attack | status), power_bucket (none | weak | medium | strong), pp_bucket (out | low | plenty)
-hp_bucket: full | healthy | hurt | low | critical   (100%, >60%, >30%, >10%, else)
+Move: name, type, power, pp, max_pp
 ```
 
-Buckets are computed in code from the raw numbers, following the jaggedness guidance to give Jev
-words rather than numbers.
+`GameState` carries raw numbers (HP, PP, money) because it is the harness's record of the truth;
+the brain's builders convert them to bucket words at its own boundary (`brain/buckets.py`), and a
+test asserts the JSON sent to Jev carries no HP, PP, or money numbers. Levels are sent as numbers.
+`hp_bucket`, `pp_bucket`, and `power_bucket` (full | healthy | hurt | low | critical; out | low |
+plenty; none | weak | medium | strong) are the brain's vocabulary, not `GameState` fields.
 
 `Mode` is the decision-point detector. The contract:
 
@@ -234,6 +236,9 @@ wins:
 3. `run` above `RUN_THRESHOLD` (0.7): run.
 4. `switch` above `SWITCH_THRESHOLD` (0.7): switch to `switch_to`.
 5. Otherwise use `move`.
+
+Milestone 2 executes `move` and `run`; `heal`, `catch`, and `switch` are asked and recorded but
+fall back to the move answer with `fallback` set until their macros land (milestone 4).
 
 Code does not compute type effectiveness in this version. Judging Fire against Grass from the
 type names is the kind of common sense the demo is meant to show, and the decision log makes it
@@ -317,13 +322,14 @@ The loop pushes four event types, each a JSON object with a `type` field:
 
 The page, plain ES modules with no build step:
 
-- Left: the game screen scaled 4x with nearest-neighbor filtering.
-- Right: the latest decision. One horizontal bar per option for each Choice, winner highlighted,
-  the probability as a label. Each Noul as a single yes/no split bar. A confidence badge on each
-  Choice. Questions whose `applied` is false are dimmed and labelled "not applicable". The action
-  taken, in words, under the bars. Latency and token count small at the bottom.
-- Below: the current goal, a party strip (name, level, HP bar in the bucket's colour), and a
-  scrolling log of the last 50 decisions with kind, action, and confidence.
+- Left: the game screen scaled 4x with nearest-neighbor filtering. Under the screen: a party
+  strip (nickname, level, HP bar in the bucket's colour).
+- Right: the latest decision. The action taken, in words, as the panel's headline above the
+  bars, so a viewer reads the outcome first. One horizontal bar per option for each Choice,
+  winner highlighted, the probability as a label. Each Noul as a single yes/no split bar. A
+  confidence badge on each Choice. Questions whose `applied` is false are dimmed and labelled
+  "not applicable". Latency and token count small at the bottom. Below the panel: the current
+  goal, and a scrolling log of the last 50 decisions with kind, action, and confidence.
 - A `?layout=stream` query switches to a fixed 1920x1080 arrangement for OBS.
 
 `jevplays replay runs/<dir>` reads `decisions.jsonl` and pushes the same events with a delay, so
@@ -380,8 +386,10 @@ Each is a separate plan and pull request set.
 1. **Harness.** Repo scaffold with the tooling above. Emulator wrapper, `ram.py`, `GameState`
    and `Mode`, the dashboard showing the screen and raw state, `jevplays state` and a `run` that
    walks through the intro and stops at the first `OVERWORLD`. No TypeSafe calls.
-2. **Battles.** The battle builder, policy, macros, and the decision panel with bars. Demo:
-   start from a save state on Route 1 and watch Jev fight and catch.
+2. **Battles.** The battle builder, policy, macros, and the decision panel with bars, and the
+   executor's window pathfinder (`executor/navigate.py`), delivered early because the save-state
+   script needs to reach a battle; milestone 3 adds the waypoint graph on top of it. Demo: start
+   from a save state on Route 1 and watch Jev fight and catch.
 3. **Goals and navigation.** Goal table through Brock, waypoint maps for Pallet, Route 1,
    Viridian, Route 2, Viridian Forest, Pewter, the goal builder, prompts and menus, run logging
    and resume, replay.
