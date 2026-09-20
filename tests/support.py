@@ -47,3 +47,30 @@ def rows_from(lines: list[str]) -> list[list[str]]:
     padded = [(line + NON_TEXT * TILEMAP_WIDTH)[:TILEMAP_WIDTH] for line in lines]
     padded += [NON_TEXT * TILEMAP_WIDTH] * (TILEMAP_HEIGHT - len(padded))
     return [list(line) for line in padded]
+
+
+class FakeEmulator:
+    """Enough of Emulator for snapshot() and Loop: memory, a screen buffer, and recorded input."""
+
+    def __init__(self) -> None:
+        self.mem = FakeMemory()
+        self.presses: list[str] = []
+        self.frames = 0
+        self.set_rows([])
+
+    def set_rows(self, lines: list[str]) -> None:
+        write_tilemap(self.mem, lines)
+
+    def tilemap(self) -> bytes:
+        return bytes(self.mem.data[wTileMap : wTileMap + TILEMAP_SIZE])
+
+    def tick(self, frames: int = 1, *, render: bool = False) -> int:
+        self.frames += frames
+        return frames
+
+    def press(self, button: str, *, hold: int = 8, settle: int = 8) -> int:
+        self.presses.append(button)
+        return self.tick(hold + settle)
+
+    def frame_jpeg(self, quality: int = 80) -> bytes:
+        return b"\xff\xd8fake"
