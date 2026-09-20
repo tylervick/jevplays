@@ -1,0 +1,36 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+# Blink is a local agent-review tool nobody runs on a runner (see mise.toml), and a
+# vendor CDN has no business standing between a push and a green build: skip its
+# download rather than have a pruned pin fail `mise install` here.
+env:
+  MISE_DISABLE_TOOLS: http:blink
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        # Nothing in this job pushes; leaving the token in .git/config only widens
+        # what a compromised later step could reach. fetch-depth 0 because hk's
+        # gitleaks step scans commit history rather than the working tree, and a
+        # shallow clone would have it report a clean scan of a single commit.
+        with: {persist-credentials: false, fetch-depth: 0}
+      # mise installs the uv/hk/linter versions mise.toml pins, so `hk check --all`
+      # below runs the same tools as the local pre-commit hook.
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with: {cache: true}
+      - name: Cache uv packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: uv sync --all-groups
+      - run: hk check --all
+      # A runner has no ROM: tests/rom/ skip themselves when JEVPLAYS_ROM is unset.
+      - run: uv run pytest -q

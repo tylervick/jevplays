@@ -1,0 +1,38 @@
+# Orca (onorca.dev) worktree hooks. `scripts.setup` runs in the freshly created
+# worktree under non-interactive bash; ORCA_ROOT_PATH points at the main checkout.
+#
+# THIS FILE MUST STAY TRACKED IN GIT. `git worktree add` only materializes tracked
+# files, so an untracked orca.yaml is simply absent from every new worktree and the
+# hook never fires once.
+#
+# What a fresh jevplays worktree is missing: `.venv/` (gitignored, rebuilt from
+# uv.lock), `mise.local.toml` (the TypeSafe key and ROM path, per machine), and
+# `roms/` + `states/` (game data, gitignored). The last three are copied from the
+# main checkout so tests/rom/ run here too.
+scripts:
+  setup: |
+    set -euo pipefail
+
+    # Orca runs this under bash without sourcing the shell rc that puts mise on
+    # PATH, so point at the binary's real home first.
+    export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+
+    if [ -f "$ORCA_ROOT_PATH/mise.local.toml" ]; then
+      cp "$ORCA_ROOT_PATH/mise.local.toml" mise.local.toml
+    fi
+    for d in roms states; do
+      if [ -d "$ORCA_ROOT_PATH/$d" ]; then
+        mkdir -p "$d"
+        cp -R "$ORCA_ROOT_PATH/$d/." "$d/"
+      fi
+    done
+
+    # `mise trust` covers mise.local.toml as well, so it runs after the copy.
+    mise trust && mise install
+
+    # Delegate to mise.toml rather than repeating the steps: `mise run` resolves
+    # uv and hk through mise's own environment, and "what setup means" stays
+    # defined in one file. Deliberately NOT seeded from $ORCA_ROOT_PATH/.venv --
+    # a virtualenv records absolute paths, so a copied one still points at the
+    # main checkout. uv rebuilds it from uv.lock in a second or two.
+    mise run setup

@@ -1,0 +1,138 @@
+# Dev tooling for jevplays.
+#
+# mise owns the *tools*; uv owns Python and the package environment. Nothing
+# here pins Python on purpose -- `.python-version` + `uv.lock` already do.
+#
+# In a fresh checkout:
+#   mise trust && mise install && mise run setup
+#
+# (An Orca worktree does this for you -- see orca.yaml.)
+#
+# Per-machine settings go in mise.local.toml, which is gitignored:
+#   [env]
+#   TYPESAFE_API_KEY = "..."
+#   JEVPLAYS_ROM = "/absolute/path/to/pokemon-red.gb"
+
+# Every tool is pinned exactly rather than "latest", for two reasons: it is what
+# makes `hk check --all` mean the same thing on this laptop and in CI, and
+# Renovate's mise manager can only propose bumps against a concrete version.
+# renovate.json groups them into one PR.
+[tools]
+uv = "0.11.29"
+# Must match the `amends`/`import` URLs at the top of hk.pkl. hk evaluates that
+# file with its own embedded pkl, and a config written against one release is not
+# guaranteed to evaluate under another. renovate.json has a custom manager that
+# bumps hk.pkl in the same PR so the two cannot drift apart.
+hk = "1.55.0"
+# Invoked by hk steps rather than directly.
+actionlint = "1.7.12"
+gitleaks = "8.30.1"
+zizmor = "1.29.0"
+# Only needed when a workflow gains or bumps an action; see `mise run pin-actions`.
+pinact = "4.1.1"
+
+# Blink (https://blink.review) reviews each Claude Code turn's diff and hands the
+# findings back to the agent. Its own installer drops an unpinned "latest" in
+# ~/.local/bin, invisible to everyone else here. This pins it through mise's
+# `http` backend instead. The CDN URL is content-addressed by the binary's own
+# SHA-256, so the URL and the checksum are one fact and cannot drift apart.
+#
+# Renovate cannot see this (nothing to query), so bumps are manual: run
+# `Scripts/update-blink-pin.sh`; do not hand-edit the values below. CI never runs
+# Blink, so both workflows set MISE_DISABLE_TOOLS=http:blink and skip the download.
+# blink-pin:begin -- managed by Scripts/update-blink-pin.sh, do not hand-edit
+[tools."http:blink"]
+version = "0.1.2"
+platforms.macos-arm64.url = "https://blink.review/downloads/cli/blink-darwin-arm64-2656629b96cb79471e4759c82b6b22e31167ad5239135edca5e6ff603d5cfc75.gz"
+platforms.macos-arm64.checksum = "sha256:2656629b96cb79471e4759c82b6b22e31167ad5239135edca5e6ff603d5cfc75"
+platforms.macos-x64.url = "https://blink.review/downloads/cli/blink-darwin-x64-b0d58f861a3dafed5f7d6c34acd711e19014f2ec2fba4da0434e5dff0e7efa2f.gz"
+platforms.macos-x64.checksum = "sha256:b0d58f861a3dafed5f7d6c34acd711e19014f2ec2fba4da0434e5dff0e7efa2f"
+platforms.linux-x64.url = "https://blink.review/downloads/cli/blink-linux-x64-8636962e073a50dddfbeb3498768c2ec473562c749c3f615ff516930f6ae1824.gz"
+platforms.linux-x64.checksum = "sha256:8636962e073a50dddfbeb3498768c2ec473562c749c3f615ff516930f6ae1824"
+platforms.linux-arm64.url = "https://blink.review/downloads/cli/blink-linux-arm64-5121fdbac9caa4110450a814a8e90e10516f354668721eaf0b3701dfaf0a880c.gz"
+platforms.linux-arm64.checksum = "sha256:5121fdbac9caa4110450a814a8e90e10516f354668721eaf0b3701dfaf0a880c"
+# blink-pin:end
+
+[tasks.setup]
+description = "Create .venv from uv.lock and install the git hooks"
+run = """
+uv sync --all-groups
+hk install
+"""
+
+[tasks.lint]
+description = "Everything hk checks: ruff, formatting, file hygiene, workflow + secret scans"
+run = "hk check --all"
+
+[tasks.fix]
+description = "Apply every fix hk can make"
+run = "hk fix --all"
+
+[tasks.test]
+description = "The pytest suite; tests/rom/ skip without JEVPLAYS_ROM and states/"
+run = "uv run pytest -q"
+
+[tasks.check]
+description = "Lint and test -- the same pair CI runs"
+depends = ["lint", "test"]
+
+[tasks.states]
+description = "Regenerate the save states tests/rom/ load (needs JEVPLAYS_ROM; writes states/)"
+run = "uv run Scripts/make-states.py"
+
+[tasks.pin-actions]
+description = "Re-pin .github/workflows actions to commit SHAs (run after adding or bumping one)"
+# zizmor enforces that actions are hash-pinned but cannot pin them itself; this
+# is the fix side of that rule. It hits the GitHub API, which is why it is a
+# task you run deliberately rather than an hk step on every commit.
+run = "pinact run --verify .github/workflows/*.yml"
+
+[tasks.blink-setup]
+description = "Sign in to Blink and install its Claude Code review hooks (once per machine)"
+# Per-developer, not per-checkout: `blink setup` writes to the USER-level
+# ~/.claude/settings.json, which is not something this repository can carry.
+# What the repository DOES carry is the pinned CLI above, so everyone who opts in
+# runs the same build. Undo with `blink setup claude-code --remove`.
+run = '''
+if blink auth status >/dev/null 2>&1; then
+  echo "already signed in to Blink"
+else
+  blink auth login
+fi
+blink setup claude-code
+
+# `blink setup` writes a BARE `blink review --hook claude-code` into that
+# user-level settings file. A mise-managed blink answers that bare name only
+# through the shims directory, so the hook resolves only if the shims directory
+# is on the PATH Claude Code inherited. `mise doctor --json` has already
+# resolved where that directory is and whether it is on PATH; ask it rather
+# than rebuilding the path by hand. Its exit status is ignored on purpose: doctor
+# exits 1 on ANY problem it finds while still printing complete JSON.
+probe="$(mise doctor --json 2>/dev/null | uv run --no-project python -c '
+import json, sys
+doctor = json.load(sys.stdin)
+print(doctor["dirs"]["shims"])
+print("yes" if doctor["shims_on_path"] else "no")
+' 2>/dev/null || true)"
+shims="$(printf '%s\n' "$probe" | sed -n 1p)"
+
+case "$(printf '%s\n' "$probe" | sed -n 2p)" in
+  yes)
+    echo "ok - $shims is on PATH, so the hook will resolve blink"
+    ;;
+  no)
+    echo "ERROR: $shims is not on your PATH." >&2
+    echo "The hook just installed runs a bare 'blink', so it would fail with" >&2
+    echo "'command not found' at the end of every Claude Code turn." >&2
+    echo "Add this to your shell profile, then open a new terminal:" >&2
+    echo "  export PATH=\"$shims:\$PATH\"" >&2
+    exit 1
+    ;;
+  *)
+    echo "ERROR: could not read shims_on_path out of 'mise doctor --json'." >&2
+    echo "Check by hand that mise's shims directory is on your PATH -- the hook" >&2
+    echo "just installed runs a bare 'blink' and resolves it only through there." >&2
+    exit 1
+    ;;
+esac
+'''

@@ -1,0 +1,21 @@
+name: Bug
+description: Something is wrong in the agent, the dashboard, or the CLI.
+labels: [bug]
+body:
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: What you did, what happened, what you expected.
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Map and mode from the dashboard, or the CLI command. A run directory name if there is one.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: A screenshot, a decision log line, a save state name.
