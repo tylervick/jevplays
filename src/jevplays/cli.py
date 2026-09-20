@@ -19,7 +19,11 @@ def cmd_state(args: argparse.Namespace) -> int:
     if rom is None:
         print("no ROM: pass --rom or set JEVPLAYS_ROM", file=sys.stderr)
         return 2
-    # Imported after the ROM check so a run without a ROM (CI) never loads PyBoy and SDL.
+    if not args.state.is_file():
+        print(f"no such state file: {args.state}", file=sys.stderr)
+        return 2
+    # Imported after the ROM and state checks so a run without a ROM (CI), or with a typo'd
+    # state path, never loads PyBoy and SDL.
     from jevplays.emulator.pyboy import Emulator
     from jevplays.state.snapshot import snapshot
 
