@@ -58,15 +58,19 @@ def test_trainer_battle_addresses(rom, state_path):
         assert m[ram.wIsInBattle] == 2
         assert m[ram.wTrainerClass] == 25  # RIVAL1
         assert m[ram.wBattleMonSpecies] == 176 and m[ram.wEnemyMonSpecies] == 177
-        assert ram.read_u16(m, ram.wBattleMonHP) == ram.read_u16(m, ram.wBattleMonMaxHP) == 20
+        slot = ram.wPartyMons
+        max_hp = ram.read_u16(m, ram.wBattleMonMaxHP)
+        assert 18 <= max_hp <= 22  # level 5 Charmander; the exact value depends on random DVs
+        assert ram.read_u16(m, ram.wBattleMonHP) == max_hp  # full HP when the first battle starts
+        assert (
+            ram.read_u16(m, slot + ram.MON_MAX_HP) == max_hp
+        )  # the party record agrees with the battle copy
         assert ram.read_u16(m, ram.wEnemyMonMaxHP) == 20 and m[ram.wEnemyMonLevel] == 5
         assert (m[ram.wBattleMonType1], m[ram.wEnemyMonType1]) == (20, 21)  # Fire, Water
         assert ram.read_bytes(m, ram.wBattleMonMoves, 4) == bytes([10, 45, 0, 0])
         assert ram.read_bytes(m, ram.wBattleMonPP, 4) == bytes([35, 40, 0, 0])
         assert ram.read_name(m, ram.wEnemyMonNick) == "SQUIRTLE"
-        slot = ram.wPartyMons
         assert m[slot + ram.MON_SPECIES] == 176 and m[slot + ram.MON_LEVEL] == 5
-        assert ram.read_u16(m, slot + ram.MON_MAX_HP) == 20
         assert ram.read_name(m, ram.wPartyMonNicks) == "CHARMANDER"
 
 
@@ -75,6 +79,10 @@ def test_wild_battle_addresses(rom, state_path):
         emu.load(state_path("battle_wild"))
         m = emu.mem
         assert m[ram.wIsInBattle] == 1
-        assert m[ram.wEnemyMonSpecies] == 36
-        assert (m[ram.wEnemyMonType1], m[ram.wEnemyMonType2]) == (0, 2)
+        # Route 1 has two wild species; which one appears depends on the RNG at the encounter frame.
+        species = m[ram.wEnemyMonSpecies]
+        assert species in (36, 165)  # PIDGEY, RATTATA (internal ids)
+        expected_types = {36: (0, 2), 165: (0, 0)}[species]  # Normal/Flying, Normal/Normal
+        assert (m[ram.wEnemyMonType1], m[ram.wEnemyMonType2]) == expected_types
+        assert m[ram.wBattleMonSpecies] == 176  # still Charmander
         assert m[ram.wNumBagItems] == 0
