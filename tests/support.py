@@ -1,6 +1,10 @@
 """Fakes shared by the unit tests. Nothing here imports pyboy."""
 
 from jevplays.emulator.ram import (
+    COLLISION_END,
+    CONNECTION_BITS,
+    CONNECTION_MAP_ADDRESSES,
+    MAP_BORDER_BLOCKS,
     MON_HP,
     MON_LEVEL,
     MON_MAX_HP,
@@ -14,9 +18,19 @@ from jevplays.emulator.ram import (
     TILEMAP_HEIGHT,
     TILEMAP_SIZE,
     TILEMAP_WIDTH,
+    wCurMapHeight,
+    wCurMapWidth,
+    wGrassTile,
+    wMapConnections,
+    wNumberOfWarps,
+    wOverworldMap,
     wSpriteStateData1,
     wSpriteStateData2,
     wTileMap,
+    wTilesetBank,
+    wTilesetBlocksPtr,
+    wTilesetCollisionPtr,
+    wWarpEntries,
     wXCoord,
     wYCoord,
 )
@@ -111,6 +125,9 @@ class FakeEmulator:
     def collision(self) -> list[list[int]]:
         return [row[:] for row in self.grid]
 
+    def rom(self, bank: int, addr: int) -> int:
+        return self.mem[bank, addr]
+
     def press(self, button: str, *, hold: int = 8, settle: int = 8) -> int:
         self.presses.append(button)
         if button in self.step_effects:
@@ -171,3 +188,41 @@ def write_mon(
     mem[base + off["max_hp"] + 1] = max_hp & 0xFF
     name = encode(nickname or "MON") + [TERMINATOR]
     mem[nick_addr : nick_addr + len(name)] = name
+
+
+def install_map(emu, rows, warps=(), connections=None):
+    """A synthetic map for the fake: '.' walkable, '#' wall; two blocks in the fake ROM."""
+    bank, blocks_addr, collision_addr = 25, 0x4000, 0x5000
+    m = emu.mem
+    m[wTilesetBank] = bank
+    m[wTilesetBlocksPtr] = blocks_addr & 0xFF
+    m[wTilesetBlocksPtr + 1] = blocks_addr >> 8
+    m[wTilesetCollisionPtr] = collision_addr & 0xFF
+    m[wTilesetCollisionPtr + 1] = collision_addr >> 8
+    m[wGrassTile] = 0xFF
+    for i in range(16):
+        m.rom[(bank, blocks_addr + i)] = 1  # block 0: every tile is 1 (walkable)
+        m.rom[(bank, blocks_addr + 16 + i)] = 2  # block 1: every tile is 2 (wall)
+    m.rom[(bank, collision_addr)] = 1
+    m.rom[(bank, collision_addr + 1)] = COLLISION_END
+    height, width = len(rows) // 2, len(rows[0]) // 2
+    m[wCurMapWidth], m[wCurMapHeight] = width, height
+    stride = width + 2 * MAP_BORDER_BLOCKS
+    for by in range(-MAP_BORDER_BLOCKS, height + MAP_BORDER_BLOCKS):
+        for bx in range(-MAP_BORDER_BLOCKS, width + MAP_BORDER_BLOCKS):
+            inside = 0 <= bx < width and 0 <= by < height
+            # a block is walkable only when all four of its cells are '.', which is what the fixtures use
+            block = (
+                0
+                if inside and all(rows[by * 2 + qy][bx * 2 + qx] == "." for qy in range(2) for qx in range(2))
+                else 1
+            )
+            m[wOverworldMap + (by + MAP_BORDER_BLOCKS) * stride + (bx + MAP_BORDER_BLOCKS)] = block
+    m[wNumberOfWarps] = len(warps)
+    for i, (x, y, wid, dest) in enumerate(warps):
+        m[wWarpEntries + 4 * i : wWarpEntries + 4 * i + 4] = [y, x, wid, dest]
+    flags = 0
+    for d, mid in (connections or {}).items():
+        flags |= 1 << CONNECTION_BITS[d]
+        m[CONNECTION_MAP_ADDRESSES[d]] = mid
+    m[wMapConnections] = flags

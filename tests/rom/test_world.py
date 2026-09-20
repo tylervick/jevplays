@@ -1,5 +1,6 @@
 from jevplays.emulator import ram
 from jevplays.emulator.pyboy import Emulator
+from jevplays.executor.world import astar, build_grid, read_connections
 from jevplays.state.events import flags_set
 
 
@@ -29,3 +30,28 @@ def test_route1_flags(rom, state_path):
     with Emulator(rom) as emu:
         emu.load(state_path("route1"))
         assert flags_set(emu.mem) >= {"got_starter", "battled_rival_in_oaks_lab", "oak_appeared_in_pallet"}
+
+
+def test_full_map_grid_agrees_with_pyboys_window_everywhere(rom, state_path):
+    for name in ("overworld", "route1", "battle_wild"):
+        with Emulator(rom) as emu:
+            emu.load(state_path(name))
+            if emu.mem[ram.wIsInBattle]:
+                continue
+            grid = build_grid(emu)
+            window = emu.collision()
+            x, y = emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]
+            for r in range(9):
+                for c in range(10):
+                    gx, gy = x + (c - 4), y + (r - 4)
+                    if grid.in_bounds(gx, gy):
+                        assert window[r][c] == int(grid.walkable(gx, gy)), (name, gx, gy)
+
+
+def test_route1_has_a_path_from_the_south_entry_to_the_north_exit(rom, state_path):
+    with Emulator(rom) as emu:
+        emu.load(state_path("route1"))
+        grid = build_grid(emu)
+        assert read_connections(emu.mem) == {"north": 1, "south": 0}
+        path = astar(grid, (10, 33), (10, 0))
+        assert path is not None and path[-1] == (10, 0)
