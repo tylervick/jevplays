@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -42,26 +43,46 @@ def cmd_run(args: argparse.Namespace) -> int:
     async def main_async() -> None:
         broadcaster = Broadcaster()
         server = asyncio.create_task(serve(create_app(broadcaster), port=args.port))
-        print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
-        with Emulator(rom) as emu:
-            if args.state:
-                await broadcaster.publish(status_event("running", f"loading {args.state}"))
-                emu.load(args.state)
-            else:
-                await broadcaster.publish(status_event("running", "walking the intro"))
-                walk_intro(emu)
-            await broadcaster.publish(status_event("running", "idle at the first decision point"))
-            loop = Loop(emu, broadcaster, LoopConfig(paced=not args.unpaced))
-            try:
-                await loop.run()
-            finally:
-                await broadcaster.publish(status_event("stopped"))
-                server.cancel()
+        try:
+            with Emulator(rom) as emu:
+                if args.state:
+                    await broadcaster.publish(status_event("running", f"loading {args.state}"))
+                    emu.load(args.state)
+                else:
+                    await broadcaster.publish(status_event("running", "walking the intro"))
+                    walk_intro(emu)
+                # walk_intro/emu.load are synchronous, so nothing above this has actually
+                # suspended back to the event loop; without a real await, the server task
+                # would not have run even once yet. Give it a moment so a bind failure (e.g.
+                # the port is in use) is caught here instead of surfacing later, mid-loop.
+                await asyncio.sleep(0.2)
+                # A dead server task here means the bind failed. .result() raises its real
+                # error instead of us printing a dashboard URL that is never going to answer.
+                if server.done():
+                    server.result()
+                print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
+                await broadcaster.publish(status_event("running", "idle at the first decision point"))
+                loop = Loop(emu, broadcaster, LoopConfig(paced=not args.unpaced))
+                try:
+                    await loop.run()
+                finally:
+                    await broadcaster.publish(status_event("stopped"))
+        finally:
+            server.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await server  # let uvicorn shut down before the process exits
 
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
         pass
+    except SystemExit as exc:
+        # uvicorn's own startup failure (e.g. a bind error) calls sys.exit() from inside the
+        # server task rather than raising an ordinary exception; it has already logged the
+        # cause, so add only what it doesn't know: which port we asked for.
+        if exc.code not in (0, None):
+            print(f"jevplays run: could not start the dashboard on port {args.port}", file=sys.stderr)
+            return 1
     return 0
 
 
