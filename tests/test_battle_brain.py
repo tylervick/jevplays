@@ -78,7 +78,8 @@ def make_state(*, kind="wild", bench=(), bag=()):
 
 def test_state_json_uses_words_not_numbers_for_hp_and_pp():
     s = battle_state(
-        make_state(bag=(BagItem("POKE BALL", 3), BagItem("POTION", 1))), goal="Reach Viridian City"
+        make_state(bag=(BagItem("POKE BALL", 3), BagItem("POTION", 1)), bench=(PIDGEY,)),
+        goal="Reach Viridian City",
     )
     assert s["our_pokemon"]["hp"] == "hurt" and s["our_pokemon"]["level"] == 8
     assert s["our_pokemon"]["moves"][2] == {
@@ -100,8 +101,12 @@ def test_state_json_uses_words_not_numbers_for_hp_and_pp():
         and s["bag"] == {"poke_balls": True, "potions": True}
         and s["goal"] == "Reach Viridian City"
     )
-    numbers = re.findall(r"\d+", json.dumps({k: v for k, v in s.items()}))
-    assert numbers == ["8", "5"]  # only the two levels
+    numbers = re.findall(r"\d+", json.dumps({k: v for k, v in s.items()}, ensure_ascii=False))
+    assert set(numbers) == {"8", "5", "4"}  # the two levels plus the bench Pokémon's level
+
+    qs = battle_questions(s)
+    q_numbers = re.findall(r"\d+", json.dumps(qs, ensure_ascii=False))
+    assert set(q_numbers) == {"4"}  # only PIDGEY's level, from switch_to's criteria
 
 
 def test_questions_include_only_what_can_apply():
