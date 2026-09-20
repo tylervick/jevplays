@@ -24,8 +24,11 @@ class FakeMemory:
 
     def __init__(self) -> None:
         self.data = bytearray(0x10000)
+        self.rom: dict[tuple[int, int], int] = {}
 
-    def __getitem__(self, key: int | slice) -> int | list[int]:
+    def __getitem__(self, key: int | slice | tuple[int, int]) -> int | list[int]:
+        if isinstance(key, tuple):
+            return self.rom.get(key, 0)
         if isinstance(key, slice):
             return list(self.data[key])
         return self.data[key]

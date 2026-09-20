@@ -35,6 +35,9 @@ class Emulator:
     def mem(self) -> Memory:
         return self._py.memory
 
+    def rom(self, bank: int, addr: int) -> int:
+        return int(self._py.memory[bank, addr])
+
     def tick(self, frames: int = 1, *, render: bool = False) -> int:
         """Advance `frames` frames. Returns the frames spent so the loop can pace wall time."""
         self._py.tick(frames, render, False)

@@ -62,3 +62,36 @@ def test_status_name_and_pp_current():
     assert ram.status_name(0b0100_0000) == "paralyzed"
     assert ram.pp_current(35) == 35
     assert ram.pp_current(0b1100_0000 | 20) == 20
+
+
+def test_map_and_sprite_addresses():
+    assert ram.wOverworldMap == 0xC6E8 and ram.MAP_BORDER_BLOCKS == 3
+    assert (ram.wCurMapWidth, ram.wCurMapHeight) == (0xD369, 0xD368)
+    assert ram.wNumberOfWarps == 0xD3AE and ram.wWarpEntries == 0xD3AF and ram.WARP_LAST_MAP == 0xFF
+    assert ram.CONNECTION_MAP_ADDRESSES["north"] == 0xD371 and ram.CONNECTION_BITS["north"] == 3
+    assert (ram.wTilesetBank, ram.wTilesetBlocksPtr, ram.wTilesetCollisionPtr, ram.wGrassTile) == (
+        0xD52B,
+        0xD52C,
+        0xD530,
+        0xD535,
+    )
+    assert (
+        ram.wSpriteStateData1 == 0xC100 and ram.wSpriteStateData2 == 0xC200 and ram.SPRITE_COORD_OFFSET == 4
+    )
+
+
+def test_read_u16le_and_flag_bit():
+    mem = FakeMemory()
+    mem[0xD52C] = 0x34
+    mem[0xD52D] = 0x12
+    assert ram.read_u16le(mem, 0xD52C) == 0x1234
+    mem[ram.wEventFlags + 4] = 0b0000_0100  # bit index 34 = byte 4, bit 2
+    assert ram.flag_bit(mem, 34) is True
+    assert ram.flag_bit(mem, 35) is False
+
+
+def test_fake_memory_serves_rom_reads():
+    mem = FakeMemory()
+    mem.rom[(25, 0x4000)] = 0x77
+    assert mem[25, 0x4000] == 0x77
+    assert mem[25, 0x4001] == 0
