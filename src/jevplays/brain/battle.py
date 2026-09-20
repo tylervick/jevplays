@@ -130,16 +130,21 @@ def decide_battle(
     answers = {qid: _answer_record(a) for qid, a in response["answers"].items() if qid in questions}
     raw = {qid: a for qid, a in response["answers"].items() if qid in questions}
     fallback, reason = False, ""
-    if "move" not in raw:
-        first = next(iter(questions["move"]["criteria"]))
+    if "move" in raw:
+        action, used = choose_battle_action(raw, sj)
+    else:
+        action, used = None, []
+    if action is None:
+        criteria = questions["move"]["criteria"]
+        if not criteria:
+            raise ValueError("no moves to choose from")
+        first = next(iter(criteria))
         action, used = BattleAction(kind="move", move=first), []
         fallback, reason = True, "the response had no move answer; using the first usable move"
-    else:
-        action, used = choose_battle_action(raw, sj)
-        if action.kind not in supported:
-            fallback, reason = True, f"{action.kind} is not executable yet; using the move answer instead"
-            action = BattleAction(kind="move", move=raw["move"]["choice"])
-            used = used + ["move"]
+    elif action.kind not in supported:
+        fallback, reason = True, f"{action.kind} is not executable yet; using the move answer instead"
+        action = BattleAction(kind="move", move=raw["move"]["choice"])
+        used = used + ["move"]
     for qid in used:
         if qid in answers:
             answers[qid]["applied"] = True

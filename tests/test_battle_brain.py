@@ -163,6 +163,19 @@ def test_heal_needs_low_hp_not_just_a_yes():
     assert choose_battle_action(a, sj)[0].kind == "move"
 
 
+def test_policy_without_a_move_answer_returns_none():
+    sj = {"our_pokemon": {"hp": "healthy"}, "battle": {"kind": "wild"}}
+    assert choose_battle_action({}, sj) == (None, [])
+
+
+def test_switch_needs_a_choice_answer_for_switch_to():
+    sj = {"our_pokemon": {"hp": "healthy"}, "battle": {"kind": "wild"}}
+    a = answers(move={"SCRATCH": 1.0}, switch=0.9)
+    a["switch_to"] = {"type": "noul", "noul": 0.9}  # not a choice answer
+    action, used = choose_battle_action(a, sj)
+    assert action == BattleAction(kind="move", move="SCRATCH") and used == ["move"]
+
+
 def test_decide_battle_marks_applied_answers_and_falls_back_for_unsupported_actions():
     state = make_state(kind="trainer", bench=(PIDGEY,))
     sj = battle_state(state, goal="g")

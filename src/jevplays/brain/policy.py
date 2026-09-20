@@ -14,8 +14,11 @@ def _noul(answers: dict[str, dict], key: str) -> float:
     return a["noul"] if a and a.get("type") == "noul" else 0.0
 
 
-def choose_battle_action(answers: dict[str, dict], state_json: dict) -> tuple[BattleAction, list[str]]:
-    """Ordered rules; the first that fires wins. Returns the action and the answer ids it used."""
+def choose_battle_action(answers: dict[str, dict], state_json: dict) -> tuple[BattleAction | None, list[str]]:
+    """Ordered rules; the first that fires wins. Returns the action and the answer ids it used.
+
+    Total: when nothing else fires and there is no usable "move" choice answer either, returns
+    (None, []) rather than raising, so the caller decides how to fall back."""
     hp = state_json.get("our_pokemon", {}).get("hp")
     if _noul(answers, "heal") > HEAL_THRESHOLD and hp in ("low", "critical"):
         return BattleAction(kind="heal"), ["heal"]
@@ -23,6 +26,8 @@ def choose_battle_action(answers: dict[str, dict], state_json: dict) -> tuple[Ba
         return BattleAction(kind="catch"), ["catch"]
     if _noul(answers, "run") > RUN_THRESHOLD:
         return BattleAction(kind="run"), ["run"]
-    if _noul(answers, "switch") > SWITCH_THRESHOLD and "switch_to" in answers:
+    if _noul(answers, "switch") > SWITCH_THRESHOLD and answers.get("switch_to", {}).get("type") == "choice":
         return BattleAction(kind="switch", target=answers["switch_to"]["choice"]), ["switch", "switch_to"]
-    return BattleAction(kind="move", move=answers["move"]["choice"]), ["move"]
+    if answers.get("move", {}).get("type") == "choice":
+        return BattleAction(kind="move", move=answers["move"]["choice"]), ["move"]
+    return None, []
