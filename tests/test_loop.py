@@ -1,6 +1,6 @@
 import asyncio
 
-from jevplays.brain.client import BrainUnavailable
+from jevplays.brain.errors import BrainUnavailable
 from jevplays.emulator import ram
 from jevplays.loop import Loop, LoopConfig
 from jevplays.state.modes import Mode

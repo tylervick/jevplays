@@ -6,14 +6,7 @@ fails becomes BrainUnavailable so the loop can pause and show it, never press a 
 
 import time
 
-from typesafe_sdk import (
-    AsyncTypeSafeClient,
-    Choice,
-    Noul,
-    TypeSafeAPIConnectionError,
-    TypeSafeAPIError,
-    TypeSafeAPITimeoutError,
-)
+from typesafe_sdk import AsyncTypeSafeClient, Choice, Noul, TypeSafeError
 
 from jevplays.brain.errors import BrainUnavailable
 
@@ -38,10 +31,11 @@ class Brain:
         self._client = client if client is not None else AsyncTypeSafeClient(model=model)
 
     async def ask(self, state: dict, questions: dict[str, dict]) -> tuple[dict, int]:
+        sdk_questions = to_sdk_questions(questions)
         started = time.monotonic()
         try:
-            response = await self._client.system_one(state, to_sdk_questions(questions))
-        except (TypeSafeAPIError, TypeSafeAPIConnectionError, TypeSafeAPITimeoutError) as error:
+            response = await self._client.system_one(state, sdk_questions)
+        except TypeSafeError as error:
             raise BrainUnavailable(str(error)) from error
         return response.model_dump(), int((time.monotonic() - started) * 1000)
 

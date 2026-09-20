@@ -18,7 +18,7 @@ from jevplays.brain.client import Brain
 from jevplays.emulator.pyboy import Emulator
 from jevplays.state.snapshot import snapshot
 
-OUT = Path("tests/fixtures/responses")
+OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "responses"
 GOAL = "Win the first battle"
 
 

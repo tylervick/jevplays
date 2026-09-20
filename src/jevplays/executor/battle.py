@@ -59,4 +59,4 @@ def apply(emu, action: BattleAction) -> None:
     elif action.kind == "run":
         run_away(emu)
     else:
-        raise MacroError(f"unsupported action {action.kind!r}")
+        raise MacroError("unsupported")

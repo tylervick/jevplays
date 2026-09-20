@@ -85,11 +85,12 @@ class Loop:
         )
         self.decisions.append(decision)
         await self.broadcaster.publish(decision_event(decision))
-        await self.broadcaster.publish(status_event("running", decision.action))
+        await self.broadcaster.publish(status_event("running", f"pressing: {decision.action}"))
         try:
             battle_macros.apply(self.emu, decision.action_value)
         except MacroError as error:
             return await self._retry_after_macro_error(decision, error)
+        await self.broadcaster.publish(status_event("running", decision.action))
         return self.emu.tick(30)
 
     async def _retry_after_macro_error(self, decision: Decision, error: MacroError) -> int:

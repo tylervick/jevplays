@@ -41,7 +41,9 @@ def battle_state(state: GameState, goal: str) -> dict:
         "bench": [_mon(m, with_moves=False) for m in bench if m.hp > 0],
         "bag": {
             "poke_balls": any(item.name.endswith("BALL") and item.quantity > 0 for item in state.bag),
-            "potions": any("POTION" in item.name and item.quantity > 0 for item in state.bag),
+            "potions": any(
+                ("POTION" in item.name or "RESTORE" in item.name) and item.quantity > 0 for item in state.bag
+            ),
         },
         "goal": goal,
     }
