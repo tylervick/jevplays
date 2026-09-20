@@ -2,7 +2,7 @@ from jevplays.emulator import ram
 from jevplays.emulator.text import encode
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import GameState, dialog_text, menu_items, snapshot
-from tests.support import FakeEmulator, rows_from
+from tests.support import FakeEmulator, FakeMemory, rows_from
 
 
 def bedroom(emu: FakeEmulator) -> None:
@@ -55,10 +55,42 @@ def test_snapshot_reads_menu_items_and_cursor():
         ]
     )
     emu.mem[ram.wCurrentMenuItem] = 3
+    emu.mem[ram.wTopMenuItemY] = 2
+    emu.mem[ram.wTopMenuItemX] = 11
+    emu.mem[ram.wMaxMenuItem] = 6  # the real game overcounts the START menu by one
     state = snapshot(emu)
     assert state.mode is Mode.MENU
     assert state.menu_items == ("POKéMON", "ITEM", "RED", "SAVE", "OPTION", "EXIT")
     assert state.cursor == 3
+
+
+def test_menu_items_ignore_boxes_outside_the_menu():
+    emu = FakeEmulator()
+    bedroom(emu)
+    emu.set_rows(
+        [
+            "···········¥3000····",  # a money box, not part of the menu's scanned rows
+            "····················",
+            "···········▶POKéMON·",
+            "····················",
+            "··········· ITEM····",
+            "····················",
+            "··········· RED·····",
+            "····················",
+            "··········· SAVE····",
+            "····················",
+            "··········· OPTION··",
+            "····················",
+            "··········· EXIT····",
+            "····················",
+            "Wild PIDGEY··········",  # a dialog line at the overcounted 7th row
+        ]
+    )
+    emu.mem[ram.wTopMenuItemY] = 2
+    emu.mem[ram.wTopMenuItemX] = 11
+    emu.mem[ram.wMaxMenuItem] = 6  # overcounts: count == 7, so row 14 is also scanned
+    state = snapshot(emu)
+    assert state.menu_items == ("POKéMON", "ITEM", "RED", "SAVE", "OPTION", "EXIT")
 
 
 def test_snapshot_reads_dialog_text_without_the_arrow():
@@ -82,7 +114,7 @@ def test_snapshot_reads_dialog_text_without_the_arrow():
 
 def test_prompt_items_are_yes_and_no():
     rows = rows_from(["·▶YES·", "·    ·", "· NO ·"])
-    assert menu_items(rows, Mode.PROMPT) == ("YES", "NO")
+    assert menu_items(rows, Mode.PROMPT, FakeMemory()) == ("YES", "NO")
 
 
 def test_dialog_text_joins_only_the_text_rows():

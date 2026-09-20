@@ -9,8 +9,8 @@ from dataclasses import asdict, dataclass
 from typing import Protocol
 
 from jevplays.emulator import ram
-from jevplays.emulator.text import ARROW, CURSOR, NON_TEXT, decode_cells, has_text, row_text
-from jevplays.state.modes import DIALOG_ROWS, Mode, detect, find_cursor, is_blank
+from jevplays.emulator.text import ARROW, NON_TEXT, decode_cells, has_text, row_text
+from jevplays.state.modes import DIALOG_ROWS, Mode, detect, is_blank
 from jevplays.state.names import map_name
 
 
@@ -65,20 +65,28 @@ def dialog_text(rows: list[list[str]]) -> str:
     return " ".join(lines)
 
 
-def menu_items(rows: list[list[str]], mode: Mode) -> tuple[str, ...]:
-    """The labels of an open menu, top to bottom, read from the cursor's column."""
+def menu_items(rows: list[list[str]], mode: Mode, mem: ram.Memory) -> tuple[str, ...]:
+    """The labels of an open menu, top to bottom, read from RAM's menu geometry.
+
+    wMaxMenuItem can overcount by one (the START menu reports 6 for its 6 items, i.e. one past
+    the last index), so the scan also stops at the first row with nothing to its right.
+    """
     if mode is Mode.PROMPT:
         return ("YES", "NO")
     if mode is not Mode.MENU:
         return ()
-    pos = find_cursor(rows)
-    if pos is None:
-        return ()
-    _, col = pos
+    top = mem[ram.wTopMenuItemY]
+    col = mem[ram.wTopMenuItemX]
+    count = mem[ram.wMaxMenuItem] + 1
     items = []
-    for cells in rows:
-        if col < len(cells) and cells[col] in (CURSOR, " ") and has_text(cells[col + 1 :]):
-            items.append(row_text(cells[col + 1 :]).strip(" " + NON_TEXT))
+    for i in range(count):
+        r = top + 2 * i
+        if r >= ram.TILEMAP_HEIGHT:
+            break
+        cells = rows[r][col + 1 :]
+        if not has_text(cells):
+            break
+        items.append(row_text(cells).strip(" " + NON_TEXT))
     return tuple(items)
 
 
@@ -101,6 +109,6 @@ def snapshot(emu: EmulatorLike) -> GameState:
         bag_count=mem[ram.wNumBagItems],
         in_battle=in_battle,
         text=dialog_text(rows),
-        menu_items=menu_items(rows, mode),
+        menu_items=menu_items(rows, mode, mem),
         cursor=mem[ram.wCurrentMenuItem] if mode in (Mode.MENU, Mode.PROMPT) else None,
     )

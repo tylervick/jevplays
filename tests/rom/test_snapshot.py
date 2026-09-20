@@ -35,7 +35,7 @@ def test_menu_state_lists_the_start_menu(rom, state_path):
     with Emulator(rom) as emu:
         emu.load(state_path("menu"))
         state = snapshot(emu)
-        assert "SAVE" in state.menu_items
+        assert state.menu_items == ("POKéMON", "ITEM", "RED", "SAVE", "OPTION", "EXIT")
         assert state.cursor == 0
 
 
