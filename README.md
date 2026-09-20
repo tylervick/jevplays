@@ -41,4 +41,5 @@ uv run jevplays state states/overworld.state   # print the parsed GameState
 - `src/jevplays/state/` turns bytes into a `GameState` with a detected `Mode`.
 - `src/jevplays/dashboard/` is the Starlette app and the static page it serves.
 - `src/jevplays/loop.py` and `cli.py` tie them together.
-- `tests/` runs without a ROM; `tests/rom/` needs one and skips otherwise.
+- `tests/` runs without a ROM; `tests/rom/` needs one and is not collected otherwise (an
+  individual test there still skips if the ROM is set but a save state is missing).

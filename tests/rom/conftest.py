@@ -11,6 +11,13 @@ from pathlib import Path
 
 import pytest
 
+_rom = os.environ.get("JEVPLAYS_ROM")
+if not _rom or not Path(_rom).is_file():
+    # Set at collection time, before any fixture runs, so a run with no ROM never imports these
+    # modules (and so never imports pyboy/SDL): pytest reads collect_ignore_glob from conftest.py
+    # itself, ahead of collecting the sibling test_*.py files.
+    collect_ignore_glob = ["test_*.py"]
+
 
 @pytest.fixture(scope="session")
 def rom() -> Path:

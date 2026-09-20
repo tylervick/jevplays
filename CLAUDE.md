@@ -9,8 +9,10 @@ Jev is asked anything.
 - `mise run setup` once, then `mise run check` (lint + tests) before every push. The hk
   hooks run the same steps.
 - Tests under `tests/rom/` need `JEVPLAYS_ROM` and the save states in `states/`
-  (`mise run states` writes them). They skip, not fail, without either. CI has no ROM, so a
-  ROM-dependent assertion never moves out of `tests/rom/`.
+  (`mise run states` writes them). Without `JEVPLAYS_ROM` pointing at a file, `tests/rom/`'s
+  test modules are not collected at all (so pyboy is never imported); with the ROM set but a
+  save state missing, the individual test skips. CI has no ROM, so a ROM-dependent assertion
+  never moves out of `tests/rom/`.
 - `import pyboy` lives in `src/jevplays/emulator/pyboy.py` and nowhere else, so every unit
   test imports cleanly on a runner with no display.
 - Never commit a ROM, a save state, a `.ram` file, or `mise.local.toml`.
