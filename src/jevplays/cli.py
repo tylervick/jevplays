@@ -66,11 +66,21 @@ def cmd_run(args: argparse.Namespace) -> int:
                     server.result()
                 print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
                 await broadcaster.publish(status_event("running", "idle at the first decision point"))
-                loop = Loop(emu, broadcaster, LoopConfig(paced=not args.unpaced))
+                brain = None
+                if not args.no_brain and os.environ.get("TYPESAFE_API_KEY"):
+                    from jevplays.brain.client import Brain
+
+                    brain = Brain()
+                    print("brain: jev-latest", flush=True)
+                else:
+                    print("brain: off" + ("" if args.no_brain else " (no TYPESAFE_API_KEY)"), flush=True)
+                loop = Loop(emu, broadcaster, LoopConfig(paced=not args.unpaced, goal=args.goal), brain=brain)
                 try:
                     await loop.run()
                 finally:
                     await broadcaster.publish(status_event("stopped"))
+                    if brain is not None:
+                        await brain.close()
         finally:
             server.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -91,6 +101,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Imported here, not at module scope, so `import jevplays.cli` alone never touches the
+    # brain/executor/pyboy stack (see test_imports.py); build_parser() only runs from main().
+    from jevplays.loop import LoopConfig
+
     parser = argparse.ArgumentParser(prog="jevplays", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -99,6 +113,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--state", type=Path, help="start from this save state instead of the intro")
     run.add_argument("--port", type=int, default=8765)
     run.add_argument("--unpaced", action="store_true", help="run the emulator as fast as it can")
+    run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; idle at decision points")
+    run.add_argument("--goal", default=LoopConfig().goal)
     run.set_defaults(func=cmd_run)
 
     state = sub.add_parser("state", help="print the GameState parsed from a save state")

@@ -3,6 +3,7 @@
 import base64
 import json
 
+from jevplays.brain.decision import Decision
 from jevplays.state.snapshot import GameState
 
 
@@ -17,6 +18,10 @@ def state_event(state: GameState) -> dict:
 def status_event(status: str, message: str = "") -> dict:
     """status is one of running, waiting_for_api, paused, stopped."""
     return {"type": "status", "status": status, "message": message}
+
+
+def decision_event(decision: Decision) -> dict:
+    return {"type": "decision", "decision": decision.to_dict()}
 
 
 def encode(event: dict) -> str:

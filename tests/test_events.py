@@ -21,3 +21,18 @@ def test_state_event_wraps_the_state_dict():
 def test_status_event_and_encode_round_trip():
     ev = status_event("running", "walking the intro")
     assert json.loads(encode(ev)) == {"type": "status", "status": "running", "message": "walking the intro"}
+
+
+def test_decision_event_wraps_the_record():
+    from jevplays.brain.decision import Decision
+    from jevplays.dashboard.events import decision_event
+
+    d = Decision(
+        id="abc", ts=1.0, kind="battle", state_summary={}, questions={}, answers={}, action="use SCRATCH"
+    )
+    ev = decision_event(d)
+    assert (
+        ev["type"] == "decision"
+        and ev["decision"]["action"] == "use SCRATCH"
+        and "action_value" not in ev["decision"]
+    )

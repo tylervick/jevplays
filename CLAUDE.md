@@ -15,6 +15,8 @@ Jev is asked anything.
   never moves out of `tests/rom/`.
 - `import pyboy` lives in `src/jevplays/emulator/pyboy.py` and nowhere else, so every unit
   test imports cleanly on a runner with no display.
+- `import typesafe_sdk` lives in `src/jevplays/brain/client.py` (and the fixture script) and
+  nowhere else; unit tests replay `tests/fixtures/responses/`, never the API.
 - Never commit a ROM, a save state, a `.ram` file, or `mise.local.toml`.
 
 ## Backlog
@@ -40,3 +42,5 @@ without an issue behind it.
 - Never edit or delete a test to make it pass.
 - Jev judges, code executes. The model never receives coordinates, raw numbers, or
   screenshots; buckets, arithmetic, and policy stay in code.
+- A change to a question's wording or a state field Jev sees re-records the fixtures
+  (`Scripts/record-fixtures.py`) in the same PR.

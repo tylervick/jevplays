@@ -1,8 +1,8 @@
 from jevplays.emulator import ram
 from jevplays.emulator.text import encode
 from jevplays.state.modes import Mode
-from jevplays.state.snapshot import GameState, dialog_text, menu_items, snapshot
-from tests.support import FakeEmulator, FakeMemory, rows_from
+from jevplays.state.snapshot import BagItem, Battle, GameState, Mon, Move, dialog_text, menu_items, snapshot
+from tests.support import FakeEmulator, FakeMemory, rows_from, write_mon
 
 
 def bedroom(emu: FakeEmulator) -> None:
@@ -32,6 +32,7 @@ def test_snapshot_in_the_overworld():
     assert state.text == ""
     assert state.menu_items == ()
     assert state.cursor is None
+    assert state.active_slot is None
 
 
 def test_snapshot_reads_menu_items_and_cursor():
@@ -129,3 +130,124 @@ def test_to_dict_is_json_ready():
     assert d["mode"] == "overworld"
     assert d["tile"] == [3, 7]
     assert d["menu_items"] == []
+
+
+def charmander(emu, *, in_battle=False):
+    write_mon(
+        emu.mem,
+        ram.wPartyMons,
+        ram.wPartyMonNicks,
+        species=176,
+        level=5,
+        hp=19,
+        max_hp=19,
+        types=(20, 20),
+        moves=(10, 45),
+        pps=(35, 40),
+        nickname="CHARMANDER",
+    )
+    emu.mem[ram.wPartyCount] = 1
+    if in_battle:
+        write_mon(
+            emu.mem,
+            ram.wBattleMonSpecies,
+            ram.wBattleMonNick,
+            species=176,
+            level=5,
+            hp=12,
+            max_hp=19,
+            types=(20, 20),
+            moves=(10, 45),
+            pps=(34, 40),
+            nickname="CHARMANDER",
+            layout="battle",
+        )
+        write_mon(
+            emu.mem,
+            ram.wEnemyMonSpecies,
+            ram.wEnemyMonNick,
+            species=177,
+            level=5,
+            hp=20,
+            max_hp=20,
+            types=(21, 21),
+            moves=(33, 39),
+            pps=(35, 30),
+            nickname="SQUIRTLE",
+            layout="battle",
+        )
+
+
+def test_party_is_parsed_from_the_party_records():
+    emu = FakeEmulator()
+    bedroom(emu)
+    charmander(emu)
+    state = snapshot(emu)
+    assert state.party == (
+        Mon(
+            name="CHARMANDER",
+            nickname="CHARMANDER",
+            level=5,
+            types=("Fire",),
+            hp=19,
+            max_hp=19,
+            status="none",
+            moves=(
+                Move(name="SCRATCH", type="Normal", power=40, pp=35, max_pp=35),
+                Move(name="GROWL", type="Normal", power=0, pp=40, max_pp=40),
+            ),
+        ),
+    )
+    assert state.active is None and state.enemy is None and state.battle is None
+
+
+def test_battle_fields_when_in_a_trainer_battle():
+    emu = FakeEmulator()
+    bedroom(emu)
+    charmander(emu, in_battle=True)
+    emu.mem[ram.wIsInBattle] = 2
+    emu.mem[ram.wTrainerClass] = 25
+    emu.mem[ram.wPlayerMonNumber] = 0
+    emu.set_rows([""] * 14 + ["·       ·▶FIGHT PK·", "", "·       · ITEM RUN·"])
+    state = snapshot(emu)
+    assert state.mode is Mode.BATTLE_MENU
+    assert state.battle == Battle(kind="trainer", trainer_class="RIVAL1")
+    assert state.active.hp == 12 and state.active.moves[0].pp == 34
+    assert state.enemy.name == "SQUIRTLE" and state.enemy.types == ("Water",)
+    assert state.active_slot == 0
+
+
+def test_wild_battle_has_no_trainer():
+    emu = FakeEmulator()
+    bedroom(emu)
+    charmander(emu, in_battle=True)
+    emu.mem[ram.wIsInBattle] = 1
+    emu.mem[ram.wPlayerMonNumber] = 0
+    state = snapshot(emu)
+    assert state.battle == Battle(kind="wild", trainer_class=None)
+    assert state.active_slot == 0
+
+
+def test_bag_items_are_parsed_until_the_terminator():
+    emu = FakeEmulator()
+    bedroom(emu)
+    emu.mem[ram.wNumBagItems] = 2
+    emu.mem[ram.wBagItems : ram.wBagItems + 5] = [4, 5, 20, 2, ram.BAG_END]  # 5 POKE BALL, 2 POTION
+    state = snapshot(emu)
+    assert state.bag == (BagItem(name="POKE BALL", quantity=5), BagItem(name="POTION", quantity=2))
+    assert state.bag_count == 2
+
+
+def test_to_dict_serializes_nested_records():
+    emu = FakeEmulator()
+    bedroom(emu)
+    charmander(emu)
+    d = snapshot(emu).to_dict()
+    assert d["party"][0]["moves"][0] == {
+        "name": "SCRATCH",
+        "type": "Normal",
+        "power": 40,
+        "pp": 35,
+        "max_pp": 35,
+    }
+    assert d["active"] is None and d["bag"] == []

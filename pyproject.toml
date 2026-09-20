@@ -12,6 +12,7 @@ dependencies = [
     "starlette>=0.47",
     "uvicorn>=0.35",
     "websockets>=15",
+    "typesafe-sdk>=0.7",
 ]
 
 [project.scripts]

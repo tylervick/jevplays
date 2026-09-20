@@ -20,3 +20,12 @@ def test_run_command_without_rom_is_an_error(monkeypatch, capsys):
     monkeypatch.delenv("JEVPLAYS_ROM", raising=False)
     assert main(["run"]) == 2
     assert "JEVPLAYS_ROM" in capsys.readouterr().err
+
+
+def test_run_help_lists_the_brain_flags(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit):
+        main(["run", "--help"])
+    out = capsys.readouterr().out
+    assert "--no-brain" in out and "--goal" in out

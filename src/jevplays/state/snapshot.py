@@ -11,7 +11,7 @@ from typing import Protocol
 from jevplays.emulator import ram
 from jevplays.emulator.text import ARROW, NON_TEXT, decode_cells, has_text, row_text
 from jevplays.state.modes import DIALOG_ROWS, Mode, detect, is_blank
-from jevplays.state.names import map_name
+from jevplays.state.names import item_name, map_name, move_data, species_name, trainer_class_name, type_name
 
 
 class EmulatorLike(Protocol):
@@ -19,6 +19,39 @@ class EmulatorLike(Protocol):
     def mem(self) -> ram.Memory: ...
 
     def tilemap(self) -> bytes: ...
+
+
+@dataclass(frozen=True)
+class Move:
+    name: str
+    type: str
+    power: int
+    pp: int
+    max_pp: int
+
+
+@dataclass(frozen=True)
+class Mon:
+    name: str
+    nickname: str
+    level: int
+    types: tuple[str, ...]
+    hp: int
+    max_hp: int
+    status: str
+    moves: tuple[Move, ...]
+
+
+@dataclass(frozen=True)
+class Battle:
+    kind: str
+    trainer_class: str | None
+
+
+@dataclass(frozen=True)
+class BagItem:
+    name: str
+    quantity: int
 
 
 @dataclass(frozen=True)
@@ -33,19 +66,33 @@ class GameState:
     badges: int
     money: int
     bag_count: int
+    bag: tuple[BagItem, ...]
     in_battle: bool
     text: str
     """The dialog box's text, joined into one line, without the ▼ arrow."""
     menu_items: tuple[str, ...]
     cursor: int | None
     """Index of the highlighted item while a menu or prompt is open."""
+    party: tuple[Mon, ...]
+    active: Mon | None
+    """The battle Pokémon while in battle."""
+    active_slot: int | None
+    """Index into `party` of the Pokémon currently out in battle. None outside battle."""
+    enemy: Mon | None
+    battle: Battle | None
 
     def to_dict(self) -> dict:
-        d = asdict(self)
+        d = _listify(asdict(self))
         d["mode"] = str(self.mode)
-        d["tile"] = list(self.tile)
-        d["menu_items"] = list(self.menu_items)
         return d
+
+
+def _listify(value):
+    if isinstance(value, dict):
+        return {k: _listify(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_listify(v) for v in value]
+    return value
 
 
 def rows_of(raw: bytes) -> list[list[str]]:
@@ -90,6 +137,77 @@ def menu_items(rows: list[list[str]], mode: Mode, mem: ram.Memory) -> tuple[str,
     return tuple(items)
 
 
+# In-battle records (wBattleMon*, wEnemyMon*) are laid out differently from party records:
+# the offsets below are relative to the species byte.
+_BATTLE_OFFSETS = dict(hp=1, status=4, type1=5, type2=6, moves=8, level=14, max_hp=15, pp=25)
+_PARTY_OFFSETS = dict(
+    hp=ram.MON_HP,
+    status=ram.MON_STATUS,
+    type1=ram.MON_TYPE1,
+    type2=ram.MON_TYPE2,
+    moves=ram.MON_MOVES,
+    level=ram.MON_LEVEL,
+    max_hp=ram.MON_MAX_HP,
+    pp=ram.MON_PP,
+)
+
+
+def read_mon(mem: ram.Memory, base: int, nick_addr: int, *, in_battle_layout: bool) -> Mon:
+    off = _BATTLE_OFFSETS if in_battle_layout else _PARTY_OFFSETS
+    t1, t2 = mem[base + off["type1"]], mem[base + off["type2"]]
+    types = (type_name(t1),) if t1 == t2 else (type_name(t1), type_name(t2))
+    moves = []
+    for i in range(4):
+        move_id = mem[base + off["moves"] + i]
+        data = move_data(move_id)
+        if move_id == 0 or data is None:
+            continue
+        moves.append(
+            Move(
+                name=data.name,
+                type=data.type,
+                power=data.power,
+                pp=ram.pp_current(mem[base + off["pp"] + i]),
+                max_pp=data.pp,
+            )
+        )
+    return Mon(
+        name=species_name(mem[base]),
+        nickname=ram.read_name(mem, nick_addr),
+        level=mem[base + off["level"]],
+        types=types,
+        hp=ram.read_u16(mem, base + off["hp"]),
+        max_hp=ram.read_u16(mem, base + off["max_hp"]),
+        status=ram.status_name(mem[base + off["status"]]),
+        moves=tuple(moves),
+    )
+
+
+def read_party(mem: ram.Memory) -> tuple[Mon, ...]:
+    count = min(mem[ram.wPartyCount], 6)
+    return tuple(
+        read_mon(
+            mem,
+            ram.wPartyMons + i * ram.PARTY_MON_SIZE,
+            ram.wPartyMonNicks + i * ram.NAME_LENGTH,
+            in_battle_layout=False,
+        )
+        for i in range(count)
+    )
+
+
+def read_bag(mem: ram.Memory) -> tuple[BagItem, ...]:
+    items = []
+    addr = ram.wBagItems
+    for _ in range(min(mem[ram.wNumBagItems], 20)):
+        item_id = mem[addr]
+        if item_id in (0, ram.BAG_END):  # 0 is an empty slot (a fake or a fresh game), 0xFF the terminator
+            break
+        items.append(BagItem(name=item_name(item_id), quantity=mem[addr + 1]))
+        addr += 2
+    return tuple(items)
+
+
 def snapshot(emu: EmulatorLike) -> GameState:
     mem = emu.mem
     raw = emu.tilemap()
@@ -97,6 +215,17 @@ def snapshot(emu: EmulatorLike) -> GameState:
     in_battle = mem[ram.wIsInBattle] != 0
     mode = detect(rows, in_battle=in_battle, blank=is_blank(raw))
     map_id = mem[ram.wCurMap]
+    party = read_party(mem)
+    battle = active = enemy = active_slot = None
+    if in_battle:
+        kind = "trainer" if mem[ram.wIsInBattle] == 2 else "wild"
+        trainer = trainer_class_name(mem[ram.wTrainerClass]) if kind == "trainer" else None
+        battle = Battle(kind=kind, trainer_class=trainer)
+        active = read_mon(mem, ram.wBattleMonSpecies, ram.wBattleMonNick, in_battle_layout=True)
+        enemy = read_mon(mem, ram.wEnemyMonSpecies, ram.wEnemyMonNick, in_battle_layout=True)
+        active_slot = mem[ram.wPlayerMonNumber]
+        if active_slot >= len(party):
+            active_slot = 0
     return GameState(
         mode=mode,
         map_id=map_id,
@@ -107,8 +236,14 @@ def snapshot(emu: EmulatorLike) -> GameState:
         badges=mem[ram.wObtainedBadges].bit_count(),
         money=ram.bcd_to_int(ram.read_bytes(mem, ram.wPlayerMoney, 3)),
         bag_count=mem[ram.wNumBagItems],
+        bag=read_bag(mem),
         in_battle=in_battle,
         text=dialog_text(rows),
         menu_items=menu_items(rows, mode, mem),
         cursor=mem[ram.wCurrentMenuItem] if mode in (Mode.MENU, Mode.PROMPT) else None,
+        party=party,
+        active=active,
+        active_slot=active_slot,
+        enemy=enemy,
+        battle=battle,
     )

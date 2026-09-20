@@ -10,6 +10,7 @@ def test_addresses_are_the_documented_wram_locations():
     assert ram.wMaxMenuItem == 0xCC28
     assert ram.wFontLoaded == 0xCFC4
     assert ram.wIsInBattle == 0xD057
+    assert ram.wPlayerMonNumber == 0xCC2F
     assert ram.wPlayerName == 0xD158
     assert ram.wPartyCount == 0xD163
     assert ram.wPlayerMoney == 0xD347
@@ -36,3 +37,28 @@ def test_read_tilemap_returns_the_whole_buffer():
     raw = ram.read_tilemap(mem)
     assert len(raw) == 360
     assert raw[0] == 0xED
+
+
+def test_battle_and_party_addresses():
+    assert ram.wBattleMonSpecies == 0xD014 and ram.wBattleMonHP == 0xD015 and ram.wBattleMonPP == 0xD02D
+    assert ram.wEnemyMonSpecies == 0xCFE5 and ram.wEnemyMonHP == 0xCFE6 and ram.wEnemyMonLevel == 0xCFF3
+    assert ram.wPartyMons == 0xD16B and ram.PARTY_MON_SIZE == 0x2C and ram.wPartyMonNicks == 0xD2B5
+    assert (ram.MON_HP, ram.MON_MOVES, ram.MON_PP, ram.MON_LEVEL, ram.MON_MAX_HP) == (1, 8, 29, 33, 34)
+
+
+def test_read_u16_is_big_endian():
+    mem = FakeMemory()
+    mem[0xD015] = 0x01
+    mem[0xD016] = 0x2C
+    assert ram.read_u16(mem, 0xD015) == 300
+
+
+def test_status_name_and_pp_current():
+    assert ram.status_name(0) == "none"
+    assert ram.status_name(0b0000_0011) == "asleep"
+    assert ram.status_name(0b0000_1000) == "poisoned"
+    assert ram.status_name(0b0001_0000) == "burned"
+    assert ram.status_name(0b0010_0000) == "frozen"
+    assert ram.status_name(0b0100_0000) == "paralyzed"
+    assert ram.pp_current(35) == 35
+    assert ram.pp_current(0b1100_0000 | 20) == 20

@@ -16,6 +16,7 @@ def test_no_pyboy_import_without_touching_the_emulator():
         "import jevplays.state.snapshot\n"
         "import jevplays.dashboard.server\n"
         "assert 'pyboy' not in sys.modules, sys.modules.keys()\n"
+        "assert 'typesafe_sdk' not in sys.modules, sys.modules.keys()\n"
         "print('ok', end='')\n"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

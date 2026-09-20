@@ -13,18 +13,26 @@
   </header>
   <main>
     <section class="screen">
-      <img id="screen" width="640" height="576" alt="Game screen">
+      <img id="screen" width="640" height="576" alt="Game screen" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+      <div class="party" id="party"></div>
     </section>
     <section class="panel">
-      <h2>State</h2>
-      <dl id="summary">
-        <dt>Mode</dt><dd id="mode">–</dd>
-        <dt>Map</dt><dd id="map">–</dd>
-        <dt>Text</dt><dd id="text">–</dd>
-        <dt>Menu</dt><dd id="menu">–</dd>
-      </dl>
-      <h2>Raw</h2>
-      <pre id="state">waiting for the first snapshot…</pre>
+      <h2>Decision</h2>
+      <div id="decision" class="decision"><p class="muted">waiting for the first decision…</p></div>
+      <h2>Goal</h2>
+      <p id="goal">–</p>
+      <h2>Log</h2>
+      <ol id="log" class="log"></ol>
+      <details>
+        <summary>State</summary>
+        <dl id="summary">
+          <dt>Mode</dt><dd id="mode">–</dd>
+          <dt>Map</dt><dd id="map">–</dd>
+          <dt>Text</dt><dd id="text">–</dd>
+          <dt>Menu</dt><dd id="menu">–</dd>
+        </dl>
+        <pre id="state">waiting for the first snapshot…</pre>
+      </details>
     </section>
   </main>
   <script type="module" src="/static/app.js"></script>

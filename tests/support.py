@@ -1,6 +1,21 @@
 """Fakes shared by the unit tests. Nothing here imports pyboy."""
 
-from jevplays.emulator.ram import TILEMAP_HEIGHT, TILEMAP_SIZE, TILEMAP_WIDTH, wTileMap
+from jevplays.emulator.ram import (
+    MON_HP,
+    MON_LEVEL,
+    MON_MAX_HP,
+    MON_MOVES,
+    MON_PP,
+    MON_STATUS,
+    MON_TYPE1,
+    MON_TYPE2,
+    TILEMAP_HEIGHT,
+    TILEMAP_SIZE,
+    TILEMAP_WIDTH,
+    wTileMap,
+    wXCoord,
+    wYCoord,
+)
 from jevplays.emulator.text import NON_TEXT, encode
 
 
@@ -56,6 +71,8 @@ class FakeEmulator:
         self.mem = FakeMemory()
         self.presses: list[str] = []
         self.frames = 0
+        self.grid = [[1] * 10 for _ in range(9)]
+        self.step_effects = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
         self.set_rows([])
 
     def set_rows(self, lines: list[str]) -> None:
@@ -68,9 +85,66 @@ class FakeEmulator:
         self.frames += frames
         return frames
 
+    def collision(self) -> list[list[int]]:
+        return [row[:] for row in self.grid]
+
     def press(self, button: str, *, hold: int = 8, settle: int = 8) -> int:
         self.presses.append(button)
+        if button in self.step_effects:
+            dx, dy = self.step_effects[button]
+            self.mem[wXCoord] = self.mem[wXCoord] + dx
+            self.mem[wYCoord] = self.mem[wYCoord] + dy
         return self.tick(hold + settle)
 
     def frame_jpeg(self, quality: int = 80) -> bytes:
         return b"\xff\xd8fake"
+
+
+def write_mon(
+    mem,
+    base,
+    nick_addr,
+    *,
+    species,
+    level,
+    hp,
+    max_hp,
+    types,
+    moves,
+    pps,
+    status=0,
+    nickname=None,
+    layout="party",
+):
+    """Write a Pokémon record. layout "party" uses the 0x2C party offsets; "battle" uses the
+    in-battle record offsets relative to its species byte (HP at +1, status +4, types +5/+6,
+    moves +8, level +14, max HP +15, PP +25) — see ram.py for why the two differ."""
+    from jevplays.emulator.text import TERMINATOR
+
+    if layout == "party":
+        off = dict(
+            hp=MON_HP,
+            status=MON_STATUS,
+            t1=MON_TYPE1,
+            t2=MON_TYPE2,
+            moves=MON_MOVES,
+            pp=MON_PP,
+            level=MON_LEVEL,
+            max_hp=MON_MAX_HP,
+        )
+    else:
+        off = dict(hp=1, status=4, t1=5, t2=6, moves=8, pp=25, level=14, max_hp=15)
+    mem[base] = species
+    mem[base + off["hp"]] = hp >> 8
+    mem[base + off["hp"] + 1] = hp & 0xFF
+    mem[base + off["status"]] = status
+    mem[base + off["t1"]] = types[0]
+    mem[base + off["t2"]] = types[1] if len(types) > 1 else types[0]
+    for i in range(4):
+        mem[base + off["moves"] + i] = moves[i] if i < len(moves) else 0
+        mem[base + off["pp"] + i] = pps[i] if i < len(pps) else 0
+    mem[base + off["level"]] = level
+    mem[base + off["max_hp"]] = max_hp >> 8
+    mem[base + off["max_hp"] + 1] = max_hp & 0xFF
+    name = encode(nickname or "MON") + [TERMINATOR]
+    mem[nick_addr : nick_addr + len(name)] = name
