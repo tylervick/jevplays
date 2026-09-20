@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jev plays Pokémon</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Jev plays Pokémon</h1>
+    <span id="status" class="status" data-status="stopped">stopped</span>
+  </header>
+  <main>
+    <section class="screen">
+      <img id="screen" width="640" height="576" alt="Game screen">
+    </section>
+    <section class="panel">
+      <h2>State</h2>
+      <dl id="summary">
+        <dt>Mode</dt><dd id="mode">–</dd>
+        <dt>Map</dt><dd id="map">–</dd>
+        <dt>Text</dt><dd id="text">–</dd>
+        <dt>Menu</dt><dd id="menu">–</dd>
+      </dl>
+      <h2>Raw</h2>
+      <pre id="state">waiting for the first snapshot…</pre>
+    </section>
+  </main>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
