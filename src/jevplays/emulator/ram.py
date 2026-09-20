@@ -71,3 +71,67 @@ def read_name(mem: Memory, addr: int) -> str:
 
 def read_tilemap(mem: Memory) -> bytes:
     return read_bytes(mem, wTileMap, TILEMAP_SIZE)
+
+
+# The two Pokémon in a battle. Ours is a copy of the party slot that is out; the enemy's is
+# built when the battle starts. Both use the same in-battle record layout.
+wEnemyMonNick = 0xCFDA
+wEnemyMonSpecies = 0xCFE5
+wEnemyMonHP = 0xCFE6  # u16
+wEnemyMonStatus = 0xCFE9
+wEnemyMonType1 = 0xCFEA
+wEnemyMonType2 = 0xCFEB
+wEnemyMonMoves = 0xCFED  # 4 bytes
+wEnemyMonLevel = 0xCFF3
+wEnemyMonMaxHP = 0xCFF4  # u16
+wBattleMonNick = 0xD009
+wBattleMonSpecies = 0xD014
+wBattleMonHP = 0xD015  # u16
+wBattleMonStatus = 0xD018
+wBattleMonType1 = 0xD019
+wBattleMonType2 = 0xD01A
+wBattleMonMoves = 0xD01C  # 4 bytes
+wBattleMonLevel = 0xD022
+wBattleMonMaxHP = 0xD023  # u16
+wBattleMonPP = 0xD02D  # 4 bytes
+wTrainerClass = 0xD031
+
+# Party records, 0x2C bytes each, six slots. Offsets within a record:
+wPartyMons = 0xD16B
+PARTY_MON_SIZE = 0x2C
+MON_SPECIES = 0
+MON_HP = 1  # u16
+MON_STATUS = 4
+MON_TYPE1 = 5
+MON_TYPE2 = 6
+MON_MOVES = 8  # 4 bytes
+MON_PP = 29  # 4 bytes; low 6 bits are current PP, top 2 bits PP Ups used
+MON_LEVEL = 33
+MON_MAX_HP = 34  # u16
+wPartyMonNicks = 0xD2B5  # NAME_LENGTH bytes each
+
+BAG_END = 0xFF
+"""Terminates the (item id, quantity) pairs at wBagItems."""
+
+
+def read_u16(mem: Memory, addr: int) -> int:
+    return (mem[addr] << 8) | mem[addr + 1]
+
+
+def status_name(status: int) -> str:
+    """The Gen 1 status byte: bits 0-2 sleep turns, 3 poison, 4 burn, 5 freeze, 6 paralysis."""
+    if status & 0b0000_0111:
+        return "asleep"
+    if status & 0b0000_1000:
+        return "poisoned"
+    if status & 0b0001_0000:
+        return "burned"
+    if status & 0b0010_0000:
+        return "frozen"
+    if status & 0b0100_0000:
+        return "paralyzed"
+    return "none"
+
+
+def pp_current(pp: int) -> int:
+    return pp & 0b0011_1111
