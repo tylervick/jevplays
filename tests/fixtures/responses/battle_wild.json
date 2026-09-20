@@ -1,0 +1,184 @@
+{
+  "state": {
+    "mode": "battle_menu",
+    "map_id": 12,
+    "map": "Route 1",
+    "tile": [
+      9,
+      28
+    ],
+    "player_name": "RED",
+    "party_count": 1,
+    "badges": 0,
+    "money": 3175,
+    "bag_count": 0,
+    "bag": [],
+    "in_battle": true,
+    "text": "▶FIGHT PKMN ITEM  RUN",
+    "menu_items": [],
+    "cursor": null,
+    "party": [
+      {
+        "name": "CHARMANDER",
+        "nickname": "CHARMANDER",
+        "level": 6,
+        "types": [
+          "Fire"
+        ],
+        "hp": 22,
+        "max_hp": 22,
+        "status": "none",
+        "moves": [
+          {
+            "name": "SCRATCH",
+            "type": "Normal",
+            "power": 40,
+            "pp": 35,
+            "max_pp": 35
+          },
+          {
+            "name": "GROWL",
+            "type": "Normal",
+            "power": 0,
+            "pp": 40,
+            "max_pp": 40
+          }
+        ]
+      }
+    ],
+    "active": {
+      "name": "CHARMANDER",
+      "nickname": "CHARMANDER",
+      "level": 6,
+      "types": [
+        "Fire"
+      ],
+      "hp": 22,
+      "max_hp": 22,
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "power": 40,
+          "pp": 35,
+          "max_pp": 35
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "power": 0,
+          "pp": 40,
+          "max_pp": 40
+        }
+      ]
+    },
+    "enemy": {
+      "name": "PIDGEY",
+      "nickname": "PIDGEY",
+      "level": 2,
+      "types": [
+        "Normal",
+        "Flying"
+      ],
+      "hp": 14,
+      "max_hp": 14,
+      "status": "none",
+      "moves": [
+        {
+          "name": "GUST",
+          "type": "Normal",
+          "power": 40,
+          "pp": 35,
+          "max_pp": 35
+        }
+      ]
+    },
+    "battle": {
+      "kind": "wild",
+      "trainer_class": null
+    }
+  },
+  "state_json": {
+    "our_pokemon": {
+      "name": "CHARMANDER",
+      "level": 6,
+      "types": [
+        "Fire"
+      ],
+      "hp": "full",
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "kind": "attack",
+          "power": "weak",
+          "pp": "plenty"
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "kind": "status",
+          "power": "none",
+          "pp": "plenty"
+        }
+      ]
+    },
+    "enemy_pokemon": {
+      "name": "PIDGEY",
+      "level": 2,
+      "types": [
+        "Normal",
+        "Flying"
+      ],
+      "hp": "full"
+    },
+    "battle": {
+      "kind": "wild"
+    },
+    "bench": [],
+    "bag": {
+      "poke_balls": false,
+      "potions": false
+    },
+    "goal": "Win the first battle"
+  },
+  "questions": {
+    "move": {
+      "type": "choice",
+      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon?",
+      "criteria": {
+        "SCRATCH": "Normal-type attack, weak power",
+        "GROWL": "Normal-type status, none power"
+      }
+    },
+    "run": {
+      "type": "noul",
+      "instructions": "Should we run from this wild battle rather than fight it?"
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 609,
+      "output_tokens": 54
+    },
+    "answers": {
+      "move": {
+        "type": "choice",
+        "choice": "SCRATCH",
+        "confidence": 0.97,
+        "probabilities": {
+          "SCRATCH": 0.99,
+          "GROWL": 0.01
+        }
+      },
+      "run": {
+        "type": "noul",
+        "noul": 0.12
+      }
+    }
+  },
+  "latency_ms": 132
+}

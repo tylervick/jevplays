@@ -1,0 +1,181 @@
+{
+  "state": {
+    "mode": "battle_menu",
+    "map_id": 40,
+    "map": "Oak's Lab",
+    "tile": [
+      5,
+      6
+    ],
+    "player_name": "RED",
+    "party_count": 1,
+    "badges": 0,
+    "money": 3000,
+    "bag_count": 0,
+    "bag": [],
+    "in_battle": true,
+    "text": "▶FIGHT PKMN ITEM  RUN",
+    "menu_items": [],
+    "cursor": null,
+    "party": [
+      {
+        "name": "CHARMANDER",
+        "nickname": "CHARMANDER",
+        "level": 5,
+        "types": [
+          "Fire"
+        ],
+        "hp": 20,
+        "max_hp": 20,
+        "status": "none",
+        "moves": [
+          {
+            "name": "SCRATCH",
+            "type": "Normal",
+            "power": 40,
+            "pp": 35,
+            "max_pp": 35
+          },
+          {
+            "name": "GROWL",
+            "type": "Normal",
+            "power": 0,
+            "pp": 40,
+            "max_pp": 40
+          }
+        ]
+      }
+    ],
+    "active": {
+      "name": "CHARMANDER",
+      "nickname": "CHARMANDER",
+      "level": 5,
+      "types": [
+        "Fire"
+      ],
+      "hp": 20,
+      "max_hp": 20,
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "power": 40,
+          "pp": 35,
+          "max_pp": 35
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "power": 0,
+          "pp": 40,
+          "max_pp": 40
+        }
+      ]
+    },
+    "enemy": {
+      "name": "SQUIRTLE",
+      "nickname": "SQUIRTLE",
+      "level": 5,
+      "types": [
+        "Water"
+      ],
+      "hp": 20,
+      "max_hp": 20,
+      "status": "none",
+      "moves": [
+        {
+          "name": "TACKLE",
+          "type": "Normal",
+          "power": 35,
+          "pp": 35,
+          "max_pp": 35
+        },
+        {
+          "name": "TAIL WHIP",
+          "type": "Normal",
+          "power": 0,
+          "pp": 30,
+          "max_pp": 30
+        }
+      ]
+    },
+    "battle": {
+      "kind": "trainer",
+      "trainer_class": "RIVAL1"
+    }
+  },
+  "state_json": {
+    "our_pokemon": {
+      "name": "CHARMANDER",
+      "level": 5,
+      "types": [
+        "Fire"
+      ],
+      "hp": "full",
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "kind": "attack",
+          "power": "weak",
+          "pp": "plenty"
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "kind": "status",
+          "power": "none",
+          "pp": "plenty"
+        }
+      ]
+    },
+    "enemy_pokemon": {
+      "name": "SQUIRTLE",
+      "level": 5,
+      "types": [
+        "Water"
+      ],
+      "hp": "full"
+    },
+    "battle": {
+      "kind": "trainer"
+    },
+    "bench": [],
+    "bag": {
+      "poke_balls": false,
+      "potions": false
+    },
+    "goal": "Win the first battle"
+  },
+  "questions": {
+    "move": {
+      "type": "choice",
+      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon?",
+      "criteria": {
+        "SCRATCH": "Normal-type attack, weak power",
+        "GROWL": "Normal-type status, none power"
+      }
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 587,
+      "output_tokens": 37
+    },
+    "answers": {
+      "move": {
+        "type": "choice",
+        "choice": "SCRATCH",
+        "confidence": 0.89,
+        "probabilities": {
+          "SCRATCH": 0.95,
+          "GROWL": 0.05
+        }
+      }
+    }
+  },
+  "latency_ms": 332
+}
