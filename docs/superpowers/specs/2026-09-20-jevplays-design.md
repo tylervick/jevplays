@@ -310,7 +310,8 @@ to `OVERWORLD`, sees the navigator is busy, and resumes.
 The loop pushes four event types, each a JSON object with a `type` field:
 
 - `frame`: JPEG bytes base64, at most 15 per second.
-- `state`: the `GameState` minus `tile`, on every loop iteration where it changed.
+- `state`: the `GameState`, including `tile` for the dashboard's debugging readout (`tile` is
+  never part of what the brain sends to Jev), on every loop iteration where it changed.
 - `decision`: the full `Decision` record.
 - `status`: `running | waiting_for_api | paused | stopped` with a message.
 
