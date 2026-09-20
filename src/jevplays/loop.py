@@ -15,7 +15,7 @@ from itertools import count
 from time import monotonic
 
 from jevplays.brain.battle import battle_questions, battle_state, decide_battle
-from jevplays.brain.decision import Decision
+from jevplays.brain.decision import BattleAction, Decision
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.dashboard.events import decision_event, frame_event, state_event, status_event
 from jevplays.executor import battle as battle_macros
@@ -48,6 +48,10 @@ class Loop:
         self.brain = brain
         self.decisions: list[Decision] = []
         self._backoff = min(1.0, self.config.backoff_max)
+        self._hold: tuple[Mode, str] | None = None
+        """Set after a macro fails twice and the safe default fails too: (mode, decision id) to
+        wait out until the screen changes, so the loop stops asking the brain about a decision
+        it cannot carry out."""
 
     async def advance(self, state: GameState) -> int:
         """Move the game forward one step for the current mode. Returns emulated frames spent."""
@@ -60,6 +64,8 @@ class Loop:
         return self.emu.tick(self.config.idle_frames)
 
     async def _battle_turn(self, state: GameState) -> int:
+        if self._hold is not None and state.mode == self._hold[0]:
+            return self.emu.tick(self.config.idle_frames)
         sj = battle_state(state, goal=self.config.goal)
         questions = battle_questions(sj)
         try:
@@ -89,27 +95,44 @@ class Loop:
         try:
             battle_macros.apply(self.emu, decision.action_value)
         except MacroError as error:
-            return await self._retry_after_macro_error(decision, error)
+            return await self._retry_after_macro_error(decision, error, state)
         await self.broadcaster.publish(status_event("running", decision.action))
         return self.emu.tick(30)
 
-    async def _retry_after_macro_error(self, decision: Decision, error: MacroError) -> int:
+    async def _retry_after_macro_error(self, decision: Decision, error: MacroError, state: GameState) -> int:
         """A macro can fail mid-way (e.g. a move fell out of the list between snapshot and
         press). Retry once: back out with B, and if we are still at the battle menu, try the
         same decision again. A second failure means the decision could not be carried out at
-        all, so the record is corrected and re-published rather than silently pressing on."""
+        all, so we fall through to `_after_second_failure` rather than silently pressing on."""
         await self.broadcaster.publish(status_event("running", f"macro failed: {error}; retrying once"))
         frames = self.emu.press("b", settle=20)
         retry_state = snapshot(self.emu)
         if retry_state.mode is Mode.BATTLE_MENU:
             try:
                 battle_macros.apply(self.emu, decision.action_value)
-            except MacroError as second_error:
-                decision.fallback = True
-                decision.fallback_reason = f"macro failed twice: {second_error}"
-                await self.broadcaster.publish(decision_event(decision))
-                await self.broadcaster.publish(status_event("running", "macro failed; pressed B"))
+            except MacroError:
+                return await self._after_second_failure(decision, state)
         return frames
+
+    async def _after_second_failure(self, decision: Decision, state: GameState) -> int:
+        """The decision could not be carried out twice in a row. Try the safe default -- the
+        first usable move -- once; if even that fails, back out and hold at this mode instead of
+        asking the brain again about a screen it cannot act on."""
+        moves = decision.state_summary["our_pokemon"]["moves"]
+        first = next((m["name"] for m in moves if m["pp"] != "out"), moves[0]["name"])
+        try:
+            battle_macros.apply(self.emu, BattleAction(kind="move", move=first))
+        except MacroError:
+            frames = self.emu.press("b", settle=20)
+            self._hold = (state.mode, decision.id)
+            await self.broadcaster.publish(
+                status_event("paused", "macro failed; waiting for the screen to change")
+            )
+            return frames
+        await self.broadcaster.publish(
+            status_event("running", "macro failed twice; used the first move instead")
+        )
+        return self.emu.tick(30)
 
     async def run(self, max_iterations: int | None = None) -> None:
         started = monotonic()
@@ -120,6 +143,8 @@ class Loop:
             if max_iterations is not None and i >= max_iterations:
                 return
             state = snapshot(self.emu)
+            if self._hold is not None and state.mode != self._hold[0]:
+                self._hold = None
             if state != last_state:
                 await self.broadcaster.publish(state_event(state))
                 last_state = state

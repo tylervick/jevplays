@@ -190,9 +190,9 @@ def test_without_a_brain_the_battle_menu_idles():
     assert emu.presses == [] and emu.frames >= 9
 
 
-def test_macro_error_retries_once_then_falls_back_and_presses_b():
-    """A controller ruling beyond the brief: on MacroError, retry select_move once (settle-B,
-    re-snapshot, re-apply); if it fails again, mark the decision's fallback and re-publish it."""
+def test_macro_error_retries_once_then_tries_the_safe_default_then_pauses():
+    """On MacroError, retry once (settle-B, re-snapshot, re-apply); if it fails again, try the
+    safe default (the first usable move) once; if that also fails, back out and hold."""
     emu = battle_emu()
 
     def press(button, **kw):
@@ -206,10 +206,34 @@ def test_macro_error_retries_once_then_falls_back_and_presses_b():
     asyncio.run(loop.run(max_iterations=1))
 
     assert brain.calls == 1
-    # select_command(FIGHT) presses "a", then select_move fails 4x "down" + a "b" -- twice
-    # (once per apply attempt), plus the loop's own settling "b" press after the second failure.
-    assert emu.presses.count("b") == 3
+    # select_command(FIGHT) presses "a" then select_move fails immediately with "b", three times
+    # (the original attempt, the retry, and the safe-default attempt), plus the loop's own
+    # settling "b" press after the retry and again after the safe default also fails.
+    assert emu.presses == ["a", "b", "b", "a", "b", "a", "b", "b"]
     decisions = [e["decision"] for e in bc.events if e["type"] == "decision"]
-    assert len(decisions) == 2
-    assert decisions[-1]["fallback"] is True
-    assert "twice" in decisions[-1]["fallback_reason"]
+    assert len(decisions) == 1  # no fallback re-publish; the loop holds instead
+    statuses = [e for e in bc.events if e["type"] == "status"]
+    assert statuses[-1]["status"] == "paused"
+    assert loop._hold is not None
+
+
+def test_a_macro_that_keeps_failing_holds_instead_of_re_asking():
+    """Once the safe default also fails, the loop holds at that mode instead of asking the brain
+    again on every subsequent iteration."""
+    emu = battle_emu()
+
+    def press(button, **kw):
+        emu.presses.append(button)
+        return emu.tick(kw.get("hold", 8) + kw.get("settle", 8))
+
+    emu.press = press  # move list never appears, so every select_move fails
+    bc = RecordingBroadcaster()
+    brain = FakeBrain(response=RESPONSE)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    asyncio.run(loop.run(max_iterations=4))
+
+    assert brain.calls == 1
+    statuses = [e for e in bc.events if e["type"] == "status"]
+    assert statuses[-1]["status"] == "paused"
+    decisions = [e for e in bc.events if e["type"] == "decision"]
+    assert len(decisions) == 1  # no further decision events after the fallback re-publish
