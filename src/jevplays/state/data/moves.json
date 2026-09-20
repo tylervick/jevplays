@@ -15,7 +15,7 @@
 "name": "TELEPORT",
 "power": 0,
 "pp": 20,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "101": {
 "name": "NIGHT SHADE",
@@ -93,13 +93,13 @@
 "name": "BARRIER",
 "power": 0,
 "pp": 30,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "113": {
 "name": "LIGHT SCREEN",
 "power": 0,
 "pp": 30,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "114": {
 "name": "HAZE",
@@ -111,7 +111,7 @@
 "name": "REFLECT",
 "power": 0,
 "pp": 20,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "116": {
 "name": "FOCUS ENERGY",
@@ -231,13 +231,13 @@
 "name": "AMNESIA",
 "power": 0,
 "pp": 20,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "134": {
 "name": "KINESIS",
 "power": 0,
 "pp": 15,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "135": {
 "name": "SOFTBOILED",
@@ -261,7 +261,7 @@
 "name": "DREAM EATER",
 "power": 100,
 "pp": 15,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "139": {
 "name": "POISON GAS",
@@ -333,7 +333,7 @@
 "name": "PSYWAVE",
 "power": 1,
 "pp": 15,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "15": {
 "name": "CUT",
@@ -381,7 +381,7 @@
 "name": "REST",
 "power": 0,
 "pp": 10,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "157": {
 "name": "ROCK SLIDE",
@@ -735,7 +735,7 @@
 "name": "PSYBEAM",
 "power": 65,
 "pp": 20,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "61": {
 "name": "BUBBLEBEAM",
@@ -951,31 +951,31 @@
 "name": "CONFUSION",
 "power": 50,
 "pp": 25,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "94": {
 "name": "PSYCHIC M",
 "power": 90,
 "pp": 10,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "95": {
 "name": "HYPNOSIS",
 "power": 0,
 "pp": 20,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "96": {
 "name": "MEDITATE",
 "power": 0,
 "pp": 40,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "97": {
 "name": "AGILITY",
 "power": 0,
 "pp": 30,
-"type": "Psychic_Type"
+"type": "Psychic"
 },
 "98": {
 "name": "QUICK ATTACK",
