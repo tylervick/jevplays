@@ -2418,6 +2418,8 @@ Section 6: after the `GameState` block, replace "Buckets are computed in code fr
 
 Section 14, milestone 2: add "and the executor's window pathfinder (`executor/navigate.py`), delivered early because the save-state script needs to reach a battle; milestone 3 adds the waypoint graph on top of it". Milestone 3: remove "A* inside the visible collision window" from its list (it now exists) and keep the waypoint maps, goals, prompts, menus, logging, replay.
 
+Section 10, the dashboard layout paragraph: change "The action taken, in words, under the bars." to "The action taken, in words, as the panel's headline above the bars, so a viewer reads the outcome first." and change the "Below:" sentence so the party strip sits under the game screen in the left column ("Under the screen: a party strip (nickname, level, HP bar in the bucket's colour)") while the goal and the decision log stay below the decision panel on the right. These match what shipped and were ruled during review.
+
 Section 8.1, after the policy list: "Milestone 2 executes `move` and `run`; `heal`, `catch`, and `switch` are asked and recorded but fall back to the move answer with `fallback` set until their macros land (milestone 4)."
 
 - [ ] **Step 2: Update README and CLAUDE.md**
