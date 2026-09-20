@@ -76,6 +76,8 @@ class GameState:
     party: tuple[Mon, ...]
     active: Mon | None
     """The battle Pokémon while in battle."""
+    active_slot: int | None
+    """Index into `party` of the Pokémon currently out in battle. None outside battle."""
     enemy: Mon | None
     battle: Battle | None
 
@@ -214,13 +216,16 @@ def snapshot(emu: EmulatorLike) -> GameState:
     mode = detect(rows, in_battle=in_battle, blank=is_blank(raw))
     map_id = mem[ram.wCurMap]
     party = read_party(mem)
-    battle = active = enemy = None
+    battle = active = enemy = active_slot = None
     if in_battle:
         kind = "trainer" if mem[ram.wIsInBattle] == 2 else "wild"
         trainer = trainer_class_name(mem[ram.wTrainerClass]) if kind == "trainer" else None
         battle = Battle(kind=kind, trainer_class=trainer)
         active = read_mon(mem, ram.wBattleMonSpecies, ram.wBattleMonNick, in_battle_layout=True)
         enemy = read_mon(mem, ram.wEnemyMonSpecies, ram.wEnemyMonNick, in_battle_layout=True)
+        active_slot = mem[ram.wPlayerMonNumber]
+        if active_slot >= len(party):
+            active_slot = 0
     return GameState(
         mode=mode,
         map_id=map_id,
@@ -238,6 +243,7 @@ def snapshot(emu: EmulatorLike) -> GameState:
         cursor=mem[ram.wCurrentMenuItem] if mode in (Mode.MENU, Mode.PROMPT) else None,
         party=party,
         active=active,
+        active_slot=active_slot,
         enemy=enemy,
         battle=battle,
     )

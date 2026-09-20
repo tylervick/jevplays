@@ -32,6 +32,7 @@ def test_snapshot_in_the_overworld():
     assert state.text == ""
     assert state.menu_items == ()
     assert state.cursor is None
+    assert state.active_slot is None
 
 
 def test_snapshot_reads_menu_items_and_cursor():
@@ -206,12 +207,14 @@ def test_battle_fields_when_in_a_trainer_battle():
     charmander(emu, in_battle=True)
     emu.mem[ram.wIsInBattle] = 2
     emu.mem[ram.wTrainerClass] = 25
+    emu.mem[ram.wPlayerMonNumber] = 0
     emu.set_rows([""] * 14 + ["·       ·▶FIGHT PK·", "", "·       · ITEM RUN·"])
     state = snapshot(emu)
     assert state.mode is Mode.BATTLE_MENU
     assert state.battle == Battle(kind="trainer", trainer_class="RIVAL1")
     assert state.active.hp == 12 and state.active.moves[0].pp == 34
     assert state.enemy.name == "SQUIRTLE" and state.enemy.types == ("Water",)
+    assert state.active_slot == 0
 
 
 def test_wild_battle_has_no_trainer():
@@ -219,7 +222,10 @@ def test_wild_battle_has_no_trainer():
     bedroom(emu)
     charmander(emu, in_battle=True)
     emu.mem[ram.wIsInBattle] = 1
-    assert snapshot(emu).battle == Battle(kind="wild", trainer_class=None)
+    emu.mem[ram.wPlayerMonNumber] = 0
+    state = snapshot(emu)
+    assert state.battle == Battle(kind="wild", trainer_class=None)
+    assert state.active_slot == 0
 
 
 def test_bag_items_are_parsed_until_the_terminator():

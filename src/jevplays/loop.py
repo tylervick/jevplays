@@ -76,7 +76,6 @@ class Loop:
             return 0
         self._backoff = min(1.0, self.config.backoff_max)
         decision = decide_battle(
-            state,
             sj,
             questions,
             response,

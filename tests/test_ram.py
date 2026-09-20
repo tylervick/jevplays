@@ -10,6 +10,7 @@ def test_addresses_are_the_documented_wram_locations():
     assert ram.wMaxMenuItem == 0xCC28
     assert ram.wFontLoaded == 0xCFC4
     assert ram.wIsInBattle == 0xD057
+    assert ram.wPlayerMonNumber == 0xCC2F
     assert ram.wPlayerName == 0xD158
     assert ram.wPartyCount == 0xD163
     assert ram.wPlayerMoney == 0xD347

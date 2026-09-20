@@ -32,6 +32,8 @@ wFontLoaded = 0xCFC4
 # 0 outside battle, 1 in a wild battle, 2 in a trainer battle.
 wIsInBattle = 0xD057
 
+wPlayerMonNumber = 0xCC2F  # index of the party slot currently out in battle
+
 wPlayerName = 0xD158
 NAME_LENGTH = 11  # 10 characters plus the terminator
 

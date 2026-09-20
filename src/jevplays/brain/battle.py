@@ -33,9 +33,7 @@ def _mon(mon: Mon, *, with_moves: bool) -> dict:
 
 def battle_state(state: GameState, goal: str) -> dict:
     assert state.active is not None and state.enemy is not None and state.battle is not None
-    bench = [
-        m for m in state.party if not (m.nickname == state.active.nickname and m.name == state.active.name)
-    ]
+    bench = [m for i, m in enumerate(state.party) if i != state.active_slot]
     return {
         "our_pokemon": _mon(state.active, with_moves=True),
         "enemy_pokemon": _mon(state.enemy, with_moves=False),
@@ -120,7 +118,6 @@ def _answer_record(a: dict) -> dict:
 
 
 def decide_battle(
-    state: GameState,
     sj: dict,
     questions: dict,
     response: dict,

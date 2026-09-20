@@ -40,6 +40,16 @@ BULBASAUR = Mon(
     status="none",
     moves=(),
 )
+CHARMANDER_TWIN = Mon(
+    name="CHARMANDER",
+    nickname="CHARMANDER",
+    level=8,
+    types=("Fire",),
+    hp=23,
+    max_hp=23,
+    status="none",
+    moves=(SCRATCH, GROWL, EMBER),
+)
 
 
 def make_state(*, kind="wild", bench=(), bag=()):
@@ -59,6 +69,7 @@ def make_state(*, kind="wild", bench=(), bag=()):
         cursor=None,
         party=(CHARMANDER, *bench),
         active=CHARMANDER,
+        active_slot=0,
         enemy=BULBASAUR,
         battle=Battle(kind=kind, trainer_class=None if kind == "wild" else "RIVAL1"),
         bag=tuple(bag),
@@ -108,6 +119,12 @@ def test_questions_include_only_what_can_apply():
     assert list(trainer_full["switch_to"]["criteria"]) == ["PIDGEY"]
 
 
+def test_bench_keeps_a_same_species_twin():
+    s = battle_state(make_state(bench=(CHARMANDER_TWIN,)), goal="g")
+    assert len(s["bench"]) == 1
+    assert s["bench"][0]["name"] == "CHARMANDER"
+
+
 def answers(**kw):
     out = {}
     for k, v in kw.items():
@@ -155,7 +172,7 @@ def test_decide_battle_marks_applied_answers_and_falls_back_for_unsupported_acti
         "usage": {"input_tokens": 700, "output_tokens": 50},
         "answers": answers(move={"SCRATCH": 0.7, "GROWL": 0.3}, switch=0.9, switch_to={"PIDGEY": 1.0}),
     }
-    d = decide_battle(state, sj, qs, response, model="jev-1.13.0", input_tokens=700, latency_ms=400)
+    d = decide_battle(sj, qs, response, model="jev-1.13.0", input_tokens=700, latency_ms=400)
     assert d.kind == "battle" and d.model == "jev-1.13.0" and d.input_tokens == 700 and d.latency_ms == 400
     assert d.fallback is True and "switch" in d.fallback_reason
     assert d.action == "use SCRATCH"
@@ -177,6 +194,6 @@ def test_decide_battle_plain_move():
         "usage": {"input_tokens": 1, "output_tokens": 1},
         "answers": answers(move={"SCRATCH": 0.6, "GROWL": 0.4}, run=0.1),
     }
-    d = decide_battle(state, sj, qs, response, model="m", input_tokens=1, latency_ms=1)
+    d = decide_battle(sj, qs, response, model="m", input_tokens=1, latency_ms=1)
     assert d.fallback is False and d.action == "use SCRATCH"
     assert d.answers["run"]["applied"] is False

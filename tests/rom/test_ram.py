@@ -57,6 +57,7 @@ def test_trainer_battle_addresses(rom, state_path):
         m = emu.mem
         assert m[ram.wIsInBattle] == 2
         assert m[ram.wTrainerClass] == 25  # RIVAL1
+        assert m[ram.wPlayerMonNumber] == 0
         assert m[ram.wBattleMonSpecies] == 176 and m[ram.wEnemyMonSpecies] == 177
         slot = ram.wPartyMons
         max_hp = ram.read_u16(m, ram.wBattleMonMaxHP)
