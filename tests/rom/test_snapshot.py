@@ -12,6 +12,10 @@ from jevplays.state.snapshot import snapshot
         ("dialog", Mode.DIALOG),
         ("menu", Mode.MENU),
         ("prompt", Mode.PROMPT),
+        ("battle_trainer", Mode.BATTLE_MENU),
+        ("battle_wild", Mode.BATTLE_MENU),
+        ("battle_wait", Mode.BATTLE_WAIT),
+        ("route1", Mode.OVERWORLD),
     ],
 )
 def test_each_saved_state_is_detected_as_its_mode(rom, state_path, name, mode):
