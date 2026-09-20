@@ -56,6 +56,13 @@ def test_select_move_fails_closed_when_the_move_is_missing():
     assert emu.presses[-1] == "b"
 
 
+def test_moves_on_growl_select_scratch():
+    """When the cursor starts below the target move, select_move presses up, not down."""
+    emu = ScriptedEmulator([MOVES_GROWL, MOVES, MOVES])
+    select_move(emu, "SCRATCH")
+    assert emu.presses == ["up", "a"]
+
+
 def test_apply_move_goes_through_fight():
     emu = ScriptedEmulator([MENU, MOVES, MOVES, MOVES])
     apply(emu, BattleAction(kind="move", move="SCRATCH"))

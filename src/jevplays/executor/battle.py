@@ -1,12 +1,16 @@
 """Button macros for the battle screens. Every A is preceded by reading the cursor's label."""
 
 from jevplays.brain.decision import BattleAction
+from jevplays.emulator.text import CURSOR, NON_TEXT, row_text
 from jevplays.executor.dialog import cursor_label
 from jevplays.state.snapshot import rows_of
 
 COMMANDS = {"FIGHT": (0, 0), "PKMN": (0, 1), "ITEM": (1, 0), "RUN": (1, 1)}
 """(row, column) of each command in the 2x2 battle menu. The PKMN command is drawn as the two
 glyph tiles PK and MN, which decode to "PK" and "MN" and join as "PKMN"."""
+
+MOVE_ROWS = (13, 14, 15, 16)
+"""The four move slots on the FIGHT screen, top to bottom."""
 
 
 class MacroError(RuntimeError):
@@ -37,15 +41,25 @@ def select_command(emu, label: str) -> None:
     raise MacroError(f"could not reach {label!r}")
 
 
+def _move_row_label(row: list[str]) -> str:
+    return row_text(row).strip(" " + NON_TEXT + CURSOR)
+
+
 def select_move(emu, name: str) -> None:
-    for _ in range(4):
-        current = _label(emu)
-        if current == name:
-            emu.press("a", settle=20)
-            return
-        emu.press("down", settle=16)
-    emu.press("b", settle=20)
-    raise MacroError(f"move {name!r} is not in the list")
+    rows = rows_of(emu.tilemap())
+    slots = [_move_row_label(rows[r]) for r in MOVE_ROWS]
+    if name not in slots:
+        emu.press("b", settle=20)
+        raise MacroError(f"move {name!r} is not in the list")
+    i = slots.index(name)
+    c = next(k for k, r in enumerate(MOVE_ROWS) if CURSOR in rows[r])
+    button = "down" if i > c else "up"
+    for _ in range(abs(i - c)):
+        emu.press(button, settle=16)
+    if _label(emu) != name:
+        emu.press("b", settle=20)
+        raise MacroError(f"move {name!r} is not in the list")
+    emu.press("a", settle=20)
 
 
 def run_away(emu) -> None:
