@@ -70,5 +70,12 @@ class Emulator:
             self._py.load_state(f)
         self.tick(1)
 
+    def collision(self) -> list[list[int]]:
+        """Walkable map of the visible screen as 9 rows x 10 columns of 16x16 blocks; the player
+        stands at row 4, column 4. 1 is walkable. PyBoy's Gen 1 wrapper derives it from the
+        tileset's collision table, so NPCs are not marked."""
+        area = self._py.game_wrapper.game_area_collision()
+        return [[int(area[r][c]) for c in range(0, 20, 2)] for r in range(0, 18, 2)]
+
     def close(self) -> None:
         self._py.stop(save=False)

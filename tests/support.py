@@ -1,6 +1,6 @@
 """Fakes shared by the unit tests. Nothing here imports pyboy."""
 
-from jevplays.emulator.ram import TILEMAP_HEIGHT, TILEMAP_SIZE, TILEMAP_WIDTH, wTileMap
+from jevplays.emulator.ram import TILEMAP_HEIGHT, TILEMAP_SIZE, TILEMAP_WIDTH, wTileMap, wXCoord, wYCoord
 from jevplays.emulator.text import NON_TEXT, encode
 
 
@@ -56,6 +56,8 @@ class FakeEmulator:
         self.mem = FakeMemory()
         self.presses: list[str] = []
         self.frames = 0
+        self.grid = [[1] * 10 for _ in range(9)]
+        self.step_effects = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
         self.set_rows([])
 
     def set_rows(self, lines: list[str]) -> None:
@@ -68,8 +70,15 @@ class FakeEmulator:
         self.frames += frames
         return frames
 
+    def collision(self) -> list[list[int]]:
+        return [row[:] for row in self.grid]
+
     def press(self, button: str, *, hold: int = 8, settle: int = 8) -> int:
         self.presses.append(button)
+        if button in self.step_effects:
+            dx, dy = self.step_effects[button]
+            self.mem[wXCoord] = self.mem[wXCoord] + dx
+            self.mem[wYCoord] = self.mem[wYCoord] + dy
         return self.tick(hold + settle)
 
     def frame_jpeg(self, quality: int = 80) -> bytes:
