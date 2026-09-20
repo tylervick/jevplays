@@ -1,29 +1,31 @@
 """The two scripted counters: the nurse and the Mart clerk. Their screens are mechanical (a HEAL
 menu, a quantity box), so code drives them; Jev decides whether to go there, not what to press."""
 
-from jevplays.executor.dialog import answer_prompt, cursor_label, skip_dialog, yes_no_open
+from jevplays.executor.dialog import answer_prompt, cursor_label, skip_dialog, wait_for, yes_no_open
 from jevplays.executor.talk import talk_to
+from jevplays.state.modes import Mode
 from jevplays.state.snapshot import rows_of, snapshot
 
 NURSE_TILE, NURSE_FACE = (3, 3), "up"
 CLERK_TILE, CLERK_FACE = (2, 5), "left"
 
-
-def wait_for(emu, predicate, frames: int = 900) -> bool:
-    for _ in range(0, frames, 10):
-        rows = rows_of(emu.tilemap())
-        if predicate(rows):
-            return True
-        if rows[16][18] == "▼":
-            emu.press("a", settle=30)
-        else:
-            emu.tick(10)
-    return False
+MAX_POKEBALLS_PER_TRIP = 99
 
 
 def _label_starts(rows, prefix: str) -> bool:
     label = cursor_label(rows)
     return label is not None and label.startswith(prefix)
+
+
+def _exit_to_overworld(emu, max_iters: int = 12) -> bool:
+    """Press B until the counter's menus are gone. Bounded: a counter's closing dialog is a
+    handful of screens deep at most, and this must never spin forever waiting on a game that
+    (for some other reason) never returns to the overworld."""
+    for _ in range(max_iters):
+        if snapshot(emu).mode is Mode.OVERWORLD:
+            return True
+        emu.press("b", settle=30)
+    return snapshot(emu).mode is Mode.OVERWORLD
 
 
 def heal_at_nurse(emu) -> bool:
@@ -32,11 +34,15 @@ def heal_at_nurse(emu) -> bool:
         return False
     emu.press("a", settle=60)
     skip_dialog(emu, patience=60)
+    _exit_to_overworld(emu)
     s = snapshot(emu)
     return bool(s.party) and s.party[0].hp == s.party[0].max_hp
 
 
 def buy_pokeballs(emu, count: int) -> int:
+    if count <= 0:
+        return _balls(emu)
+    count = min(count, MAX_POKEBALLS_PER_TRIP)
     talk_to(emu, *CLERK_TILE, CLERK_FACE, patience=0)
     if not wait_for(emu, lambda rows: _label_starts(rows, "BUY")):
         return _balls(emu)
@@ -62,9 +68,7 @@ def buy_pokeballs(emu, count: int) -> int:
     # -- skip_dialog's idle nudge would read it as stuck text and press A on the highlighted item
     # again, buying more. Wait for the arrow-dismissal to land back on that menu instead.
     wait_for(emu, lambda rows: cursor_label(rows) is not None, frames=300)
-    emu.press("b", settle=30)
-    emu.press("b", settle=30)
-    emu.press("b", settle=30)
+    _exit_to_overworld(emu)
     return _balls(emu)
 
 
