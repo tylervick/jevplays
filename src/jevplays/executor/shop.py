@@ -29,7 +29,8 @@ def _exit_to_overworld(emu, max_iters: int = 12) -> bool:
 
 
 def heal_at_nurse(emu) -> bool:
-    talk_to(emu, *NURSE_TILE, NURSE_FACE, patience=0)
+    if not talk_to(emu, *NURSE_TILE, NURSE_FACE, patience=0):
+        return False
     if not wait_for(emu, lambda rows: _label_starts(rows, "HEAL")):
         return False
     emu.press("a", settle=60)
@@ -43,7 +44,8 @@ def buy_pokeballs(emu, count: int) -> int:
     if count <= 0:
         return _balls(emu)
     count = min(count, MAX_POKEBALLS_PER_TRIP)
-    talk_to(emu, *CLERK_TILE, CLERK_FACE, patience=0)
+    if not talk_to(emu, *CLERK_TILE, CLERK_FACE, patience=0):
+        return _balls(emu)
     if not wait_for(emu, lambda rows: _label_starts(rows, "BUY")):
         return _balls(emu)
     emu.press("a", settle=60)
