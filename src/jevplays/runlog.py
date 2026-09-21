@@ -62,10 +62,12 @@ class RunDir:
     # -- run.json -----------------------------------------------------------------------
 
     def info(self) -> dict:
-        return json.loads((self.path / "run.json").read_text())
+        return json.loads((self.path / "run.json").read_text(encoding="utf-8"))
 
     def _write_info(self, info: dict) -> None:
-        (self.path / "run.json").write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n")
+        (self.path / "run.json").write_text(
+            json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
 
     def set_model(self, model: str) -> None:
         info = self.info()

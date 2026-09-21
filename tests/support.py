@@ -192,6 +192,7 @@ class FakeEmulator:
 
     def save(self, path) -> None:
         """Stand-in for Emulator.save: distinct bytes per call so checkpoints can be told apart."""
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_bytes(b"FAKE-STATE:" + str(self.saves).encode())
         self.saves += 1
 

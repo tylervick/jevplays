@@ -89,3 +89,14 @@ def test_mark_resumed_appends_a_timestamp(tmp_path):
     run = RunDir.create(tmp_path, rom=None, flags={})
     run.mark_resumed(now=datetime(2026, 9, 21, 8, 0, 0))
     assert run.info()["resumed_at"] == ["2026-09-21T08:00:00"]
+
+
+def test_glyphs_survive_run_json_and_the_log_whatever_the_locale_says(tmp_path, monkeypatch):
+    monkeypatch.setenv("LC_ALL", "C")
+    run = RunDir.create(tmp_path, rom=None, flags={"battle_goal": "catch NIDORAN♂"})
+    run.set_model("jev-1.13.0")
+    d = decision(1)
+    d.state_summary = {"prompt": "give a NICKNAME to POKé BALL?"}
+    run.append(d)
+    assert run.info()["flags"]["battle_goal"] == "catch NIDORAN♂"
+    assert next(run.decisions())["state_summary"]["prompt"] == "give a NICKNAME to POKé BALL?"
