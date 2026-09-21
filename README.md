@@ -135,6 +135,11 @@ starts at once), so nothing is played to an empty room. It needs no ROM and no
 `TYPESAFE_API_KEY` -- the game screen stays blank, since frames were never logged, only
 decisions.
 
+`--host 0.0.0.0` serves the dashboard to the local network instead of loopback, for watching a
+run from another device; the startup line then prints this machine's address rather than
+`0.0.0.0`, which is not somewhere a browser can go. It is an unauthenticated read-only page, so
+only do that on a network you trust.
+
 For streaming or recording, add `http://127.0.0.1:8765/?layout=stream` as an OBS browser source at
 1920x1080; it lays the game, the decision panel, and the log out to fill that fixed canvas instead
 of the responsive page layout.
