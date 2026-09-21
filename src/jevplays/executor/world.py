@@ -16,6 +16,11 @@ from jevplays.state.snapshot import Sprite
 DIRECTIONS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
 EDGE_DIRECTION = {"north": "up", "south": "down", "west": "left", "east": "right"}
 
+BLOCKED, WALKABLE, GRASS = 0, 1, 2
+"""What a grid cell holds. Grass is walkable like any other cell -- the distinction is only that
+stepping onto it can start a wild battle, which is what `train_nearby` and `train_to_level_12`
+are after."""
+
 
 @dataclass(frozen=True)
 class Warp:
@@ -35,7 +40,16 @@ class MapGrid:
         return 0 <= x < self.width and 0 <= y < self.height
 
     def walkable(self, x: int, y: int) -> bool:
-        return self.in_bounds(x, y) and self.cells[y][x] == 1
+        return self.in_bounds(x, y) and self.cells[y][x] != BLOCKED
+
+    def is_grass(self, x: int, y: int) -> bool:
+        return self.in_bounds(x, y) and self.cells[y][x] == GRASS
+
+    def grass(self) -> frozenset[tuple[int, int]]:
+        """Every tall-grass cell on the map, as (x, y)."""
+        return frozenset(
+            (x, y) for y, row in enumerate(self.cells) for x, cell in enumerate(row) if cell == GRASS
+        )
 
 
 def read_warps(mem: ram.Memory) -> tuple[Warp, ...]:
@@ -91,7 +105,10 @@ def build_grid(emu) -> MapGrid:
                     tile = _rom_byte(
                         emu, bank, base + (qy * 2 + 1) * 4 + qx * 2
                     )  # bottom-left tile of the quadrant
-                    cells[by * 2 + qy][bx * 2 + qx] = 1 if tile in walkable else 0
+                    if tile == grass and grass != 0xFF:
+                        cells[by * 2 + qy][bx * 2 + qx] = GRASS
+                    else:
+                        cells[by * 2 + qy][bx * 2 + qx] = WALKABLE if tile in walkable else BLOCKED
     return MapGrid(cells)
 
 

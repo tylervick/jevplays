@@ -106,6 +106,9 @@ class FakeMemory:
 MAP_TILE = 0x10
 """A tile id that is map graphics, not font: what "·" in a fixture row becomes."""
 
+GRASS_TILE = 0x52
+"""The tall-grass tile id `install_map` writes for a "~" block (Route 1's real one)."""
+
 
 def tilemap_bytes(lines: list[str]) -> bytes:
     """Encode fixture rows into a wTileMap buffer. "·" is a map tile; short rows are padded with it."""
@@ -236,7 +239,9 @@ def write_mon(
 
 
 def install_map(emu, rows, warps=(), connections=None, tileset=(25, 0x4000, 0x5000)):
-    """A synthetic map for the fake: '.' walkable, '#' wall; two blocks in the fake ROM.
+    """A synthetic map for the fake: '.' walkable, '#' wall, '~' tall grass; three blocks in the
+    fake ROM. A fixture cell is one grid cell (one 2x2-tile quadrant), so a block is 2x2 fixture
+    characters and all four must agree for it to be walkable or grass.
 
     `tileset` is (bank, blocks_addr, collision_addr). The collision list is written under
     `(0, collision_addr)` when `collision_addr < 0x4000` and under `(bank, collision_addr)`
@@ -251,10 +256,11 @@ def install_map(emu, rows, warps=(), connections=None, tileset=(25, 0x4000, 0x50
     m[wTilesetBlocksPtr + 1] = blocks_addr >> 8
     m[wTilesetCollisionPtr] = collision_addr & 0xFF
     m[wTilesetCollisionPtr + 1] = collision_addr >> 8
-    m[wGrassTile] = 0xFF
+    m[wGrassTile] = GRASS_TILE
     for i in range(16):
         m.rom[(bank, blocks_addr + i)] = 1  # block 0: every tile is 1 (walkable)
         m.rom[(bank, blocks_addr + 16 + i)] = 2  # block 1: every tile is 2 (wall)
+        m.rom[(bank, blocks_addr + 32 + i)] = GRASS_TILE  # block 2: every tile is tall grass
     m.rom[(collision_bank, collision_addr)] = 1
     m.rom[(collision_bank, collision_addr + 1)] = COLLISION_END
     height, width = len(rows) // 2, len(rows[0]) // 2
@@ -263,12 +269,10 @@ def install_map(emu, rows, warps=(), connections=None, tileset=(25, 0x4000, 0x50
     for by in range(-MAP_BORDER_BLOCKS, height + MAP_BORDER_BLOCKS):
         for bx in range(-MAP_BORDER_BLOCKS, width + MAP_BORDER_BLOCKS):
             inside = 0 <= bx < width and 0 <= by < height
-            # a block is walkable only when all four of its cells are '.', which is what the fixtures use
-            block = (
-                0
-                if inside and all(rows[by * 2 + qy][bx * 2 + qx] == "." for qy in range(2) for qx in range(2))
-                else 1
-            )
+            # a block is walkable (or grass) only when all four of its cells agree; anything else,
+            # and everything outside the map, is wall
+            quad = {rows[by * 2 + qy][bx * 2 + qx] for qy in range(2) for qx in range(2)} if inside else {"#"}
+            block = 0 if quad == {"."} else 2 if quad == {"~"} else 1
             m[wOverworldMap + (by + MAP_BORDER_BLOCKS) * stride + (bx + MAP_BORDER_BLOCKS)] = block
     m[wNumberOfWarps] = len(warps)
     for i, (x, y, wid, dest) in enumerate(warps):

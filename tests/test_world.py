@@ -76,3 +76,30 @@ def test_build_grid_reads_a_home_bank_collision_list_through_bank_zero():
     # and reading it through the tileset bank would have found nothing walkable
     emu.mem.rom[(25, 0x1749)] = 0xFF
     assert build_grid(emu).walkable(0, 0)
+
+
+GRASS_ROWS = [
+    "..~~..",
+    "..~~..",
+    "......",
+    "..##..",
+    "......",
+    "......",
+]
+
+
+def test_grass_cells_are_marked_and_are_still_walkable():
+    emu = FakeEmulator()
+    install_map(emu, GRASS_ROWS)
+    grid = build_grid(emu)
+    assert grid.grass() == frozenset({(2, 0), (3, 0), (2, 1), (3, 1)})
+    assert grid.is_grass(2, 0) and grid.is_grass(3, 1)
+    assert not grid.is_grass(0, 0) and not grid.is_grass(2, 3)  # road, and a wall
+    assert grid.walkable(2, 0) and grid.walkable(0, 0) and not grid.walkable(2, 3)
+    assert astar(grid, (0, 0), (2, 0)) == [(1, 0), (2, 0)]  # grass is routed through like any cell
+
+
+def test_a_map_without_grass_has_no_grass_cells():
+    emu = FakeEmulator()
+    install_map(emu, ROWS)
+    assert build_grid(emu).grass() == frozenset()
