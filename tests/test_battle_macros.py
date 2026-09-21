@@ -79,6 +79,12 @@ SWITCH_MENU_ROWS = _SWITCH_MENU_BASE + [
     "",
     "·          · CANCEL·",
 ]
+PARTY_LIST_NO_CURSOR = [
+    " " + PARTY_LIST_ROWS[1][1:] if r == 1 else row for r, row in enumerate(PARTY_LIST_ROWS)
+]
+# A screen that is neither the battle menu nor any list a macro knows: what the back-out has to
+# press its way off before it can raise.
+STRAY_SCREEN = [""] * 18
 NO_EFFECT_ROWS = PARTY_LIST_ROWS[:14] + ["·It won't have any  ·", "", "·effect.           ·"]
 FAINTED_ROWS = PARTY_LIST_ROWS[:14] + ["·There's no will    ·", "", "·to fight!        ▼·"]
 
@@ -221,3 +227,50 @@ def test_select_item_scrolls_past_the_three_visible_slots():
     emu = ScriptedEmulator([MENU_ITEM, ITEM_SCROLL_ROWS_0, ITEM_SCROLL_ROWS_1, ITEM_SCROLL_ROWS_2])
     select_item(emu, "ETHER")
     assert emu.presses[-3:] == ["down", "down", "a"]
+
+
+def test_use_potion_raises_when_the_cursor_never_reaches_the_slot():
+    """The `down` is eaten (the screen never changes), so the cursor is still on slot 0 when
+    slot 1 was asked for: no A is pressed, and the macro backs out to the battle menu."""
+    emu = ScriptedEmulator([MENU_ITEM, ITEM_LIST_ROWS, ITEM_LIST_ROWS_POTION, ITEM_PARTY_ROWS])
+    with pytest.raises(MacroError, match="did not reach party slot 1"):
+        use_potion(emu, 1)
+    assert emu.presses[-1] == "b"
+    assert emu.presses[emu.presses.index("down", 2) + 1] == "b"  # the walk is followed by B, not A
+
+
+def test_switch_to_raises_when_the_cursor_never_reaches_the_slot():
+    emu = ScriptedEmulator([MENU_PKMN, PARTY_LIST_ROWS])
+    with pytest.raises(MacroError, match="did not reach party slot 1"):
+        switch_to(emu, 1)
+    assert emu.presses == ["a", "down", "b", "b", "b", "b"]
+
+
+def test_switch_to_backs_out_when_the_party_list_never_opens():
+    emu = ScriptedEmulator([MENU_PKMN, STRAY_SCREEN])
+    with pytest.raises(MacroError, match="party list never opened"):
+        switch_to(emu, 0)
+    assert emu.presses[-2:] == ["b", "b"]
+
+
+def test_switch_to_backs_out_when_the_party_list_has_no_cursor():
+    emu = ScriptedEmulator([MENU_PKMN, PARTY_LIST_NO_CURSOR])
+    with pytest.raises(MacroError, match="cursor not found"):
+        switch_to(emu, 0)
+    assert emu.presses[-2:] == ["b", "b"]
+
+
+def test_use_potion_backs_out_when_the_target_screen_never_opens():
+    emu = ScriptedEmulator([MENU_ITEM, ITEM_LIST_ROWS, ITEM_LIST_ROWS_POTION, STRAY_SCREEN])
+    with pytest.raises(MacroError, match="item target screen never opened"):
+        use_potion(emu, 0)
+    assert emu.presses[-2:] == ["b", "b"]
+
+
+def test_backing_out_stops_once_the_battle_menu_is_back():
+    """One B is enough here: the screen after it has FIGHT on the battle menu row, so the
+    back-out spends no further presses."""
+    emu = ScriptedEmulator([MENU_PKMN, PARTY_LIST_NO_CURSOR, MENU])
+    with pytest.raises(MacroError, match="cursor not found"):
+        switch_to(emu, 0)
+    assert emu.presses == ["a", "b"]

@@ -360,6 +360,10 @@ def test_battle_heal_macro_error_falls_back_to_the_safe_default_move():
         ("ITEM_LIST", "down"): ("ITEM_LIST", ITEM_LIST_NO_POTION),
         ("ITEM_LIST", "b"): ("MENU_ITEM", MENU_ITEM),
         ("MENU_ITEM", "b"): ("MENU", BATTLE_MENU),
+        # MENU_ITEM *is* the battle menu, with the cursor on ITEM rather than FIGHT, so the
+        # macro's back-out stops there -- one B closes the list and the second would do nothing
+        # on the real machine. Walking the cursor back up to FIGHT is select_command's job.
+        ("MENU_ITEM", "up"): ("MENU", BATTLE_MENU),
     }
     original = emu.press
 
