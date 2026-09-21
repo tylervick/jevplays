@@ -101,10 +101,16 @@ committed. Each run directory holds:
   whether that exit is a normal stop, Ctrl-C, or a plain `kill` (SIGTERM) from a supervisor -- both
   signals run the same shutdown path, so short of a `kill -9` the exit checkpoint is written.
 - `decisions.orphaned.jsonl`: only if a resume had to set decisions aside (see below).
+- `outcomes.jsonl`: one line per faint prediction the game went on to answer -- the decision it
+  came from, what Jev said, and what happened. Written as they resolve; absent if none did.
 
-`uv run Scripts/accuracy.py runs/<stamp> [--verbose]` reads that run's `decisions.jsonl` and
-reports how often Jev's `move` matched the best-typed attack (STAB included), the number to watch
-before adding a computed effectiveness hint.
+`uv run Scripts/accuracy.py runs/<stamp> [--verbose]` reports two numbers over that run. From
+`decisions.jsonl`, accuracy: how often Jev's `move` matched the best-typed attack (STAB
+included), the number to watch before adding a computed effectiveness hint. From
+`outcomes.jsonl`, calibration: a Brier score over every resolved faint prediction and a
+reliability table by probability band, which says whether things Jev called 80% likely happened
+about 80% of the time. Every battle bundle carries that prediction; no policy reads it, and code
+settles it by reading the party at the next decision point.
 
 `--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
 directory entirely -- no log, no checkpoints -- for a throwaway run you don't want to keep.

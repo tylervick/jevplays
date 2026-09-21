@@ -1,11 +1,17 @@
 #!/usr/bin/env -S uv run
-"""How often Jev's move matched the best-typed attack.
+"""How good Jev's battle judgment was: the moves it picked, and the confidence it picked them with.
 
     uv run Scripts/accuracy.py RUN_DIR [--verbose]
 
-Reads `decisions.jsonl` through `jevplays.runlog.RunDir.open`. Only battle decisions with a
-`move` answer are judged; a decision whose Pokémon has no damaging move counts as neither judged
-nor matched. Prints a summary line, and with `--verbose` one line per judged decision.
+Two numbers off one run directory, both read back through `jevplays.runlog.RunDir.open`.
+
+`decisions.jsonl` gives accuracy: how often the chosen move matched the best-typed attack. Only
+battle decisions with a `move` answer are judged; a decision whose Pokémon has no damaging move
+counts as neither judged nor matched.
+
+`outcomes.jsonl` gives calibration: every faint prediction the game went on to answer, as a Brier
+score and a reliability table. A model whose 0.8s happen about 80% of the time is calibrated;
+accuracy alone cannot say that. With `--verbose`, one line per judged decision.
 """
 
 import argparse
@@ -13,6 +19,7 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
+from jevplays.calibration import QUESTION, brier, buckets
 from jevplays.runlog import RunDir
 from jevplays.state.types import best_moves
 
@@ -48,6 +55,19 @@ def accuracy(decisions: Iterable[dict]) -> tuple[int, int, list[dict]]:
     return judged, matched, rows
 
 
+def pairs(decisions: Iterable[dict], outcomes: Iterable[dict]) -> list[tuple[float, bool]]:
+    """(predicted, observed) for every resolved faint prediction whose decision is still in the
+    log. The join is the guard a resume needs: rolled-back decisions move to
+    `decisions.orphaned.jsonl` while `outcomes.jsonl` is left as it is, so an outcome whose
+    decision is gone would otherwise score a turn that was never played."""
+    ids = {d.get("id") for d in decisions}
+    return [
+        (float(o["predicted"]), bool(o["observed"]))
+        for o in outcomes
+        if o.get("question") == QUESTION and o.get("decision_id") in ids
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -62,7 +82,8 @@ def main(argv: list[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 2
 
-    judged, matched, rows = accuracy(run.decisions())
+    decisions = list(run.decisions())
+    judged, matched, rows = accuracy(decisions)
 
     if args.verbose:
         for row in rows:
@@ -73,6 +94,18 @@ def main(argv: list[str] | None = None) -> int:
 
     pct = (matched / judged * 100) if judged else 0.0
     print(f"moves judged: {judged}, matched the best type: {matched} ({pct:.0f}%)")
+
+    scored = pairs(decisions, run.outcomes())
+    score = brier(scored)
+    if score is None:
+        print("no faint predictions resolved")
+        return 0
+    print(f"faint predictions resolved: {len(scored)}, Brier {score:.3f} (0 is perfect)")
+    for row in buckets(scored):
+        print(
+            f"  {row['low']:.1f}-{row['high']:.1f}  n={row['n']:<4d}"
+            f" predicted {row['predicted']:.2f}  happened {row['observed']:.2f}"
+        )
     return 0
 
 

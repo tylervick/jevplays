@@ -176,3 +176,22 @@ def test_set_model_does_not_rewrite_run_json_when_nothing_changes(tmp_path, monk
     assert writes == []
     run.set_model("jev-1.14.0")
     assert len(writes) == 1
+
+
+def test_outcomes_are_a_second_stream_beside_the_decisions(tmp_path):
+    """A resolved prediction is appended on its own, keyed by the decision it scores: the
+    decision line was written turns earlier and is never rewritten."""
+    run = RunDir.create(tmp_path / "runs", rom=None, flags={})
+    run.append(decision(1))
+    run.append_outcome({"decision_id": "d1", "question": "faint", "predicted": 0.7, "observed": True})
+    assert run.count() == 1
+    assert [o["decision_id"] for o in run.outcomes()] == ["d1"]
+    assert run.outcomes_path.read_text(encoding="utf-8").count("\n") == 1
+
+
+def test_a_torn_outcome_line_is_skipped_rather_than_read_as_a_resolution(tmp_path):
+    run = RunDir.create(tmp_path / "runs", rom=None, flags={})
+    run.append_outcome({"decision_id": "d1", "question": "faint", "predicted": 0.7, "observed": True})
+    with open(run.outcomes_path, "a", encoding="utf-8") as f:
+        f.write('{"decision_id": "d2", "question": "fai')
+    assert [o["decision_id"] for o in run.outcomes()] == ["d1"]

@@ -50,7 +50,9 @@ function renderNoul(id, q, a) {
   const box = el("div", `question${a.applied ? "" : " unused"}`);
   const head = el("div", "qhead");
   head.append(el("span", "qid", id));
-  if (!a.applied) head.append(el("span", "badge na", "not used"));
+  // `faint` is never applied by design -- it is scored against the game later, not acted on --
+  // so the badge says what it is rather than reading as an option the policy passed over.
+  if (!a.applied) head.append(el("span", "badge na", id === "faint" ? "prediction" : "not used"));
   box.append(head, el("p", "instructions", q.instructions));
   const row = el("div", "split");
   const yes = el("div", "yes", `yes ${pct(a.noul)}`);

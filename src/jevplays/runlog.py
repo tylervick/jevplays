@@ -220,6 +220,30 @@ class RunDir:
             self._write_info(info)
         return len(surplus)
 
+    # -- outcomes.jsonl -----------------------------------------------------------------
+
+    @property
+    def outcomes_path(self) -> Path:
+        return self.path / "outcomes.jsonl"
+
+    def append_outcome(self, outcome: dict) -> None:
+        """Append one resolved prediction, keyed by the decision it scores. Its own stream
+        because the decision line was written turns earlier and is never rewritten: `append`'s
+        torn-line repair and `truncate_to`'s numbering both depend on that."""
+        with open(self.outcomes_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(outcome, ensure_ascii=False) + "\n")
+
+    def outcomes(self) -> Iterator[dict]:
+        """Every resolved prediction. An unterminated line is a torn write and is skipped: a
+        missing outcome costs one sample in a score, so there is nothing here worth raising
+        over."""
+        if not self.outcomes_path.is_file():
+            return
+        with open(self.outcomes_path, encoding="utf-8") as f:
+            for line in f:
+                if line.strip() and line.endswith("\n"):
+                    yield json.loads(line)
+
     # -- checkpoints --------------------------------------------------------------------
 
     def checkpoint(self, emu, n: int) -> Path:

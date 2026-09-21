@@ -118,7 +118,8 @@ def test_state_json_uses_words_not_numbers_for_hp_and_pp():
 
 def test_questions_include_only_what_can_apply():
     wild_alone = battle_questions(battle_state(make_state(), goal="g"))
-    assert set(wild_alone) == {"move", "run"}  # no balls, no potions, no bench
+    # faint is the scored prediction and rides along with every bundle; the rest are conditional.
+    assert set(wild_alone) == {"move", "run", "faint"}  # no balls, no potions, no bench
     assert wild_alone["move"]["type"] == "choice"
     assert list(wild_alone["move"]["criteria"]) == ["SCRATCH", "GROWL"]  # EMBER is out of PP
     trainer_full = battle_questions(
@@ -127,7 +128,7 @@ def test_questions_include_only_what_can_apply():
             goal="g",
         )
     )
-    assert set(trainer_full) == {"move", "switch", "switch_to", "heal"}  # no run/catch in a trainer battle
+    assert set(trainer_full) == {"move", "switch", "switch_to", "heal", "faint"}  # no run/catch here
     assert list(trainer_full["switch_to"]["criteria"]) == ["PIDGEY"]
 
 
@@ -268,3 +269,28 @@ def test_heal_and_catch_are_executable_now():
 def test_party_word_counts_only_the_living():
     fainted = PIDGEY.__class__(**{**PIDGEY.__dict__, "hp": 0})
     assert battle_state(make_state(bench=(fainted,)), goal="g")["party"] == "one"
+
+
+def test_every_battle_asks_whether_our_pokemon_will_faint():
+    """The prediction rides along with every battle bundle, wild or trainer: it is the only
+    question whose answer is scored against what the game then did (Scripts/accuracy.py)."""
+    wild = battle_questions(battle_state(make_state(), goal="g"))
+    trainer = battle_questions(battle_state(make_state(kind="trainer"), goal="g"))
+    assert wild["faint"]["type"] == "noul"
+    assert set(wild["faint"]["criteria"]) == {"true", "false"}
+    assert "faint" in trainer
+
+
+def test_the_faint_prediction_is_recorded_but_never_acted_on():
+    sj = battle_state(make_state(), goal="g")
+    qs = battle_questions(sj)
+    response = {
+        "model": "jev-1.13.0",
+        "usage": {"input_tokens": 700, "output_tokens": 50},
+        "answers": answers(move={"SCRATCH": 0.7, "GROWL": 0.3}, run=0.1, faint=0.95),
+    }
+    d = decide_battle(
+        sj, qs, response, model="jev-1.13.0", input_tokens=700, latency_ms=400, supported=ALL_ACTIONS
+    )
+    assert d.action == "use SCRATCH"
+    assert d.answers["faint"] == {"primitive": "noul", "noul": 0.95, "applied": False}

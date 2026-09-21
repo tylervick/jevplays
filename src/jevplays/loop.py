@@ -33,6 +33,8 @@ from jevplays.brain.prompt import (
     prompt_questions,
     prompt_state,
 )
+from jevplays.calibration import QUESTION as FAINT
+from jevplays.calibration import Pending, resolve_prediction
 from jevplays.dashboard.events import decision_event, frame_event, state_event, status_event
 from jevplays.emulator import ram
 from jevplays.executor import battle as battle_macros
@@ -144,6 +146,8 @@ class Loop:
         self._wander_up = True
         self._backoff = min(1.0, self.config.backoff_max)
         self._hold: tuple[Mode, str] | None = None
+        self._pending: Pending | None = None
+        """The faint prediction waiting for the game to answer it (calibration.py)."""
         """Set after a macro fails twice and the safe default fails too: (mode, decision id) to
         wait out until the screen changes, so the loop stops asking the brain about a decision
         it cannot carry out."""
@@ -246,6 +250,10 @@ class Loop:
         decision = await self._decide("battle", sj, questions, partial(decide_battle, supported=ALL_ACTIONS))
         if decision is None:
             return 0
+        # Before the macros, not after: the turn happens whether or not this decision's own
+        # action survives (a failed switch falls back to a move), so the prediction is still
+        # about a turn that was played and still deserves to be scored.
+        self._note_prediction(decision, state)
         try:
             decision.action_value = self._resolve_switch(decision.action_value, state)
         except MacroError as error:
@@ -257,6 +265,24 @@ class Loop:
             return await self._retry_after_macro_error(decision, error, state)
         await self.broadcaster.publish(status_event("running", decision.action))
         return self.emu.tick(30)
+
+    def _note_prediction(self, decision: Decision, state: GameState) -> None:
+        """Remember the faint prediction this decision carried, so the next decision point can
+        score it against the party. Nothing reads it to decide anything; see calibration.py."""
+        answer = decision.answers.get(FAINT)
+        if answer is None or self.run_dir is None:
+            return
+        self._pending = Pending(decision.id, state.active_slot or 0, answer["noul"])
+
+    def _resolve_prediction(self, state: GameState) -> None:
+        """Write the pending prediction's outcome once the game has answered it."""
+        if self._pending is None or self.run_dir is None:
+            return
+        outcome = resolve_prediction(self._pending, state, ts=time.time())
+        if outcome is None:
+            return
+        self.run_dir.append_outcome(outcome)
+        self._pending = None
 
     def _resolve_switch(self, action: BattleAction, state: GameState) -> BattleAction:
         """A "switch" decision names a bench label, not a party index -- sj never carries one
@@ -639,6 +665,7 @@ class Loop:
             state = snapshot(self.emu)
             if self._hold is not None and state.mode != self._hold[0]:
                 self._hold = None
+            self._resolve_prediction(state)
             if state != last_state:
                 await self.broadcaster.publish(state_event(state))
                 last_state = state

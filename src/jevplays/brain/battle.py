@@ -138,6 +138,14 @@ def battle_questions(sj: dict) -> dict[str, dict]:
                     "false": "Its hp is still high, or it is not worth a ball",
                 },
             }
+    qs["faint"] = {
+        "type": "noul",
+        "instructions": "Will `our_pokemon` faint before we get to choose again?",
+        "criteria": {
+            "true": "`enemy_pokemon` is likely to knock it out before our next turn",
+            "false": "It should still be standing when we choose again",
+        },
+    }
     return qs
 
 
