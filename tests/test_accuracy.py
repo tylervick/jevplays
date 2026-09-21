@@ -31,12 +31,15 @@ def test_accuracy_counts_matches_against_the_best_typed_move():
     log = [
         decision("EMBER", ["Grass"]),  # ok
         decision("SCRATCH", ["Grass"]),  # miss
-        decision("EMBER", ["Rock", "Ground"]),  # ok: Rock resists both, and STAB keeps Ember ahead
+        # Rock resists both; STAB keeps Ember (0.75) ahead of Scratch (0.5), so Scratch is a miss.
+        # Without STAB the two would tie and this row would wrongly read ok: this is the row that
+        # proves the script passes the attacker's types through.
+        decision("SCRATCH", ["Rock", "Ground"]),  # miss
         {"kind": "goal", "id": "g", "state_summary": {}, "answers": {}},  # ignored
     ]
     judged, matched, rows = accuracy_mod.accuracy(log)
-    assert (judged, matched) == (3, 2)
-    assert [r["ok"] for r in rows] == [True, False, True]
+    assert (judged, matched) == (3, 1)
+    assert [r["ok"] for r in rows] == [True, False, False]
 
 
 def test_main_rejects_a_directory_without_a_run(tmp_path, capsys):
