@@ -43,6 +43,7 @@ without an issue behind it.
 - Never edit or delete a test to make it pass.
 - Jev judges, code executes. The model never receives coordinates, raw numbers, or
   screenshots; buckets, arithmetic, and policy stay in code.
+- Type effectiveness lives in `state/types.py` for measurement only; never pass it to Jev.
 - A change to a question's wording or a state field Jev sees re-records the fixtures
   (`Scripts/record-fixtures.py`) in the same PR.
 - Story facts (goals, flags, scripted macros) live in `src/jevplays/executor/goals.py`.

@@ -212,13 +212,22 @@ State sent (only what the questions need):
                   "status": "none",
                   "moves": [{"name": "EMBER", "type": "Fire", "kind": "attack", "power": "medium", "pp": "plenty"},
                             {"name": "GROWL", "type": "Normal", "kind": "status", "power": "none", "pp": "plenty"}]},
-  "enemy_pokemon": {"name": "PIDGEY", "level": 5, "types": ["Normal", "Flying"], "hp": "healthy"},
+  "enemy_pokemon": {"name": "PIDGEY", "level": 5, "types": ["Normal", "Flying"], "hp": "healthy", "status": "none"},
   "battle": {"kind": "wild"},
-  "bench": [{"name": "PIDGEY", "level": 4, "hp": "full"}],
+  "bench": [{"name": "PIDGEY", "level": 4, "types": ["Normal", "Flying"], "hp": "full", "label": "PIDGEY"}],
+  "party": "two",
   "bag": {"poke_balls": true, "potions": true},
   "goal": "Reach Viridian City"
 }
 ```
+
+Milestone 4a added `enemy_pokemon.status`, the `party` size word (`"one"` | `"two"` | `"three or
+more"`, counting party members with hp above zero), and `bench[].label`: a bench member's
+nickname, with a word suffix (`" (second)"`, `" (third)"`, ...) appended when an earlier bench
+slot has the same nickname, so two same-species Pokémon never share a label. The label is the only
+handle Jev gets on a bench member -- `brain/battle.py`'s `bench_slots(state)` is the sole place a
+label's party index lives; `state_json` never carries one, matching the "no raw numbers besides
+levels" rule.
 
 Questions, all in one request, each included only when it can apply:
 
@@ -226,10 +235,10 @@ Questions, all in one request, each included only when it can apply:
 | --- | --- | --- | --- |
 | `move` | Choice | Which move should `our_pokemon` use this turn to win as quickly and safely as possible, given the types of both Pokémon? | usable moves, each with its type and kind as the rubric |
 | `switch` | Noul | Should we switch out `our_pokemon` this turn instead of using a move? | yes when a bench member would clearly do better or ours is about to faint |
-| `switch_to` | Choice | If we switch, which bench Pokémon should come in? | bench members with types and hp |
+| `switch_to` | Choice | If we switch, which bench Pokémon should come in? | the bench labels, each with its types, level, and hp as the rubric |
 | `heal` | Noul | Should we use a Potion on `our_pokemon` this turn instead of attacking? | |
 | `run` | Noul | Should we run from this wild battle rather than fight it? | wild only |
-| `catch` | Noul | Should we throw a Poké Ball at `enemy_pokemon` this turn? | wild only, balls in bag; criteria mention that low enemy HP helps and that we want a party of at least three |
+| `catch` | Noul | Should we throw a Poké Ball at `enemy_pokemon` this turn? | wild only, balls in bag; criteria mention that we want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough for a ball to work -- asleep or paralyzed status helps |
 
 Policy, in `policy.py`, evaluated in this order with named thresholds. The first rule that fires
 wins:
@@ -240,8 +249,7 @@ wins:
 4. `switch` above `SWITCH_THRESHOLD` (0.7): switch to `switch_to`.
 5. Otherwise use `move`.
 
-Milestone 2 executes `move` and `run`; `heal`, `catch`, and `switch` are asked and recorded but
-fall back to the move answer with `fallback` set until their macros land (milestone 4).
+As of milestone 4a all five actions execute; the macros are in 9.
 
 Code does not compute type effectiveness in this version. Judging Fire against Grass from the
 type names is the kind of common sense the demo is meant to show, and the decision log makes it
@@ -319,6 +327,18 @@ positions: FIGHT then the move's slot, PKMN then the bench slot, ITEM then the i
 It reads the cursor's label from the screen buffer before every A press, so a wrong cursor
 position is caught before it can select anything; the loop retries a failed macro once, then uses
 the first move, then pauses until the screen changes.
+
+Milestone 4a added the heal, catch, and switch macros to `executor/battle.py`. Heal opens ITEM,
+walks the visible slots down to POTION, and picks the active Pokémon off the item's target
+screen; a Potion that would have no effect -- the target already at full HP -- backs out with two
+B presses and raises `MacroError` rather than leaving the cursor on a screen nothing consumed.
+Catch opens the same ITEM list and picks POKé BALL. Switch opens PKMN, walks the party list to
+the chosen slot, and presses A into the SWITCH option that appears in the sub-menu below it;
+choosing a fainted Pokémon there backs out the same way heal does, with `MacroError` instead of a
+half-finished switch. All three read the cursor's label before every A press, the same rule
+`select_command` and `select_move` already followed. A bench label like `PIDGEY (second)` is
+resolved to its party slot by `bench_slots` in `brain/battle.py` before the executor ever runs --
+the label is what Jev answered with, never a raw index.
 
 Milestone 3a replaced the collision-window waypoint design this section originally called for with
 navigation over the full current map, read from the running game rather than hand-written.
@@ -454,9 +474,12 @@ Integration tests under `tests/rom/` load save states from a local directory nam
 the detector. One checks every address in `ram.py` against a known value. Save states are not
 committed: they contain game memory.
 
-An accuracy check for battles is a script, not a test: replay logged battle decisions and report
-how often Jev's `move` matched the highest-effectiveness attack. It is the number to watch when
-deciding whether to add the effectiveness hint.
+Milestone 4a added the accuracy check for battles as a script, not a test: `Scripts/accuracy.py
+RUN_DIR [--verbose]` reads a run's `decisions.jsonl` and reports how often Jev's `move` answer
+matched the best-typed attack -- the damaging move with the highest effectiveness against the
+enemy's types, STAB (same-type attack bonus) included, computed by `state/types.py`'s
+`best_moves`. It is the number to watch before adding a computed effectiveness hint to the battle
+state Jev sees.
 
 ## 14. Milestones
 
@@ -477,5 +500,8 @@ Each is a separate plan and pull request set.
 3b. **Run logging, resume, and replay.** `runs/<dir>/run.json` and `decisions.jsonl` (11),
     checkpointing and `jevplays run --resume`, `jevplays replay`, and the dashboard's
     `?layout=stream` arrangement (10) -- all still as designed, none yet built.
-4. **Long tail.** `heal`/`catch`/`switch` battle macros (shops and the PC counter are already
-   scripted as of 3a), the accuracy script, and whatever the first full run to Brock exposes.
+4a. **Battle macros and the accuracy script.** `heal`, `catch`, and `switch` execute (shops and
+    the PC counter are already scripted as of 3a); `Scripts/accuracy.py` measures how often Jev's
+    move choice matches the best-typed attack.
+4b. **The real run.** Route 22 or generated options, the party-reorder macro, and the first full
+    run to Brock.

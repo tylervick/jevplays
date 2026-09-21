@@ -4,12 +4,12 @@ Jev, TypeSafe's System One model, plays Pokémon Red on a headless emulator whil
 dashboard shows the game next to live probability bars for every decision. Code reads the game's
 memory, asks Jev narrow typed questions, and presses the buttons; Jev supplies the judgment.
 
-Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`. Status: milestone 3b, run
-logging, resume, and replay. The emulator boots, walks the intro or loads a save state, parses
+Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`. Status: milestone 4a, battle
+macros and the accuracy script. The emulator boots, walks the intro or loads a save state, parses
 game state including the party, an active battle, story flags, and nearby sprites, and streams it
 all to the dashboard. At the battle menu, the loop asks Jev, publishes the decision, and the
-executor presses the buttons; `move` and `run` are executed, `heal`, `catch`, and `switch` are
-asked and recorded but fall back to `move` until milestone 4. In the overworld, Jev picks a goal
+executor presses the buttons; all five actions execute now, so battles can heal with a Potion,
+catch a wild Pokémon, and switch in a bench member, not just attack or run. In the overworld, Jev picks a goal
 from the table in `executor/goals.py` (through Brock's badge), code walks there using a
 walkability grid read live from the map in RAM rather than a hand-written route, and the Pokémon
 Center nurse and the Mart clerk are scripted counters that Jev only decides whether to visit,
@@ -39,7 +39,7 @@ Then:
 
 ```bash
 mise run check        # lint + tests, the same pair CI runs
-mise run states       # write states/*.state (sixteen states) from the ROM so tests/rom/ run
+mise run states       # write states/*.state (eighteen states) from the ROM so tests/rom/ run
 uv run jevplays run   # boot, walk the intro, serve http://127.0.0.1:8765
 uv run jevplays state states/overworld.state   # print the parsed GameState
 ```
@@ -73,6 +73,10 @@ committed. Each run directory holds:
   whether that exit is a normal stop, Ctrl-C, or a plain `kill` (SIGTERM) from a supervisor -- both
   signals run the same shutdown path, so short of a `kill -9` the exit checkpoint is written.
 - `decisions.orphaned.jsonl`: only if a resume had to set decisions aside (see below).
+
+`uv run Scripts/accuracy.py runs/<stamp> [--verbose]` reads that run's `decisions.jsonl` and
+reports how often Jev's `move` matched the best-typed attack (STAB included), the number to watch
+before adding a computed effectiveness hint.
 
 `--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
 directory entirely -- no log, no checkpoints -- for a throwaway run you don't want to keep.
