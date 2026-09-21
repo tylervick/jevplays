@@ -18,7 +18,7 @@
 # Renovate's mise manager can only propose bumps against a concrete version.
 # renovate.json groups them into one PR.
 [tools]
-uv = "0.11.29"
+uv = "0.12.17"
 # Must match the `amends`/`import` URLs at the top of hk.pkl. hk evaluates that
 # file with its own embedded pkl, and a config written against one release is not
 # guaranteed to evaluate under another. renovate.json has a custom manager that
