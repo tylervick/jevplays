@@ -45,14 +45,25 @@ def node(state: GameState) -> str:
 
 
 def legs_to(state: GameState, dest_node: str) -> list[Leg]:
-    """The edge/warp legs `maps.route` says to follow from here to `dest_node`."""
+    """The edge/warp legs `maps.route` says to follow from here to `dest_node`.
+
+    An edge leg carries the map id its destination node names (`maps.MAP_IDS`) as well as the
+    direction, so a blackout in the middle of the walk reads as `lost` rather than as the
+    crossing the leg was waiting for."""
     links = maps.route(node(state), dest_node)
     if not links:
         return []
     legs: list[Leg] = []
     for link in links:
         if link.kind == "edge":
-            legs.append(Leg(kind="edge", direction=link.direction, label=f"to {link.dest_node}"))
+            legs.append(
+                Leg(
+                    kind="edge",
+                    direction=link.direction,
+                    dest_map=maps.MAP_IDS.get(link.dest_node),
+                    label=f"to {link.dest_node}",
+                )
+            )
         else:
             legs.append(Leg(kind="warp", dest_map=link.dest_map, label=f"to {link.dest_node}"))
     return legs

@@ -34,6 +34,14 @@ NODE_NAMES = {
 }
 ROUTE_2_SPLIT_ROW = 25
 
+MAP_IDS: dict[str, int] = {name: map_id for map_id, name in NODE_NAMES.items()}
+MAP_IDS["route_2_south"] = MAP_IDS["route_2_north"] = ROUTE_2
+"""Node name -> map id: the reverse of `NODE_NAMES`, plus Route 2's two nodes, which are halves
+of one map and so share its id. It is what turns a `Link`'s destination node back into the map id
+an edge leg lands on, so the navigator can tell an arrival from a blackout. A node with no entry
+(`map_<id>` for an unmapped map) is simply absent, and a leg built for it carries no `dest_map`
+and is not checked."""
+
 
 def node_of(map_id: int, x: int, y: int) -> str:
     if map_id == ROUTE_2:

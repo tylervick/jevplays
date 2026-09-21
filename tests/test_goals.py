@@ -1,5 +1,5 @@
 from jevplays.executor.goals import MILESTONES, active_milestone, battle_goal, legs_to
-from jevplays.executor.maps import OAKS_LAB, PALLET_TOWN, PEWTER_GYM, VIRIDIAN_CITY
+from jevplays.executor.maps import OAKS_LAB, PALLET_TOWN, PEWTER_GYM, ROUTE_1, VIRIDIAN_CITY
 from jevplays.state.snapshot import BagItem
 from tests.support import overworld_state as state
 
@@ -12,6 +12,9 @@ def test_legs_to_builds_edge_and_warp_legs_from_the_route():
     legs = legs_to(state(map_id=PALLET_TOWN, x=5, y=6), "viridian_mart")
     assert [leg.kind for leg in legs] == ["edge", "edge", "warp"]
     assert legs[0].direction == "north" and legs[-1].dest_map == 42
+    # An edge leg names the map it comes out on too (maps.MAP_IDS), so the navigator can tell
+    # the crossing from a blackout that dropped us somewhere else.
+    assert legs[0].dest_map == ROUTE_1
 
 
 def test_battle_goal_is_the_active_milestone_plus_the_standing_clause():

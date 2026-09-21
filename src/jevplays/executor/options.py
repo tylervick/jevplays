@@ -159,7 +159,10 @@ def _exit_options(
                 kind="exit",
                 text=text,
                 memory="",
-                legs=(Leg(kind="edge", direction=direction, label=text),),
+                # The destination is on the leg as well as on the option: the connection table
+                # says which map this edge comes out on, so the navigator can tell the crossing
+                # from a blackout that moved us somewhere else entirely mid-walk.
+                legs=(Leg(kind="edge", direction=direction, dest_map=dest, label=text),),
                 after=None,
                 dest_map=dest,
             )
@@ -170,6 +173,9 @@ def _exit_options(
 def _door_options(warps: tuple[world.Warp, ...]) -> list[Option]:
     options = []
     for dest in sorted({w.dest for w in warps}):
+        # WARP_LAST_MAP means "back out the way you came in", whose map id is only in `wLastMap`,
+        # which nothing here reads: so this door is always `(new)` and its leg has no destination
+        # for the navigator to check. Reading `wLastMap` would fix both; deferred with #8.
         text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
         options.append(
             Option(
