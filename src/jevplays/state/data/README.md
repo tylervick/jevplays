@@ -6,6 +6,7 @@ Gen 1 lookup tables, keyed by the game's internal ids as JSON strings.
 - `trainers.json`: trainer class id to name (`RIVAL1` is 25). 48 entries.
 - `events.json`: event flag name to bit index in `wEventFlags`, 507 entries, from PyBoy's Gen 1 constants.
 - `type_chart.json`: Gen 1 type matchups as `[attacker, defender, multiplier]` rows, 82 entries, from pokered's `data/types/type_matchups.asm`. Only `state/types.py` reads it; Jev never sees effectiveness.
+- `sprites.json`: overworld sprite picture id to a noun phrase ("the nurse", "a youngster"), transcribed by hand from pokered's `constants/sprite_constants.asm`. 72 entries (picture 0, `SPRITE_NONE`, is never offered as an option). Only `executor/options.py` reads it, for NPC option text.
 
 Names come from PyBoy's Gen 1 constants (which follow pokered) with underscores replaced by
 spaces so they match what the game prints. Type ids are few enough to live in `names.py`.
