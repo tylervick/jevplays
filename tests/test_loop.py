@@ -805,6 +805,7 @@ def test_the_last_milestone_being_done_finishes_the_run():
     emu, bc = explore_emu(map_id=maps.PALLET_TOWN), RecordingBroadcaster()
     for flag in ("got_starter", "got_pokedex", "beat_brock"):
         set_flag(emu, flag)
+    emu.mem[ram.wObtainedBadges] = 1  # the badge bit, not just the flag, is what finishes (#40)
     loop = Loop(emu, bc, LoopConfig(paced=False))
     asyncio.run(loop.run())  # no iteration cap: the run ends of its own accord
     assert loop.finished and loop.milestone is None

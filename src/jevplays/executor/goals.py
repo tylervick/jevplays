@@ -130,7 +130,10 @@ MILESTONES: list[Goal] = [
         id="beat_brock",
         description="Challenge Brock at the Pewter Gym and earn the Boulder Badge",
         available=lambda s: "got_pokedex" in s.flags,
-        done=lambda s: "beat_brock" in s.flags,
+        # The `beat_brock` flag is set when the battle ends; the badge bit is set one dialog
+        # later, while "RED received the BOULDERBADGE!" is on screen. Finishing on the flag
+        # stopped the run mid-dialog with no badge (#40), so the milestone waits for the bit.
+        done=lambda s: s.badges >= 1,
         legs=_beat_brock_legs,
         after="talk_brock",
     ),

@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from jevplays.executor.goals import MILESTONES, active_milestone, battle_goal, legs_to
 from jevplays.executor.maps import OAKS_LAB, PALLET_TOWN, PEWTER_GYM, ROUTE_1, VIRIDIAN_CITY
 from jevplays.state.snapshot import BagItem
@@ -41,7 +43,8 @@ def test_active_milestone_progresses_through_the_spine():
     assert active_milestone(state()).id == "get_starter"
     assert active_milestone(state(flags={"got_starter"})).id == "get_pokedex"
     assert active_milestone(state(flags={"got_starter", "got_pokedex"})).id == "beat_brock"
-    done = state(flags={"got_starter", "got_pokedex", "beat_brock"})
+    # The flag alone is not done (#40): the badge bit is what ends the spine.
+    done = replace(state(flags={"got_starter", "got_pokedex", "beat_brock"}), badges=1)
     assert active_milestone(done) is None
 
 
@@ -69,3 +72,12 @@ def test_milestone_beat_brock_legs_end_at_the_gym_door():
     in_gym = state(map_id=PEWTER_GYM, x=4, y=6, flags={"got_starter", "got_pokedex"})
     legs = milestone("beat_brock").legs(in_gym)
     assert len(legs) == 1 and legs[0].kind == "walk" and legs[0].target == (4, 2)
+
+
+def test_brock_is_only_beaten_once_the_badge_bit_is_set_not_when_the_flag_is():
+    """Gen 1 sets `beat_brock` when the battle ends and the badge bit one dialog later (#40)."""
+    brock = MILESTONES[2]
+    mid_dialog = state(flags=("got_starter", "got_pokedex", "beat_brock"))
+    assert brock.done(mid_dialog) is False and active_milestone(mid_dialog) is brock
+    awarded = replace(mid_dialog, badges=1)
+    assert brock.done(awarded) is True and active_milestone(awarded) is None
