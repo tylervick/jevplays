@@ -105,5 +105,6 @@ def test_the_old_mans_option_is_remembered_and_the_run_moves_off_his_map(rom, st
         asyncio.run(loop.run(max_iterations=400))
 
         final = snapshot(emu)
-        assert not any(sprite.picture == OLD_MAN_PICTURE for sprite in final.sprites)
+        # He never moves (his script is decorative); what the run proves is that it talked and moved on.
+        assert final.map_id != maps.VIRIDIAN_CITY
         assert (maps.VIRIDIAN_CITY, slot) in memory.talked
