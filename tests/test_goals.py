@@ -66,3 +66,9 @@ def test_legs_to_builds_edge_and_warp_legs_from_the_route():
     legs = legs_to(state(map_id=PALLET_TOWN, x=5, y=6), "viridian_mart")
     assert [leg.kind for leg in legs] == ["edge", "edge", "warp"]
     assert legs[0].direction == "north" and legs[-1].dest_map == 42
+
+
+def test_the_old_man_is_only_done_while_standing_in_viridian_city():
+    """His sprite is simply not loaded anywhere else, which would otherwise read as "done"."""
+    away = state(map_id=ROUTE_1, flags={"oak_got_parcel"}, sprites=())
+    assert not goal_by_id("wake_old_man").done(away)

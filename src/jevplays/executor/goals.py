@@ -55,6 +55,9 @@ def legs_to(state: GameState, dest_node: str) -> list[Leg]:
     return legs
 
 
+OLD_MAN_PICTURE = 72
+"""The sprite picture id of the old man asleep across the road north out of Viridian City."""
+
 PEWTER_NODES = {"pewter_city", "pewter_gym", "pewter_mart", "pewter_pokecenter"}
 CENTER_NODES = ("viridian_pokecenter", "pewter_pokecenter")
 GRASS_MAPS = {maps.ROUTE_1, maps.ROUTE_2, maps.VIRIDIAN_FOREST}
@@ -151,9 +154,14 @@ GOALS: list[Goal] = [
         available=lambda s: (
             "oak_got_parcel" in s.flags
             and s.map_id == maps.VIRIDIAN_CITY
-            and any(sprite.picture == 72 for sprite in s.sprites)
+            and any(sprite.picture == OLD_MAN_PICTURE for sprite in s.sprites)
         ),
-        done=lambda s: not any(sprite.picture == 72 for sprite in s.sprites),
+        # Only Viridian City can say whether he has moved: anywhere else his sprite is simply
+        # not loaded, which would read as "done" from the far side of the region.
+        done=lambda s: (
+            s.map_id == maps.VIRIDIAN_CITY
+            and not any(sprite.picture == OLD_MAN_PICTURE for sprite in s.sprites)
+        ),
         legs=_wake_old_man_legs,
         after="talk_old_man",
     ),

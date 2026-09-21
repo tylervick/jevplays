@@ -42,6 +42,7 @@ from jevplays.emulator.text import ARROW
 from jevplays.executor import maps
 from jevplays.executor.autoplay import finish_battle, play_one_turn, wait_for_fight_menu
 from jevplays.executor.dialog import skip_dialog
+from jevplays.executor.goals import OLD_MAN_PICTURE
 from jevplays.executor.navigate import Leg, Navigator, goto, step
 from jevplays.loop import Loop, LoopConfig
 from jevplays.state.modes import Mode, yes_no_at
@@ -64,9 +65,6 @@ GROUPS: dict[str, tuple[str, ...]] = {
     "battle": BATTLE_STATES,
     "story": STORY_STATES,
 }
-
-OLD_MAN_PICTURE = 72
-"""The sprite id of the old man asleep across the road north out of Viridian City."""
 
 STORY_ITERATIONS = 6000
 """A ceiling on the scripted walk from Route 1 to the old man, not a target: the walk stops the
