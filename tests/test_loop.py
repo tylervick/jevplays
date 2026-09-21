@@ -848,6 +848,40 @@ def test_a_macro_that_raises_marks_the_option_tried_instead_of_killing_the_run()
     assert "no_such_macro raised ValueError" in message
 
 
+def test_an_option_that_carried_the_run_to_another_map_is_not_marked_tried_back_home():
+    """`tried` means the option changed nothing (spec section 3). A milestone option whose legs
+    walked the run out of Pallet Town and whose macro then failed in the lab changed plenty:
+    marking it against Pallet Town would tell Jev, next time it stands there, that working on the
+    milestone from there leads nowhere. The failure is still published either way."""
+    emu, bc = explore_emu(map_id=maps.OAKS_LAB), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    start_option(
+        loop,
+        Option(
+            id="milestone",
+            kind="milestone",
+            text="work on the milestone: Get a starter",
+            memory="new",
+            legs=(),
+            after="no_such_macro",
+        ),
+        maps.PALLET_TOWN,  # where the option was generated, before its legs moved us
+    )
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.option is None and loop.memory.tried == set()
+    messages = [e["message"] for e in bc.events if e["type"] == "status"]
+    assert any(m.startswith("tried: work on the milestone") for m in messages)
+
+    # The grass never leaves the map it was offered on, so its budget running out is exactly the
+    # "nothing came of it" the word is for, and it is marked.
+    now = [1000.0]
+    loop.clock = lambda: now[0]
+    start_option(loop, grass_option(), maps.OAKS_LAB)
+    now[0] += OPTION_BUDGET_S + 1
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.memory.tried == {(maps.OAKS_LAB, "grass")}
+
+
 def test_an_unmapped_map_offers_the_way_back_out_and_a_brainless_loop_takes_it():
     """No route starts from a map the graph does not know, so the milestone option is left out
     and the door back the way we came in is the only thing here worth doing."""

@@ -503,10 +503,17 @@ class Loop:
 
     async def _option_tried(self, why: str, *, why_in_message: bool = True) -> int:
         """Mark the option `tried` for this map and let go of it. There is no retry counter: the
-        memory word is the record, and Jev sees it in the option list next time."""
+        memory word is the record, and Jev sees it in the option list next time.
+
+        Only an option that changed nothing is marked (spec section 3). An option whose legs
+        carried the run onto another map before whatever went wrong changed something: marking
+        it against the map it was generated on would tell Jev that leaving Pallet Town, or
+        working on the milestone from there, led nowhere -- when what it actually did was arrive
+        somewhere and then fail there. The failure is still published either way."""
         option = self.option
-        self.memory.note_tried(self._option_map, option.id)
-        self._save_memory()
+        if self.emu.mem[ram.wCurMap] == self._option_map:
+            self.memory.note_tried(self._option_map, option.id)
+            self._save_memory()
         self._clear_option()
         message = f"tried: {option.text}" + (f" ({why})" if why_in_message else f"; {why}")
         await self.broadcaster.publish(status_event("running", message))
