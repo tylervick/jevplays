@@ -106,3 +106,53 @@ def test_the_loop_catches_and_declines_the_nickname(rom, state_path):
         assert [d.action for d in loop.decisions][:1] == ["throw a Poké Ball"]
         assert any(d.kind == "prompt" and d.action == "answer NO" for d in loop.decisions)
         assert [m.nickname for m in s.party] == ["CHARMANDER", s.party[1].name]
+
+
+class Recorder(Quiet):
+    """Quiet, but keeps the events, so a test can read the loop's own status line."""
+
+    def __init__(self):
+        self.events = []
+
+    async def publish(self, event):
+        self.events.append(event)
+
+
+def test_the_loop_backs_out_of_a_potion_that_has_no_effect(rom, state_path):
+    """A Potion the game refuses -- "It won't have any effect." over the party list -- must not
+    strand the loop on that screen. The macro backs out to the battle menu, the loop retries and
+    falls back to a move, and the turn ends where the next one can start: at the battle menu,
+    with Jev asked exactly once.
+
+    The lead's battle copy is put on 20/100 so `hp_bucket` reads `low` and the policy picks the
+    Potion; its party record is left at full HP, which is the record the game's own item code
+    checks, so the Potion has nothing to heal. 20 real points also survive the wild Pokémon's
+    reply, so the battle is still running when the turn ends."""
+    import asyncio
+
+    from jevplays.loop import Loop, LoopConfig
+    from jevplays.state.modes import Mode
+
+    with Emulator(rom) as emu:
+        emu.load(state_path("battle_items"))
+        emu.mem[ram.wBattleMonHP], emu.mem[ram.wBattleMonHP + 1] = 0, 20
+        emu.mem[ram.wBattleMonMaxHP], emu.mem[ram.wBattleMonMaxHP + 1] = 0, 100
+        assert snapshot(emu).mode is Mode.BATTLE_MENU
+        bc = Recorder()
+        loop = Loop(emu, bc, LoopConfig(paced=False, fps=0.001), brain=ThrowBrain())
+
+        async def one_turn():
+            await loop.advance(snapshot(emu))  # the Potion, its retry, then the fallback move
+            for _ in range(60):
+                state = snapshot(emu)
+                if state.mode is Mode.BATTLE_MENU:
+                    return
+                await loop.advance(state)
+
+        asyncio.run(one_turn())
+
+        assert snapshot(emu).mode is Mode.BATTLE_MENU
+        battles = [d for d in loop.decisions if d.kind == "battle"]
+        assert [d.action for d in battles] == ["use a Potion"]
+        messages = [e["message"] for e in bc.events if e["type"] == "status"]
+        assert any("macro failed" in m for m in messages), messages

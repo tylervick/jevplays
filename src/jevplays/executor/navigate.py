@@ -178,6 +178,10 @@ class Navigator:
             )
             if direction is None:  # a warp tile inside the map: standing on it should have warped already
                 return self._fail_leg(emu)
+            # The long hold is deliberate here, unlike the short press every other step uses
+            # (#20): off the edge of a map the second step is what carries the player into the
+            # connected map, and on a warp tile the map changes on the first step, so the extra
+            # one lands harmlessly on the other side.
             step(emu, direction, hold=24, settle=40)
             emu.tick(60)
             if mem[ram.wCurMap] != self.start_map:

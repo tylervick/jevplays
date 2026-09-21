@@ -50,12 +50,16 @@ from jevplays.state.snapshot import GameState, rows_of, snapshot
 
 FRAMES_PER_SECOND = 60
 
-NAV_STEP_FRAMES = 26
-"""What one navigator step costs, near enough: a held direction plus its settle. The navigator
-ticks the emulator itself, so this is only what the pacer is told; under-reporting makes the loop
-sleep less, never stall."""
+NAV_STEP_FRAMES = 56
+"""What one navigator step costs, near enough: an 8-frame hold plus up to 48 frames waiting for
+wWalkCounter to come back to zero. The navigator ticks the emulator itself, so this is only what
+the pacer is told; under-reporting makes the loop sleep less, never stall."""
 MACRO_FRAMES = 60
 """Same idea for a scripted macro, which spends far more than this talking and reading."""
+MACRO_BACKOUT_PRESSES = 3
+"""How many B presses `_retry_after_macro_error` will spend getting back to the battle menu
+before giving up on the retry. The macros back out themselves, so this only covers a screen they
+could not close."""
 
 GOAL_BUDGET_S = 180.0
 """How long one goal may hold the loop before Jev is asked again. Some goals never complete on
@@ -271,17 +275,27 @@ class Loop:
 
     async def _retry_after_macro_error(self, decision: Decision, error: MacroError, state: GameState) -> int:
         """A macro can fail mid-way (e.g. a move fell out of the list between snapshot and
-        press). Retry once: back out with B, and if we are still at the battle menu, try the
-        same decision again. A second failure means the decision could not be carried out at
-        all, so we fall through to `_after_second_failure` rather than silently pressing on."""
+        press). Retry once: get back to the battle menu, then try the same decision again. A
+        second failure means the decision could not be carried out at all, so we fall through to
+        `_after_second_failure` rather than silently pressing on.
+
+        The macros back out to the battle menu themselves before raising, so usually there is
+        nothing to press here and the snapshot below is already `BATTLE_MENU`. When it is not --
+        a screen the macro could not close, or one that opened after it gave up -- B is pressed
+        up to `MACRO_BACKOUT_PRESSES` times, re-snapshotting each time, and if the battle menu
+        still has not come back the retry is skipped: the next loop iteration reads the screen
+        afresh."""
         await self.broadcaster.publish(status_event("running", f"macro failed: {error}; retrying once"))
-        frames = self.emu.press("b", settle=20)
-        retry_state = snapshot(self.emu)
-        if retry_state.mode is Mode.BATTLE_MENU:
+        frames = 0
+        for _ in range(MACRO_BACKOUT_PRESSES):
+            frames += self.emu.press("b", settle=20)
+            if snapshot(self.emu).mode is not Mode.BATTLE_MENU:
+                continue
             try:
                 battle_macros.apply(self.emu, decision.action_value, active_slot=state.active_slot or 0)
             except MacroError:
                 return await self._after_second_failure(decision, state)
+            break
         return frames
 
     async def _after_second_failure(self, decision: Decision, state: GameState) -> int:
