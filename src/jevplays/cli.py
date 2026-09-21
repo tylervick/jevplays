@@ -106,6 +106,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     from jevplays.emulator.pyboy import Emulator
     from jevplays.loop import Loop, LoopConfig
 
+    failures: list[Exception] = []
+
     async def main_async() -> None:
         broadcaster = Broadcaster()
         server = asyncio.create_task(serve(create_app(broadcaster), port=args.port))
@@ -152,8 +154,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                     except Exception as error:
                         # A failed save (a full disk, a vanished run directory) must not take
                         # the rest of the shutdown -- the stopped status, closing the brain --
-                        # down with it.
+                        # down with it. It does make the run exit non-zero, below.
                         print(f"jevplays run: the exit checkpoint failed: {error}", file=sys.stderr)
+                        failures.append(error)
                     await broadcaster.publish(status_event("stopped"))
                     if brain is not None:
                         await brain.close()
@@ -179,7 +182,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         if exc.code not in (0, None):
             print(f"jevplays run: could not start the dashboard on port {args.port}", file=sys.stderr)
             return 1
-    return 0
+    return 1 if failures else 0
 
 
 def cmd_replay(args: argparse.Namespace) -> int:

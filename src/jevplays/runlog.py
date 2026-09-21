@@ -7,6 +7,7 @@ a `save(path)` method, which is what the real Emulator and the test fake both of
 
 import hashlib
 import json
+import os
 import re
 import warnings
 from collections.abc import Iterator
@@ -207,8 +208,12 @@ class RunDir:
         keep, surplus = lines[:n], lines[n:]
         with open(self.orphaned_path, "a", encoding="utf-8") as f:
             f.writelines(_terminated(line) for line in surplus)
-        with open(self.log_path, "w", encoding="utf-8") as f:
+        # Rewrite through a temp file and a rename: a crash mid-write must leave the old log,
+        # not an empty or half-written one.
+        tmp = self.log_path.with_suffix(".jsonl.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             f.writelines(_terminated(line) for line in keep)
+        os.replace(tmp, self.log_path)
         info = self.info()
         if any(number > n for number in info.get("torn_lines", [])):
             info["torn_lines"] = [number for number in info["torn_lines"] if number <= n]
