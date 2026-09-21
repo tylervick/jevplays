@@ -142,3 +142,32 @@ def test_decide_menu_closes():
     assert d.action == "close the menu"
     assert d.action_value == MenuAction(item=None)
     assert d.answers["close"]["applied"] is True and d.answers["menu"]["applied"] is False
+
+
+def test_decide_menu_falls_back_when_the_model_picks_an_item_not_on_screen():
+    sj = {"menu_items": ["POTION", "PARCEL"], "screen_text": "x", "goal": "y"}
+    qs = menu_questions(sj)
+    response = {
+        "model": "m",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+        "answers": answers(close=0.1, menu={"ANTIDOTE": 0.8}),  # not one of sj["menu_items"]
+    }
+    d = decide_menu(sj, qs, response, model="m", input_tokens=1, latency_ms=1)
+    assert d.fallback is True and d.fallback_reason == "menu: model chose an item not on screen"
+    assert d.action == "close the menu"
+    assert d.action_value == MenuAction(item=None)
+    assert d.answers["menu"]["applied"] is False  # the invalid choice was not the one used
+
+
+def test_decide_menu_falls_back_when_the_menu_question_is_missing():
+    sj = {"menu_items": ["POTION", "PARCEL"], "screen_text": "x", "goal": "y"}
+    qs = menu_questions(sj)
+    response = {
+        "model": "m",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+        "answers": answers(close=0.1),  # no "menu" answer at all
+    }
+    d = decide_menu(sj, qs, response, model="m", input_tokens=1, latency_ms=1)
+    assert d.fallback is True and d.fallback_reason == "menu: model chose an item not on screen"
+    assert d.action == "close the menu"
+    assert d.action_value == MenuAction(item=None)

@@ -8,6 +8,7 @@ import uuid
 
 from jevplays.brain.decision import Decision, MenuAction, PromptAction
 from jevplays.brain.policy import NEVER_NICKNAME, choose_menu, choose_prompt
+from jevplays.brain.record import answer_record, question_record
 from jevplays.state.snapshot import GameState
 
 
@@ -47,26 +48,6 @@ def menu_questions(sj: dict) -> dict[str, dict]:
     }
 
 
-def _question_record(q: dict) -> dict:
-    return {
-        "primitive": q["type"],
-        "instructions": q["instructions"],
-        "options": list(q["criteria"]) if q["type"] == "choice" else [],
-    }
-
-
-def _answer_record(a: dict) -> dict:
-    if a["type"] == "choice":
-        return {
-            "primitive": "choice",
-            "choice": a["choice"],
-            "probabilities": dict(a["probabilities"]),
-            "confidence": a["confidence"],
-            "applied": False,
-        }
-    return {"primitive": "noul", "noul": a["noul"], "applied": False}
-
-
 def decide_prompt(
     sj: dict,
     questions: dict,
@@ -76,7 +57,7 @@ def decide_prompt(
     input_tokens: int,
     latency_ms: int,
 ) -> Decision:
-    answers = {qid: _answer_record(a) for qid, a in response["answers"].items() if qid in questions}
+    answers = {qid: answer_record(a) for qid, a in response["answers"].items() if qid in questions}
     raw = {qid: a for qid, a in response["answers"].items() if qid in questions}
     text = sj.get("prompt", "")
     state_summary = sj
@@ -97,7 +78,7 @@ def decide_prompt(
         ts=time.time(),
         kind="prompt",
         state_summary=state_summary,
-        questions={qid: _question_record(q) for qid, q in questions.items()},
+        questions={qid: question_record(q) for qid, q in questions.items()},
         answers=answers,
         action=action.describe(),
         fallback=fallback,
@@ -118,9 +99,16 @@ def decide_menu(
     input_tokens: int,
     latency_ms: int,
 ) -> Decision:
-    answers = {qid: _answer_record(a) for qid, a in response["answers"].items() if qid in questions}
+    answers = {qid: answer_record(a) for qid, a in response["answers"].items() if qid in questions}
     raw = {qid: a for qid, a in response["answers"].items() if qid in questions}
     item, used = choose_menu(raw)
+    fallback, reason = False, ""
+    # A real close (the `close` noul fired) is never a fallback. Anything else is a fallback
+    # unless the chosen item is one of the ones actually on screen.
+    if used != ["close"] and (item is None or item not in sj.get("menu_items", [])):
+        fallback = True
+        reason = "menu: model chose an item not on screen"
+        item, used = None, []
     for qid in used:
         if qid in answers:
             answers[qid]["applied"] = True
@@ -130,11 +118,11 @@ def decide_menu(
         ts=time.time(),
         kind="menu",
         state_summary=sj,
-        questions={qid: _question_record(q) for qid, q in questions.items()},
+        questions={qid: question_record(q) for qid, q in questions.items()},
         answers=answers,
         action=action.describe(),
-        fallback=False,
-        fallback_reason="",
+        fallback=fallback,
+        fallback_reason=reason,
         model=model,
         input_tokens=input_tokens,
         latency_ms=latency_ms,

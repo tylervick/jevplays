@@ -9,6 +9,7 @@ import uuid
 from jevplays.brain.buckets import hp_bucket, money_bucket, quantity_bucket
 from jevplays.brain.decision import Decision, GoalAction
 from jevplays.brain.policy import choose_goal
+from jevplays.brain.record import answer_record, question_record
 from jevplays.executor.goals import Goal
 from jevplays.state.snapshot import GameState
 
@@ -40,26 +41,6 @@ def goal_questions(sj: dict) -> dict[str, dict]:
     }
 
 
-def _question_record(q: dict) -> dict:
-    return {
-        "primitive": q["type"],
-        "instructions": q["instructions"],
-        "options": list(q["criteria"]) if q["type"] == "choice" else [],
-    }
-
-
-def _answer_record(a: dict) -> dict:
-    if a["type"] == "choice":
-        return {
-            "primitive": "choice",
-            "choice": a["choice"],
-            "probabilities": dict(a["probabilities"]),
-            "confidence": a["confidence"],
-            "applied": False,
-        }
-    return {"primitive": "noul", "noul": a["noul"], "applied": False}
-
-
 def decide_goal(
     sj: dict,
     questions: dict,
@@ -70,7 +51,7 @@ def decide_goal(
     input_tokens: int,
     latency_ms: int,
 ) -> Decision:
-    answers = {qid: _answer_record(a) for qid, a in response["answers"].items() if qid in questions}
+    answers = {qid: answer_record(a) for qid, a in response["answers"].items() if qid in questions}
     raw = {qid: a for qid, a in response["answers"].items() if qid in questions}
     chosen_id, used = choose_goal(raw, available_ids)
     fallback, reason = False, ""
@@ -89,7 +70,7 @@ def decide_goal(
         ts=time.time(),
         kind="goal",
         state_summary=sj,
-        questions={qid: _question_record(q) for qid, q in questions.items()},
+        questions={qid: question_record(q) for qid, q in questions.items()},
         answers=answers,
         action=action.describe(),
         fallback=fallback,

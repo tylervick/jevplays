@@ -11,6 +11,8 @@ import uuid
 from jevplays.brain.buckets import hp_bucket, power_bucket, pp_bucket
 from jevplays.brain.decision import BattleAction, Decision
 from jevplays.brain.policy import choose_battle_action
+from jevplays.brain.record import answer_record as _answer_record
+from jevplays.brain.record import question_record as _question_record
 from jevplays.state.snapshot import GameState, Mon
 
 
@@ -97,26 +99,6 @@ def battle_questions(sj: dict) -> dict[str, dict]:
                 },
             }
     return qs
-
-
-def _question_record(q: dict) -> dict:
-    return {
-        "primitive": q["type"],
-        "instructions": q["instructions"],
-        "options": list(q["criteria"]) if q["type"] == "choice" else [],
-    }
-
-
-def _answer_record(a: dict) -> dict:
-    if a["type"] == "choice":
-        return {
-            "primitive": "choice",
-            "choice": a["choice"],
-            "probabilities": dict(a["probabilities"]),
-            "confidence": a["confidence"],
-            "applied": False,
-        }
-    return {"primitive": "noul", "noul": a["noul"], "applied": False}
 
 
 def decide_battle(
