@@ -42,7 +42,7 @@ from jevplays.executor.battle import MacroError
 from jevplays.executor.dialog import answer_prompt, cursor_label, skip_dialog
 from jevplays.executor.goals import Goal
 from jevplays.executor.maps import VIRIDIAN_MART, node_of
-from jevplays.executor.navigate import Navigator, goto_far
+from jevplays.executor.navigate import Leg, Navigator, goto_far
 from jevplays.executor.talk import talk_to
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import GameState, rows_of, snapshot
@@ -56,6 +56,10 @@ sleep less, never stall."""
 MACRO_FRAMES = 60
 """Same idea for a scripted macro, which spends far more than this talking and reading."""
 
+GOAL_BUDGET_S = 180.0
+"""How long one goal may hold the loop before Jev is asked again. Some goals never complete on
+their own -- `train_nearby` is done only when something else interrupts it -- so without a budget
+the first absorbing goal picked would be the last decision Jev ever made."""
 GOAL_RETRIES = 3
 """How many times a goal may fail -- a stuck navigator, a macro that does not work -- before it
 is dropped for the rest of the run. One failure is often a wandering NPC or a mistimed script."""
@@ -111,6 +115,8 @@ class Loop:
         self.navigator = Navigator()
         self.goal: Goal | None = None
         self.goal_started_at: float = 0.0
+        self.clock = monotonic
+        """Wall clock for the goal budget. A test swaps it for one it controls."""
         self._goal_failures: dict[str, int] = {}
         """How many times each goal has failed. At GOAL_RETRIES it is out for the rest of the run."""
         self._announced_dead_end = False
@@ -252,6 +258,8 @@ class Loop:
         """One goal at a time: finish it, walk it, pick one, re-plan it, or run its macro."""
         if self.goal is not None and self.goal.done(state):
             return await self._finish_goal()
+        if self.goal is not None and self.clock() - self.goal_started_at > GOAL_BUDGET_S:
+            return await self._goal_budget_spent()
         if self.navigator.busy:
             return await self._walk(state)
         if self.goal is None:
@@ -266,9 +274,12 @@ class Loop:
         if not options:
             if not self._announced_dead_end:
                 self._announced_dead_end = True
-                await self.broadcaster.publish(
-                    status_event("paused", f"all goals blocked: {', '.join(sorted(blocked)) or 'none'}")
+                message = (
+                    f"all goals blocked: {', '.join(sorted(blocked))}"
+                    if blocked
+                    else "no goal is available right now"
                 )
+                await self.broadcaster.publish(status_event("paused", message))
             return self.emu.tick(self.config.idle_frames)
         self._announced_dead_end = False
         sj = goal_state(state, options)
@@ -284,19 +295,23 @@ class Loop:
         if decision is None:
             return 0
         self.goal = goal_table.goal_by_id(decision.action_value.goal_id)
-        self.goal_started_at = monotonic()
+        self.goal_started_at = self.clock()
         await self.broadcaster.publish(status_event("running", f"goal: {self.goal.id}"))
         return await self._plan(state)
 
     async def _plan(self, state: GameState) -> int:
         """Build the active goal's legs from where we are standing now. No legs means we are
         already there, so the macro runs this turn -- unless the map is not in the map graph at
-        all, in which case there is no way to route anywhere and the goal is out of reach."""
+        all (a house, the Viridian Gym), in which case there is no route from here and the only
+        move that helps is walking back out of the door we came in by."""
         self._goal_map, self._arrived = state.map_id, False
         legs = self.goal.legs(state)
         if not legs:
             if node_of(state.map_id, *state.tile).startswith("map_"):
-                return await self._block_goal("no route out of an unmapped map")
+                legs = [Leg(kind="warp", dest_map=ram.WARP_LAST_MAP, label="back outside")]
+                self.navigator.plan(self.emu, state, legs)
+                await self.broadcaster.publish(status_event("running", self.navigator.describe()))
+                return self.emu.tick(self.config.idle_frames)
             self._arrived = True
             return await self._run_macro()
         self.navigator.plan(self.emu, state, legs)
@@ -307,6 +322,15 @@ class Loop:
         result = self.navigator.step(self.emu, state)
         if result == "stuck":
             return await self._block_goal("the navigator gave up")
+        if result == "lost":
+            # The map changed under the plan (a blackout, a scripted teleport). The route is for
+            # a map we are not on any more, but the goal itself is untouched, so no retry.
+            self.navigator.clear()
+            await self.broadcaster.publish(status_event("running", "re-planning after a map change"))
+            fresh = snapshot(self.emu)
+            if fresh.mode is not Mode.OVERWORLD:
+                return NAV_STEP_FRAMES  # mid-teleport; the next overworld turn re-plans
+            return await self._plan(fresh)
         if result == "leg_done":
             await self.broadcaster.publish(status_event("running", self.navigator.describe()))
         elif result == "done":
@@ -316,6 +340,15 @@ class Loop:
             self._goal_map = self.emu.mem[ram.wCurMap]
             await self.broadcaster.publish(status_event("running", f"arrived: {self.goal.id}"))
         return NAV_STEP_FRAMES
+
+    async def _goal_budget_spent(self) -> int:
+        """The goal has had its turn. It is not a failure -- nothing went wrong and no retry is
+        charged -- so it stays on offer; the next iteration simply asks Jev again, which is how
+        a goal that never completes on its own gives the decision back."""
+        spent = self.goal.id
+        self._clear_goal()
+        await self.broadcaster.publish(status_event("running", f"goal budget spent: {spent}"))
+        return self.emu.tick(self.config.idle_frames)
 
     async def _finish_goal(self) -> int:
         finished = self.goal.id
@@ -389,13 +422,17 @@ class Loop:
         if macro == "choose_charmander":
             return self._choose_charmander()
         if macro == "wander":
-            return self._wander()
+            return self._wander(state)
         raise ValueError(f"unknown goal macro {macro!r}")
 
     def _choose_charmander(self) -> bool:
         """The ball on Oak's table is not a sprite, so this is a walk-face-A, not a `talk_to`.
-        Every YES/NO along the way is Jev-free on purpose: the only one is the nickname box,
-        and policy says never nickname."""
+
+        Both YES/NO boxes on the way are answered in code, not by Jev. "So! You want CHARMANDER?"
+        is answered YES because a NO puts the ball back and leaves the goal exactly where it
+        started -- Jev already chose to come here, and re-asking it at the confirmation box only
+        gives it a way to deadlock its own goal. The nickname box is answered NO by the same
+        policy the PROMPT branch applies (`skip_dialog` is handed the one rule it needs)."""
         if not goto_far(self.emu, 6, 4):
             return False
         self.emu.press("up", hold=4, settle=12)
@@ -403,7 +440,7 @@ class Loop:
         skip_dialog(self.emu, answer=lambda text: "nickname" not in text.lower())
         return True
 
-    def _wander(self) -> bool:
+    def _wander(self, state: GameState) -> bool:
         """One step towards, or inside, the tall grass -- which is the only place a wild battle
         can start. Walking on the road forever is how the first version of this stalled."""
         grid = world.build_grid(self.emu)
@@ -414,7 +451,7 @@ class Loop:
         if here in grass:
             moved = self._step_inside_grass(grid, here, grass)
         else:
-            moved = self._step_towards_grass(grid, here, grass)
+            moved = self._step_towards_grass(grid, here, grass, world.blocked_by_sprites(state.sprites))
         if moved:
             return True
         # Nothing moved. If the screen has left the overworld, a wild battle started on the way
@@ -422,7 +459,7 @@ class Loop:
         # against the goal's retries; the loop's battle branch takes it from here.
         return snapshot(self.emu).mode is not Mode.OVERWORLD
 
-    def _step_towards_grass(self, grid, here, grass) -> bool:
+    def _step_towards_grass(self, grid, here, grass, blocked=frozenset()) -> bool:
         """One step of the shortest path to the nearest reachable grass cell, so the walk shows
         on the dashboard a tile at a time like every other move the loop makes."""
         nearest = heapq.nsmallest(
@@ -433,7 +470,7 @@ class Loop:
             straight = abs(cell[0] - here[0]) + abs(cell[1] - here[1])
             if best is not None and straight >= len(best):
                 break  # every remaining candidate is further off than the path we already have
-            path = world.astar(grid, here, cell)
+            path = world.astar(grid, here, cell, frozenset(blocked))
             if path and (best is None or len(path) < len(best)):
                 best = path
                 if len(best) == straight:

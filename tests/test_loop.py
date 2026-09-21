@@ -1,14 +1,15 @@
 import asyncio
+from dataclasses import replace
 
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.emulator import ram
 from jevplays.executor import maps
-from jevplays.executor.goals import Goal, goal_by_id
+from jevplays.executor.goals import Goal, available_goals, goal_by_id
 from jevplays.executor.world import build_grid
-from jevplays.loop import GOAL_RETRIES, Loop, LoopConfig
+from jevplays.loop import GOAL_BUDGET_S, GOAL_RETRIES, Loop, LoopConfig
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import snapshot
-from tests.support import FakeEmulator, install_map, overworld_state, write_mon
+from tests.support import OVERWORLD_LEAD, FakeEmulator, install_map, overworld_state, write_mon
 
 DIALOG = [""] * 12 + [
     "····················",
@@ -443,6 +444,7 @@ def test_wander_walks_to_the_grass_and_then_stays_in_it():
     emu, bc = grass_emu(), RecordingBroadcaster()
     loop = Loop(emu, bc, LoopConfig(paced=False))
     loop.goal = goal_by_id("train_nearby")  # legs are empty, so `wander` runs every turn
+    loop.goal_started_at = loop.clock()
     run(loop, 12)
     grid = build_grid(emu)
     here = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
@@ -456,7 +458,8 @@ def test_wander_gives_up_on_a_map_with_no_grass_at_all():
     install_map(emu, OVERWORLD_MAP)  # every cell is road
     loop = Loop(emu, bc, LoopConfig(paced=False))
     loop.goal = goal_by_id("train_nearby")
-    assert loop._wander() is False
+    loop.goal_started_at = loop.clock()
+    assert loop._wander(snapshot(emu)) is False
     assert emu.presses == []
 
 
@@ -512,7 +515,78 @@ def test_a_macro_that_raises_blocks_the_goal_instead_of_killing_the_run():
         legs=lambda s: [],
         after="no_such_macro",
     )
+    loop.goal_started_at = loop.clock()
     asyncio.run(loop.advance(snapshot(emu)))
     assert loop.goal is None and loop._goal_failures == {"bogus": 1}
     message = [e["message"] for e in bc.events if e["type"] == "status"][-1]
     assert "no_such_macro raised ValueError" in message
+
+
+# --- final fix wave: the goal budget, stale plans, and the way back out ----------------------
+
+
+def test_an_absorbing_goal_is_dropped_after_its_budget_and_jev_is_asked_again():
+    """`train_nearby` is never done and never fails, so without a budget the first time Jev
+    picked it would be the last decision it ever made."""
+    emu, bc = grass_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(goal={"train_nearby": 0.9}, needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    now = [1000.0]
+    loop.clock = lambda: now[0]
+    run(loop, 3)
+    assert loop.goal is not None and loop.goal.id == "train_nearby" and brain.calls == 1
+    now[0] += GOAL_BUDGET_S + 1
+    run(loop, 3)
+    assert brain.calls == 2  # the budget handed the decision back
+    assert loop._goal_failures == {}  # spending a budget is not failing
+    assert "goal budget spent: train_nearby" in [e["message"] for e in bc.events if e["type"] == "status"]
+
+
+def test_a_map_change_under_a_plan_re_plans_without_charging_a_retry():
+    # In Pallet Town get_starter's plan is a single walk leg, which is the kind that can tell a
+    # teleport from an arrival: a walk never changes the map on purpose.
+    emu, bc = overworld_emu(map_id=maps.PALLET_TOWN, x=5, y=5), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 1)  # picks a goal and plans its legs
+    assert loop.navigator.busy and loop.navigator.current.kind == "walk"
+    assert loop.navigator.plan_map == maps.PALLET_TOWN
+    emu.mem[ram.wCurMap] = maps.VIRIDIAN_POKECENTER  # blacked out mid-walk
+    run(loop, 1)
+    assert loop.navigator.plan_map == maps.VIRIDIAN_POKECENTER  # re-planned where we really are
+    assert loop._goal_failures == {}  # the goal did nothing wrong, so no retry is charged
+    assert "re-planning after a map change" in [e["message"] for e in bc.events if e["type"] == "status"]
+
+
+UNMAPPED_MAP = 200
+"""Not in maps.NODE_NAMES, so node_of() calls it "map_200" and no route starts from it."""
+
+
+def test_an_unmapped_map_walks_back_out_of_the_door_instead_of_blocking_the_goal():
+    emu, bc = overworld_emu(map_id=UNMAPPED_MAP, x=1, y=1), RecordingBroadcaster()
+    install_map(emu, ["...." for _ in range(4)], warps=[(3, 3, 0, ram.WARP_LAST_MAP)])
+    emu.mem[ram.wCurMap] = UNMAPPED_MAP
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 1)
+    assert loop.goal is not None and loop._goal_failures == {}  # not blocked
+    leg = loop.navigator.current
+    assert leg is not None and leg.kind == "warp" and leg.dest_map == ram.WARP_LAST_MAP
+    assert "back outside" in [e["message"] for e in bc.events if e["type"] == "status"]
+
+
+def test_nothing_available_says_so_rather_than_naming_no_goals():
+    """Nothing blocked, nothing on offer either: the badge must not read "all goals blocked: "."""
+    emu, bc = FakeEmulator(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    veteran = replace(OVERWORLD_LEAD, level=12)
+    done_with_everything = overworld_state(
+        map_id=maps.PALLET_TOWN,  # not a grass map, so train_nearby is out too
+        money=0,
+        party=(veteran,),
+        flags=("got_starter", "got_pokedex", "beat_brock"),
+    )
+    assert available_goals(done_with_everything) == []
+    asyncio.run(loop._pick_goal(done_with_everything))
+    asyncio.run(loop._pick_goal(done_with_everything))  # announced once, not on every iteration
+    paused = [e for e in bc.events if e["type"] == "status" and e["status"] == "paused"]
+    assert len(paused) == 1 and paused[0]["message"] == "no goal is available right now"
+    assert loop._goal_failures == {}
