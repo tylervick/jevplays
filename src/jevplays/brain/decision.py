@@ -8,6 +8,8 @@ class BattleAction:
     kind: str  # move | run | switch | heal | catch
     move: str | None = None
     target: str | None = None
+    slot: int | None = None
+    """The party index to switch to, when kind is "switch"."""
 
     def describe(self) -> str:
         return {
