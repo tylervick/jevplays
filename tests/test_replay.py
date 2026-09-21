@@ -89,3 +89,48 @@ def test_replayed_events_reach_a_real_websocket_client(tmp_path):
 def test_replay_command_rejects_a_directory_that_is_not_a_run(tmp_path, capsys):
     assert main(["replay", str(tmp_path)]) == 2
     assert "run.json" in capsys.readouterr().err
+
+
+def test_replay_holds_the_first_decision_until_a_viewer_connects(tmp_path):
+    run = logged_run(tmp_path, 3)
+
+    async def scenario():
+        bc = Broadcaster()
+        sock = FakeSocket()
+
+        async def join_late():
+            for _ in range(3):  # let the replay reach its wait before anyone connects
+                await asyncio.sleep(0)
+            assert "decision" not in bc.latest, "no decision may go out before a viewer is there"
+            assert bc.latest["status"]["message"] == "waiting for a viewer"
+            await bc.connect(sock)
+
+        joiner = asyncio.create_task(join_late())
+        n = await replay(run, bc, delay=0, wait_for_client=5)
+        await joiner
+        return n, [json.loads(m) for m in sock.sent]
+
+    n, events = asyncio.run(scenario())
+    assert n == 3
+    # The late joiner is brought current with the waiting status, then sees every decision live:
+    # had the replay not waited, only the last decision would have survived in `latest`.
+    assert events[0] == {"type": "status", "status": "running", "message": "waiting for a viewer"}
+    assert [e["decision"]["id"] for e in events if e["type"] == "decision"] == ["d0", "d1", "d2"]
+
+
+def test_replay_gives_up_waiting_and_plays_to_an_empty_room(tmp_path):
+    run = logged_run(tmp_path, 2)
+
+    async def scenario():
+        bc = Broadcaster()
+        return await replay(run, bc, delay=0, wait_for_client=0.01)
+
+    assert asyncio.run(scenario()) == 2
+
+
+def test_replay_help_lists_the_wait_flag(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit):
+        main(["replay", "--help"])
+    assert "--wait" in capsys.readouterr().out
