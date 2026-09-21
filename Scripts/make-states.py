@@ -71,11 +71,18 @@ STORY_STATES = (
     "mart_dex",
     "viridian_oldman",
 )
+BROCK_STATES = ("brock_award",)
+"""Saved the moment `beat_brock` is set, mid-award-dialog, with no badge bit yet (#40). Only
+written on request (`--only brock`): the stand-in brain has to fight its way to Brock and win,
+which is minutes, not seconds, and several blackouts."""
+BROCK_ITERATIONS = 40000
+
 GROUPS: dict[str, tuple[str, ...]] = {
     "milestone1": MILESTONE_1_STATES,
     "battle": BATTLE_STATES,
     "items": ITEM_STATES,
     "story": STORY_STATES,
+    "brock": BROCK_STATES,
 }
 
 STORY_ITERATIONS = 6000
@@ -392,6 +399,33 @@ def make_walked_story_states(rom: Path, out: Path) -> None:
         raise SystemExit(f"the walk never reached: {', '.join(sorted(loop.pending))}")
 
 
+class BrockLoop(Loop):
+    """The real loop, stopped the moment `beat_brock` is set: that is the mid-dialog state #40
+    is about, one dialog before the badge bit."""
+
+    def __init__(self, emu: Emulator, out: Path) -> None:
+        super().__init__(emu, Quiet(), LoopConfig(paced=False, fps=0.001), brain=FirstChoiceBrain())
+        self.out = out
+
+    async def advance(self, state: GameState) -> int:
+        if "beat_brock" in state.flags:
+            self.emu.save(self.out / "brock_award.state")
+            print(f"wrote {self.out / 'brock_award'}.state")
+            raise StoryFinished
+        return await super().advance(state)
+
+
+def make_brock_state(rom: Path, out: Path) -> None:
+    with Emulator(rom) as emu:
+        emu.load(out / "route1.state")
+        loop = BrockLoop(emu, out)
+        try:
+            asyncio.run(loop.run(max_iterations=BROCK_ITERATIONS))
+        except StoryFinished:
+            return
+        raise SystemExit("the stand-in never beat Brock within the iteration ceiling")
+
+
 def make_center_state(rom: Path, out: Path) -> None:
     """`viridian_center.state`: a detour into the Pokémon Center from `viridian.state`. The loop
     only goes there when the lead is hurt, which the parcel walk is not reliably hurt enough to
@@ -430,7 +464,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=Path(os.environ.get("JEVPLAYS_STATES", "states")))
     parser.add_argument(
         "--only",
-        choices=sorted(GROUPS) + list(MILESTONE_1_STATES + BATTLE_STATES + ITEM_STATES + STORY_STATES),
+        choices=sorted(GROUPS)
+        + list(MILESTONE_1_STATES + BATTLE_STATES + ITEM_STATES + STORY_STATES + BROCK_STATES),
         default=None,
         help="one group, or one state (which runs the group that state belongs to)",
     )
@@ -448,6 +483,7 @@ def main(argv: list[str] | None = None) -> int:
     run_battles = selected("battle")
     run_items = selected("items")
     run_story = selected("story")
+    run_brock = args.only in ("brock", "brock_award")  # never in the default set: it takes minutes
 
     if run_milestone_1:
         with Emulator(Path(rom)) as emu:
@@ -492,6 +528,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if run_story:
         make_story_states(Path(rom), args.out)
+    if run_brock:
+        make_brock_state(Path(rom), args.out)
 
     return 0
 
