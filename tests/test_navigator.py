@@ -97,3 +97,42 @@ def test_edge_leg_walks_to_the_north_edge_and_crosses():
         if emu.mem[ram.wYCoord] == 0 and emu.presses[-1] == "up":
             emu.mem[ram.wCurMap] = 7  # the fake crosses when it steps off the edge
     assert r == "done" and emu.mem[ram.wCurMap] == 7
+
+
+def test_a_walk_leg_whose_map_changes_under_it_is_lost():
+    emu = walker()
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="walk", target=(5, 5), label="corner")])
+    assert nav.plan_map == 1
+    emu.mem[ram.wCurMap] = 41  # blacked out into the Viridian Pokémon Center mid-walk
+    before = list(emu.presses)
+    assert nav.step(emu, snapshot(emu)) == "lost"
+    assert emu.presses == before  # nothing is pressed on a map we no longer know our way around
+
+
+def test_a_warp_leg_that_comes_out_on_the_wrong_map_is_lost_not_done():
+    emu = walker()
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="warp", dest_map=99, label="to the shop")])
+    emu.mem[ram.wCurMap] = 41  # not 99: something else moved us
+    assert nav.step(emu, snapshot(emu)) == "lost"
+    assert nav.busy  # the plan is left alone; the caller decides what to do with it
+
+
+def test_a_warp_leg_that_comes_out_where_it_aimed_still_finishes():
+    emu = walker()
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="warp", dest_map=99, label="to the shop")])
+    emu.mem[ram.wCurMap] = 99
+    assert nav.step(emu, snapshot(emu)) == "done"
+
+
+def test_a_leg_that_cannot_name_its_destination_map_still_finishes_on_any_change():
+    """`legs_to` builds edge legs with a direction and no dest_map, and WARP_LAST_MAP means
+    "back out the way you came", whose id the leg cannot know. Neither can be checked."""
+    for leg in (Leg(kind="edge", direction="north"), Leg(kind="warp", dest_map=ram.WARP_LAST_MAP)):
+        emu = walker()
+        nav = Navigator()
+        nav.plan(emu, snapshot(emu), [leg])
+        emu.mem[ram.wCurMap] = 7
+        assert nav.step(emu, snapshot(emu)) == "done"

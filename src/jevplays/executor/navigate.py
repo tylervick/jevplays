@@ -114,6 +114,9 @@ class Navigator:
     failed_steps: int = 0
     failed_legs: int = 0
     start_map: int | None = None
+    """The map the current leg was begun on."""
+    plan_map: int | None = None
+    """The map the whole plan was built on, for the dashboard and for debugging a stale plan."""
 
     @property
     def busy(self) -> bool:
@@ -125,6 +128,7 @@ class Navigator:
 
     def plan(self, emu, state, legs: list[Leg]) -> None:
         self.legs, self.index, self.failed_legs = list(legs), 0, 0
+        self.plan_map = emu.mem[ram.wCurMap]
         self._begin_leg(emu)
 
     def _begin_leg(self, emu) -> None:
@@ -151,9 +155,10 @@ class Navigator:
         if leg.kind == "face":
             emu.press(leg.face, hold=4, settle=12)
             return self._advance(emu)
-        if leg.kind in ("edge", "warp") and mem[ram.wCurMap] != self.start_map:
-            emu.tick(60)
-            return self._advance(emu)
+        if mem[ram.wCurMap] != self.start_map:
+            landed = self._after_map_change(emu, leg, mem[ram.wCurMap])
+            if landed is not None:
+                return landed
         grid = world.build_grid(emu)
         blocked = frozenset(world.blocked_by_sprites(state.sprites) | self.blocked)
         target = self._target(leg, grid, here, mem, blocked)
@@ -183,9 +188,10 @@ class Navigator:
         if step(emu, world.direction_to(here, nxt)):
             self.blocked.clear()
             self.failed_steps = 0
-            if leg.kind in ("edge", "warp") and mem[ram.wCurMap] != self.start_map:
-                emu.tick(60)
-                return self._advance(emu)
+            if mem[ram.wCurMap] != self.start_map:
+                landed = self._after_map_change(emu, leg, mem[ram.wCurMap])
+                if landed is not None:
+                    return landed
             from jevplays.state.snapshot import snapshot as _snapshot
 
             if _snapshot(emu).mode is not Mode.OVERWORLD:
@@ -194,6 +200,27 @@ class Navigator:
                 return self._advance(emu)
             return "moving"
         return self._fail_step(emu, state, nxt)
+
+    def _after_map_change(self, emu, leg, current: int) -> str | None:
+        """The map changed while this leg was running. For an edge or a warp leg that is how the
+        leg finishes -- as long as we landed where the leg was aiming. A walk leg never changes
+        the map on purpose, and a warp that came out somewhere other than its `dest_map` is a
+        blackout or a scripted teleport, not an arrival: both leave the rest of the plan pointing
+        at a map we are no longer on, so the answer is "lost" and the caller re-plans."""
+        if leg.kind == "walk" or self._wrong_map(leg, current):
+            return "lost"
+        if leg.kind in ("edge", "warp"):
+            emu.tick(60)
+            return self._advance(emu)
+        return None
+
+    @staticmethod
+    def _wrong_map(leg: Leg, current: int) -> bool:
+        # WARP_LAST_MAP means "back the way you came in", whose id the leg cannot know, and an
+        # edge leg built from the map graph only names a direction. Neither can be checked.
+        if leg.dest_map is None or leg.dest_map == ram.WARP_LAST_MAP:
+            return False
+        return current != leg.dest_map
 
     def _target(self, leg, grid, here, mem, blocked):
         if leg.kind == "walk":
@@ -274,6 +301,6 @@ def goto_far(emu, x: int, y: int, max_steps: int = 400) -> bool:
         r = nav.step(emu, _snapshot(emu))
         if r == "done":
             return True
-        if r in ("stuck", "interrupted"):
+        if r in ("stuck", "interrupted", "lost"):
             return False
     return False
