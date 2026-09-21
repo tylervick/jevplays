@@ -16,6 +16,14 @@ from jevplays.state.snapshot import Battle, snapshot
         ("battle_wild", Mode.BATTLE_MENU),
         ("battle_wait", Mode.BATTLE_WAIT),
         ("route1", Mode.OVERWORLD),
+        ("pallet", Mode.OVERWORLD),
+        ("prompt_starter", Mode.PROMPT),
+        ("viridian", Mode.OVERWORLD),
+        ("viridian_center", Mode.OVERWORLD),
+        ("mart_parcel", Mode.OVERWORLD),
+        ("dex", Mode.OVERWORLD),
+        ("mart_dex", Mode.OVERWORLD),
+        ("viridian_oldman", Mode.OVERWORLD),
     ],
 )
 def test_each_saved_state_is_detected_as_its_mode(rom, state_path, name, mode):

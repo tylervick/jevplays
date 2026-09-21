@@ -32,7 +32,7 @@ Then:
 
 ```bash
 mise run check        # lint + tests, the same pair CI runs
-mise run states       # write states/*.state (eight states) from the ROM so tests/rom/ run
+mise run states       # write states/*.state (sixteen states) from the ROM so tests/rom/ run
 uv run jevplays run   # boot, walk the intro, serve http://127.0.0.1:8765
 uv run jevplays state states/overworld.state   # print the parsed GameState
 ```

@@ -1,3 +1,5 @@
+import pytest
+
 from jevplays.emulator import ram
 from jevplays.emulator.pyboy import Emulator
 from jevplays.executor.world import astar, build_grid, read_connections
@@ -32,20 +34,32 @@ def test_route1_flags(rom, state_path):
         assert flags_set(emu.mem) >= {"got_starter", "battled_rival_in_oaks_lab", "oak_appeared_in_pallet"}
 
 
-def test_full_map_grid_agrees_with_pyboys_window_everywhere(rom, state_path):
-    for name in ("overworld", "route1", "battle_wild"):
-        with Emulator(rom) as emu:
-            emu.load(state_path(name))
-            if emu.mem[ram.wIsInBattle]:
-                continue
-            grid = build_grid(emu)
-            window = emu.collision()
-            x, y = emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]
-            for r in range(9):
-                for c in range(10):
-                    gx, gy = x + (c - 4), y + (r - 4)
-                    if grid.in_bounds(gx, gy):
-                        assert window[r][c] == int(grid.walkable(gx, gy)), (name, gx, gy)
+@pytest.mark.parametrize(
+    "name",
+    [
+        "overworld",
+        "route1",
+        "battle_wild",
+        "viridian",
+        "viridian_center",
+        "mart_dex",
+        "dex",
+        "pallet",
+    ],
+)
+def test_full_map_grid_agrees_with_pyboys_window_everywhere(rom, state_path, name):
+    with Emulator(rom) as emu:
+        emu.load(state_path(name))
+        if emu.mem[ram.wIsInBattle]:
+            pytest.skip(f"{name} is mid-battle; there is no overworld window to compare")
+        grid = build_grid(emu)
+        window = emu.collision()
+        x, y = emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]
+        for r in range(9):
+            for c in range(10):
+                gx, gy = x + (c - 4), y + (r - 4)
+                if grid.in_bounds(gx, gy):
+                    assert window[r][c] == int(grid.walkable(gx, gy)), (name, gx, gy)
 
 
 def test_route1_has_a_path_from_the_south_entry_to_the_north_exit(rom, state_path):
