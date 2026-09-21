@@ -65,24 +65,32 @@ committed. Each run directory holds:
 
 - `run.json`: `rom_sha256` (the ROM this run loaded), `started_at`, `flags` (the CLI flags it was
   started with), `model` (the id from the first decision's response), `models` (every distinct
-  model id seen since, in case Jev is upgraded mid-run), `resumed_at` (a timestamp appended each
-  time `--resume` continues this run), and `checkpoint_every` (25).
+  model id seen since, in case Jev is upgraded mid-run), `resumed_at` (an entry appended each time
+  `--resume` continues this run, naming the checkpoint it resumed from and how many decisions were
+  orphaned), and `checkpoint_every` (25).
 - `decisions.jsonl`: one `Decision` per line, appended as the loop makes them.
 - `checkpoint-<n>.state`: a PyBoy save state, written every 25 decisions and once more at exit,
   whether that exit is a normal stop, Ctrl-C, or a plain `kill` (SIGTERM) from a supervisor -- both
-  signals run the same shutdown path, so the checkpoint is never skipped.
+  signals run the same shutdown path, so short of a `kill -9` the exit checkpoint is written.
+- `decisions.orphaned.jsonl`: only if a resume had to set decisions aside (see below).
 
 `--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
 directory entirely -- no log, no checkpoints -- for a throwaway run you don't want to keep.
 
-`jevplays run --resume runs/<stamp>` loads that run's newest checkpoint and appends to the same
-`decisions.jsonl` rather than starting a new directory; `--state` and `--resume` are mutually
-exclusive.
+`jevplays run --resume runs/<stamp>` loads that run's newest checkpoint, `checkpoint-<n>.state`,
+and appends to the same `decisions.jsonl` rather than starting a new directory; `--state` and
+`--resume` are mutually exclusive, and `--resume` cannot be combined with `--no-log`. That
+checkpoint is the game just after decision `n`, so any decision the log holds past `n` -- written
+between the last checkpoint and the crash -- was rolled back with it; those lines move to
+`decisions.orphaned.jsonl` so replay and the checkpoint numbering stay honest, and the run says how
+many moved. A resumed run reloads the game but not the loop's memory, so goals it had given up on
+are offered again and the goal choice starts fresh.
 
 `jevplays replay runs/<stamp> --delay 1` reads `decisions.jsonl` back and pushes the same
 `decision` events to the dashboard at `http://127.0.0.1:8765` with a pause between them (`--delay`,
-seconds; `--limit`, stop after N decisions), plus a `status` update naming its progress. It needs
-no ROM and no `TYPESAFE_API_KEY` -- the game screen stays blank, since frames were never logged,
+seconds; `--limit`, stop after N decisions), plus a `status` update naming its progress. It holds
+the first decision until a browser connects, for up to `--wait` seconds (default 30; `--wait 0`
+starts at once), so nothing is played to an empty room. It needs no ROM and no `TYPESAFE_API_KEY` -- the game screen stays blank, since frames were never logged,
 only decisions.
 
 For streaming or recording, add `http://127.0.0.1:8765/?layout=stream` as an OBS browser source at

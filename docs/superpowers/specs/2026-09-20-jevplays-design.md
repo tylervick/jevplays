@@ -409,8 +409,17 @@ the id from the first response, `models` -- every distinct model id seen since, 
 a timestamp appended on each `--resume`, and `checkpoint_every`), `decisions.jsonl` (one Decision
 per line), and `checkpoint-<n>.state` every `checkpoint_every` (25) decisions plus one at exit,
 whether that exit is a normal stop, Ctrl-C, or a `kill` (SIGTERM) -- both signals take the same
-shutdown path, so the exit checkpoint is never skipped. `jevplays run --resume runs/<dir>` loads
-the newest checkpoint and appends to the same log.
+shutdown path, so short of a `kill -9` the exit checkpoint is written. `jevplays run --resume
+runs/<dir>` loads the newest checkpoint and appends to the same log.
+
+Milestone 3b added the rule that makes that resume sound: `checkpoint-<n>.state` is the game just
+after decision `n`, so decisions the log holds past `n` -- written between the last checkpoint and
+the crash -- were rolled back with it. `--resume` moves them, in order, to
+`decisions.orphaned.jsonl` before the loop starts, so replay never shows a decision the game
+undid and the next checkpoint is numbered from what actually happened; `resumed_at` records the
+checkpoint resumed from and how many lines moved. A torn last line in `decisions.jsonl` (a crash
+mid-write) is skipped when the log is read and closed off by the next append, so one lost
+decision never makes the log unreadable.
 
 ## 12. Error handling
 
