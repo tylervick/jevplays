@@ -15,13 +15,15 @@ An **option** is something the loop can carry out from where the player stands, 
 | kind | one per | text | plan |
 | --- | --- | --- | --- |
 | `exit` | map connection (`read_connections`) | "go north to Route 2" | an `edge` leg |
-| `door` | distinct warp destination on the map (`read_warps`, grouped by destination; `WARP_LAST_MAP` inside a building) | "enter Viridian Pokémon Center", "enter a house", "go back outside" | a `warp` leg |
+| `door` | distinct warp destination on the map (`read_warps`, grouped by destination; `WARP_LAST_MAP` inside a building) | "enter Viridian Pokémon Center", "enter Viridian School", "go back outside" | a `warp` leg |
 | `npc` | sprite reachable from the player (A* to any of its four neighbours), capped at the six nearest | "talk to the nurse behind the counter", "talk to a youngster to the north" | walk to the neighbour, face, `talk_to`; a nurse runs `heal_at_nurse`, a Mart clerk runs `buy_pokeballs` (counters stay scripted, base spec 8.3) |
 | `grass` | map with grass cells | "train in the tall grass here" | the wander macro until a battle interrupts |
 | `milestone` | active milestone whose map is not the current one | "head for <milestone description>" | the milestone's legs (`legs_to`) and its `after` macro |
 | `heal` | lead below half HP and a Pokémon Center node reachable in `maps.LINKS` | "go heal at Viridian Pokémon Center" | legs to the Center, then `heal_at_nurse` |
 
 Text rules: map names from `names.map_name`; NPC nouns from `state/data/sprites.json` (sprite picture id to a noun phrase, transcribed from pokered's `constants/sprite_constants.asm`: `SPRITE_NURSE` "the nurse", `SPRITE_OAK` "Professor Oak", `SPRITE_POKE_BALL` "an item on the ground", unknown ids "someone"); places from the sprite's position relative to the player as compass words ("to the north", "to the south-east") plus "near" when within four tiles, and "behind the counter" when the sprite is a nurse or clerk. No numbers, no coordinates.
+
+Order as built (`generate`): the `milestone` option first, then `heal`, then the exits, the doors, the NPCs nearest-first, and the grass last. The order matters because it is code's fallback, not Jev's: `choose_explore` takes the first option when there is no usable `explore` answer, and a brainless run takes the first one not marked `tried` -- so the two options that keep a run moving and keep it alive lead, and both of those runs still walk the story. After them the generated options follow the order the RAM is read in (connections, warps, sprites by walked distance), with the grass, which is under the player's feet rather than somewhere to go, at the end. The verb an NPC option starts with follows its noun: "talk to" for a person, "pick up" for an item lying on the ground (the macro is `talk_<slot>` either way, which is how an item ball is picked up).
 
 Option ids are stable slugs the loop and the log key on: `exit_north`, `door_<dest map id>`, `npc_<slot>`, `grass`, `milestone`, `heal`. An option carries its `kind`, `text`, `memory`, and a `plan` (a list of `Leg` plus an optional `after` macro name), so the loop executes it the way it executes a goal today.
 

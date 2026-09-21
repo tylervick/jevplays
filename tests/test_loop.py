@@ -953,7 +953,8 @@ def test_the_battle_question_carries_the_milestone_the_run_is_working_towards():
     loop.milestone = MILESTONES[-1]
     asyncio.run(loop.advance(snapshot(emu)))
     assert loop.decisions[0].state_summary["goal"] == (
-        "Challenge Brock at the Pewter Gym. Build a party of three and keep them healthy."
+        "Challenge Brock at the Pewter Gym and earn the Boulder Badge. "
+        "Build a party of three and keep them healthy."
     )
 
 

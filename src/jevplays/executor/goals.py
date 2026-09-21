@@ -128,7 +128,7 @@ MILESTONES: list[Goal] = [
     ),
     Goal(
         id="beat_brock",
-        description="Challenge Brock at the Pewter Gym",
+        description="Challenge Brock at the Pewter Gym and earn the Boulder Badge",
         available=lambda s: "got_pokedex" in s.flags,
         done=lambda s: "beat_brock" in s.flags,
         legs=_beat_brock_legs,

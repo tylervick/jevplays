@@ -71,7 +71,7 @@ jevplays/
       __init__.py
       client.py       one thin wrapper over AsyncTypeSafeClient with logging and timing
       battle.py       questions + decode for the battle decision point
-      goal.py         questions + decode for the overworld idle decision point
+      explore.py      questions + decode for the overworld explore decision point
       prompt.py       questions + decode for yes/no prompts and menus
       policy.py       thresholds and priorities, named constants, nothing else
       decision.py     the Decision record (section 8)
@@ -80,7 +80,8 @@ jevplays/
       macros.py       button sequences for battle menus, prompts, menus
       navigate.py     A* over the collision window, waypoint following, warps
       maps.py         hand-written waypoint graph for the early game
-      goals.py        the goal table: availability and completion from event flags
+      options.py      the options a map affords, generated fresh every decision
+      goals.py        the three milestones: where each happens and when it is done
     dashboard/
       __init__.py
       server.py       Starlette app: static page + websocket event stream
@@ -150,7 +151,7 @@ GameState
   bag: BagSummary             has_balls, has_potions, has_repel, item names
   text: str                   decoded on-screen text, empty when none
   menu_items: [str]           decoded items when a menu is open
-  flags: frozenset[str]       the subset of story event flags the goal table reads
+  flags: frozenset[str]       the subset of story event flags the milestones read
   sprites: [Sprite]           NPCs and other on-screen actors, for the executor only
   map_size: (w, h)            the current map's size in grid cells, for the executor only
 Move: name, type, power, pp, max_pp
@@ -235,7 +236,7 @@ State sent (only what the questions need):
   "bench": [{"name": "PIDGEY", "level": 4, "types": ["Normal", "Flying"], "hp": "full", "label": "PIDGEY"}],
   "party": "two",
   "bag": {"poke_balls": true, "potions": true},
-  "goal": "Train on Route 2 until CHARMANDER reaches level 12. Build a party of three and keep them healthy."
+  "goal": "Deliver Oak's parcel and get the Pokédex. Build a party of three and keep them healthy."
 }
 ```
 
@@ -247,11 +248,12 @@ handle Jev gets on a bench member -- `brain/battle.py`'s `bench_slots(state)` is
 label's party index lives; `state_json` never carries one, matching the "no raw numbers besides
 levels" rule.
 
-`goal` is the overworld goal Jev picked, plus the standing clause in `executor/goals.py`
-(`battle_goal`). It moves with the goal rather than being fixed for the run: `catch`'s criteria
-already speak of wanting a party of three, and against a goal string that said nothing about a
-party they read as a distraction from it. `--battle-goal` is the fallback before any goal is
-active.
+`goal` is the active milestone's description (`executor/goals.py`, `active_milestone`), plus
+the standing clause in the same module (`battle_goal`). It moves with the milestone rather than
+being fixed for the run: `catch`'s criteria already speak of wanting a party of three, and
+against a goal string that said nothing about a party they read as a distraction from it.
+`--battle-goal` is the fallback before any milestone is active -- a battle fought before the loop
+has ever stood in the overworld.
 
 Questions, all in one request, each included only when it can apply:
 
@@ -312,7 +314,9 @@ Questions, one request:
 | `needs_heal` | Noul | Should the party heal before doing anything else? | true when the party is hurt enough that the next battle could be lost |
 
 Policy (`policy.py`, `choose_explore`): `needs_heal` above `HEAL_FIRST_THRESHOLD` (0.7) with a
-`heal` option on offer wins, before Jev's `explore` choice is even consulted; otherwise the
+`heal` option on offer that this map has not already marked `tried` wins, before Jev's
+`explore` choice is even consulted (a heal that already failed from here would otherwise fire
+every turn while the lead is still hurt, and the run would loop); otherwise the
 `explore` choice, so long as it names an option actually on the list; a choice naming anything
 else, or no usable `explore` answer at all, falls back to `milestone` when that option is on
 offer, else the first option -- code decided that, not Jev, so it is marked `fallback`. This is
@@ -344,22 +348,22 @@ The Pokémon Center nurse and the Mart clerk are not Jev-answered menus, even th
 look like ones. Both are mechanical -- a HEAL confirmation, a BUY quantity box -- so
 `executor/talk.py` walks up to the sprite and presses A through its dialog, and `executor/shop.py`
 layers a scripted counter on top for each one, pressing every button of the HEAL or BUY sequence
-itself. Jev's only say is whether to go there at all, as the `heal_at_center` and `buy_pokeballs`
-goals in the goal table (8.2); once the legs get there, code runs the whole counter.
+itself. Jev's only say is whether to go there at all -- the `heal` option, or the option for the clerk
+standing behind the counter (8.2); once the legs get there, code runs the whole counter.
 
-The BUY sequence takes the item's shelf label, so one counter serves both purchases:
-`buy_pokeballs` at the Viridian Mart and `buy_potions` at the Pewter one. Potions are a Pewter
-errand because the Viridian shelf has none -- read off the ROM, it stocks Poké Ball, Antidote,
-Parlyz Heal and Burn Heal -- and Pewter is the last counter before Brock, the first fight where a
-Potion decides anything. What Pewter stocks is not verified here, so a shelf without the item is
-an ordinary outcome: the scan runs out, the counter backs out to the overworld, the bag count
-does not move, and the goal blocks itself rather than a guessed inventory being written down.
+The BUY sequence takes the item's shelf label, so one counter could serve both purchases;
+as built, a clerk option only buys Poké Balls. Potions would be a Pewter errand, because the
+Viridian shelf has none -- read off the ROM, it stocks Poké Ball, Antidote, Parlyz Heal and Burn
+Heal -- and Pewter is the last counter before Brock, the first fight where a Potion decides
+anything. Buying them is #33, still open. A shelf without the item is an ordinary outcome
+either way: the scan runs out, the counter backs out to the overworld, the bag count does not
+move, and the option is marked `tried` rather than a guessed inventory being written down.
 
 ### 8.4 Decision record
 
 ```
 Decision
-  id, ts, kind (battle | goal | prompt | menu)
+  id, ts, kind (battle | explore | prompt | menu)
   state_summary: the JSON that was sent as state
   questions: {id: {primitive, instructions, options}}
   answers: {id: {choice | noul | score, probabilities, confidence, applied: bool}}
@@ -402,8 +406,8 @@ with the current tileset's block table and collision list, both read from ROM th
 `Emulator.rom`. One grid cell is one player step -- a block's own 2x2-tile quadrant -- and the
 quadrant's bottom-left tile decides whether the cell is walkable, the same rule PyBoy's own
 collision window applies to the visible screen. A cell whose tile matches the map's grass tile is
-marked as grass: still walkable, but where a wild battle can start, which is what the
-`train_to_level_12` and `train_nearby` goals use to wander toward and inside a patch. Sprites
+marked as grass: still walkable, but where a wild battle can start, which is what the `grass`
+option's `wander` macro uses to move around inside a patch until a battle interrupts it. Sprites
 (NPCs, the rival, signposts) are read fresh from RAM every turn and treated as additional blocked
 cells; warps and the map's edge connections are read from RAM the same way, never hand-recorded.
 
@@ -426,11 +430,14 @@ again from scratch, which clears those marks (whatever was in the way has usuall
 and after `STUCK_LEGS` (3) failed legs the navigator gives up, clears its plan, and reports
 `"stuck"`.
 
-A plan is only good for the map it was built on. If the map id changes under a `walk` leg, or a
-`warp` leg comes out somewhere other than its `dest_map` -- a blackout teleports the player to a
-Pokémon Center from anywhere -- `step()` returns `"lost"` without pressing anything. The loop
-throws the plan away and plans the same goal again from where the player actually is; nothing
-went wrong with the goal, so it is not charged a retry.
+A plan is only good for the map it was built on. If the map id changes under a `walk` leg, or
+an `edge` or `warp` leg comes out somewhere other than its `dest_map` -- a blackout teleports the
+player to a Pokémon Center from anywhere -- `step()` returns `"lost"` without pressing anything.
+The loop throws the plan away and the option with it: the option list was generated for a map the
+run is not on any more, so the next turn generates a fresh one and asks Jev again from where the
+player actually is. Nothing is charged against the option that was running. A leg that cannot
+name the map it lands on -- a `WARP_LAST_MAP` warp, whose destination is only in `wLastMap` --
+cannot be checked this way, and finishes on any change (#8).
 
 A battle or a dialog interrupting a walk makes `step()` return `"interrupted"` with the plan
 intact -- nothing is cleared. The loop hands control to the brain (or to whatever advances dialog
@@ -566,8 +573,9 @@ Unit tests need no ROM and no API key. CI runs these.
   what is omitted (no `run` in a trainer battle, no `catch` without balls). Decoders and policy are
   tested against recorded TypeSafe responses in `tests/fixtures/responses/`, one per scenario,
   captured once with the real API and checked in.
-- `executor`: A* on synthetic collision grids, stuck detection, macro cursor math, goal
-  availability and completion from synthetic flags.
+- `executor`: A* on synthetic collision grids, stuck detection, macro cursor math, option
+  generation and memory words on a synthetic map, milestone availability and completion from
+  synthetic flags.
 - `dashboard`: event schemas serialize and deserialize; `replay` feeds a fixture log end to end
   through the websocket.
 

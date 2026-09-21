@@ -21,7 +21,8 @@ def test_battle_goal_is_the_active_milestone_plus_the_standing_clause():
     """What Jev is told a battle is for. The milestone it is working towards changes under it, so
     the battle question follows that milestone rather than a string fixed for the whole run."""
     assert battle_goal(milestone("beat_brock"), fallback="Win every battle and explore") == (
-        "Challenge Brock at the Pewter Gym. Build a party of three and keep them healthy."
+        "Challenge Brock at the Pewter Gym and earn the Boulder Badge. "
+        "Build a party of three and keep them healthy."
     )
 
 

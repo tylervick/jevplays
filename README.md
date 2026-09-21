@@ -52,7 +52,7 @@ to be a demonstration of what a System One model is for.
 
 At every idle overworld turn, code reads the map Jev is standing on -- the same RAM the
 navigator already reads -- and builds a list of options: one per reachable exit, one per door
-(grouped by destination, so three doors into the same building are one option, "enter a house"),
+(grouped by destination, so both doors of a building are one option, "enter Viridian School"),
 one per NPC it can reach (capped at the six nearest, described by sprite type and where they are
 standing), the grass if there is any, a trip to heal if the lead needs it and a Pokémon Center is
 reachable, and the active milestone. Jev picks one by id; the navigator walks its legs and a
@@ -67,7 +67,7 @@ from here and nothing came of it -- its budget ran out, its macro failed, or the
 up). This is a real list, recorded standing in Viridian City partway through a run:
 
 ```
-milestone   work on the milestone: Challenge Brock at the Pewter Gym (new)
+milestone   work on the milestone: Challenge Brock at the Pewter Gym and earn the Boulder Badge (new)
 heal        go heal at Viridian Pokémon Center (new)
 exit_north  go north to Route 2 (new)
 exit_south  go south to Route 1 (new)
@@ -153,7 +153,10 @@ committed. Each run directory holds:
   came from, what Jev said, and what happened. Written as they resolve; absent if none did.
 - `memory.json`: what the run already knows in the words Jev is shown -- maps visited, NPCs
   talked to, options tried and dropped (`executor/options.py`'s `Memory`). Rewritten after every
-  change and reloaded on `--resume`.
+  change and reloaded on `--resume`. It is the *last* thing the run did, not the last thing it
+  logged: after a resume rolls decisions back to the newest checkpoint, the memory can be a step
+  or two ahead of `decisions.jsonl`, which only means Jev is told about something the log no
+  longer shows.
 
 `uv run Scripts/accuracy.py runs/<stamp> [--verbose]` reports two numbers over that run. From
 `decisions.jsonl`, accuracy: how often Jev's `move` matched the best-typed attack (STAB
@@ -164,7 +167,9 @@ about 80% of the time. Every battle bundle carries that prediction; no policy re
 settles it by reading the party at the next decision point. It also prints an exploration block
 off `decisions.jsonl`: the count of decisions by kind, explore decisions broken down by the kind
 of option that ran (exit, door, npc, grass, milestone, heal), the share of explore decisions that
-were the milestone versus everything else, and how many distinct maps the run saw.
+were the milestone versus everything else, and how many maps the run saw -- that last from
+`memory.json` when the run kept one, since it counts the maps walked through as well as the ones
+stopped on.
 
 `--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
 directory entirely -- no log, no checkpoints -- for a throwaway run you don't want to keep.
