@@ -285,6 +285,11 @@ response came back), in which case the menu decision falls back to closing it in
 A on whatever the cursor happens to be sitting on. Selecting the wrong thing in a shop or a PC
 costs money or a Pokémon, so a menu never guesses.
 
+The starter confirmation ("So! You want CHARMANDER?") is scripted YES rather than asked, for the
+same reason a menu never guesses: Jev already decided to come and take the ball, and re-asking it
+at the confirmation box only gives it a way to answer NO and leave its own goal exactly where it
+started. The nickname box in the same macro is scripted NO, by the policy above.
+
 The Pokémon Center nurse and the Mart clerk are not Jev-answered menus, even though their screens
 look like ones. Both are mechanical -- a HEAL confirmation, a BUY quantity box -- so
 `executor/talk.py` walks up to the sprite and presses A through its dialog, and `executor/shop.py`
@@ -340,9 +345,17 @@ re-reads the full-map grid, the current sprites, and the warp table before plann
 that wanders into the way is routed around by the next call rather than a stale plan; a sprite
 standing on the goal tile itself waits rather than failing the leg. `step()` runs A* on the grid,
 treating sprite positions and any cell marked blocked as obstacles, and takes the first step of
-the path. If the player's tile has not changed after `STUCK_STEPS` (6) attempts, the leg re-plans
-with the blocked tile marked; after `STUCK_LEGS` (3) failed legs the navigator gives up, clears
-its plan, and reports `"stuck"`.
+the path. Each step that does not move the player marks the cell it aimed at as blocked, so the
+next call routes around it; after `STUCK_STEPS` (6) such steps the leg is given up on and started
+again from scratch, which clears those marks (whatever was in the way has usually moved by then),
+and after `STUCK_LEGS` (3) failed legs the navigator gives up, clears its plan, and reports
+`"stuck"`.
+
+A plan is only good for the map it was built on. If the map id changes under a `walk` leg, or a
+`warp` leg comes out somewhere other than its `dest_map` -- a blackout teleports the player to a
+Pokémon Center from anywhere -- `step()` returns `"lost"` without pressing anything. The loop
+throws the plan away and plans the same goal again from where the player actually is; nothing
+went wrong with the goal, so it is not charged a retry.
 
 A battle or a dialog interrupting a walk makes `step()` return `"interrupted"` with the plan
 intact -- nothing is cleared. The loop hands control to the brain (or to whatever advances dialog
