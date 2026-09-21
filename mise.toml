@@ -23,7 +23,7 @@ uv = "0.11.29"
 # file with its own embedded pkl, and a config written against one release is not
 # guaranteed to evaluate under another. renovate.json has a custom manager that
 # bumps hk.pkl in the same PR so the two cannot drift apart.
-hk = "1.55.0"
+hk = "1.58.1"
 # Invoked by hk steps rather than directly.
 actionlint = "1.7.12"
 gitleaks = "8.30.1"
