@@ -9,6 +9,9 @@ Jev sees changes; commit the result. One fixture per decision point:
 
     battle_trainer  the rival battle's FIGHT menu
     battle_wild     a wild battle's FIGHT menu
+    battle_catch    a wild battle with balls in the bag and the enemy nearly down
+    battle_heal     the same battle with the lead hurt and Potions in the bag
+    battle_switch   a wild battle with a hurt lead and a second Pokémon on the bench
     goal_route1     which goal to pursue, standing on Route 1 with the parcel undelivered
     goal_hurt       the same, with the lead below half HP so healing is on the table
     prompt_starter  the "Do you want CHARMANDER?" YES/NO box
@@ -52,6 +55,30 @@ def hurt_the_lead(emu: Emulator) -> None:
     emu.mem[addr + 1] = HURT_HP & 0xFF
 
 
+ALMOST_CAUGHT_HP = 2
+"""What the enemy's HP is set to for `battle_catch`: low enough that a ball is worth a turn.
+Same doctoring as `HURT_HP`, on the record `snapshot` reads for the enemy."""
+
+
+def hurt_the_active(emu: Emulator) -> None:
+    """`hurt_the_lead`, plus the in-battle copy at wBattleMonHP.
+
+    The game copies the active party record into wBattleMon... when a Pokémon comes out, and
+    that copy is what `snapshot` reports as `active` during a battle -- while the game's own
+    item code reads the party record back. A battle fixture has to move both, or Jev is shown a
+    hurt Pokémon the game would refuse to heal.
+    """
+    hurt_the_lead(emu)
+    emu.mem[ram.wBattleMonHP] = HURT_HP >> 8
+    emu.mem[ram.wBattleMonHP + 1] = HURT_HP & 0xFF
+
+
+def weaken_the_enemy(emu: Emulator) -> None:
+    """Put the wild Pokémon on `ALMOST_CAUGHT_HP` (wEnemyMonHP, a big-endian u16)."""
+    emu.mem[ram.wEnemyMonHP] = ALMOST_CAUGHT_HP >> 8
+    emu.mem[ram.wEnemyMonHP + 1] = ALMOST_CAUGHT_HP & 0xFF
+
+
 def battle_ask(state: GameState) -> tuple[dict, dict]:
     sj = battle_state(state, goal=GOAL)
     return sj, battle_questions(sj)
@@ -78,6 +105,9 @@ Tweak = Callable[[Emulator], None] | None
 FIXTURES: dict[str, tuple[str, Ask, Tweak]] = {
     "battle_trainer": ("battle_trainer", battle_ask, None),
     "battle_wild": ("battle_wild", battle_ask, None),
+    "battle_catch": ("battle_items", battle_ask, weaken_the_enemy),
+    "battle_heal": ("battle_items", battle_ask, hurt_the_active),
+    "battle_switch": ("battle_two", battle_ask, hurt_the_active),
     "goal_route1": ("route1", goal_ask, None),
     "goal_hurt": ("route1", goal_ask, hurt_the_lead),
     "prompt_starter": ("prompt_starter", starter_prompt_ask, None),

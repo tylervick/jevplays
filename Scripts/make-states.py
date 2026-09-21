@@ -25,6 +25,11 @@ Milestone 3 adds the overworld's decision points, walked with the real loop and 
     mart_dex.state        inside the Viridian Mart after the Pokédex, before buying
     viridian_oldman.state Viridian City after the Pokédex, the old man still asleep
 
+Milestone 4a adds the two battles the item and switch macros need, both from `battle_wild.state`:
+
+    battle_items.state    the same wild battle with 5 POKé BALLs and 3 POTIONs in the bag
+    battle_two.state      a later wild battle, with the caught Pokémon on the bench
+
 Save states are gitignored: they are copies of the game's memory.
 """
 
@@ -41,6 +46,7 @@ from jevplays.emulator.pyboy import Emulator
 from jevplays.emulator.text import ARROW
 from jevplays.executor import maps
 from jevplays.executor.autoplay import finish_battle, play_one_turn, wait_for_fight_menu
+from jevplays.executor.battle import throw_ball
 from jevplays.executor.dialog import skip_dialog
 from jevplays.executor.goals import OLD_MAN_PICTURE
 from jevplays.executor.navigate import Leg, Navigator, goto, step
@@ -50,6 +56,7 @@ from jevplays.state.snapshot import GameState, snapshot
 
 MILESTONE_1_STATES = ("overworld", "dialog", "menu", "prompt")
 BATTLE_STATES = ("route1", "battle_trainer", "battle_wait", "battle_wild")
+ITEM_STATES = ("battle_items", "battle_two")
 STORY_STATES = (
     "pallet",
     "prompt_starter",
@@ -63,6 +70,7 @@ STORY_STATES = (
 GROUPS: dict[str, tuple[str, ...]] = {
     "milestone1": MILESTONE_1_STATES,
     "battle": BATTLE_STATES,
+    "items": ITEM_STATES,
     "story": STORY_STATES,
 }
 
@@ -147,6 +155,82 @@ def make_battle_states(rom: Path, out: Path) -> None:
             raise SystemExit("no wild encounter on Route 1")
         wait_for_fight_menu(emu)
         emu.save(out / "battle_wild.state")
+
+
+BAG_ITEMS = (4, 5, 20, 3, ram.BAG_END)
+"""What `write_bag` puts in the bag: item 4 (POKé BALL) x5, item 20 (POTION) x3, terminator."""
+
+CATCH_PRESSES = 40
+"""A ceiling on the A presses between throwing the ball and the nickname box."""
+
+
+def write_bag(emu: Emulator) -> None:
+    """Give the player five Poké Balls and three Potions.
+
+    The same doctoring `goal_hurt` does to HP, for the same reason: no walk the scripts take
+    stops at a battle holding both, and the Viridian Mart sells both, so this is a bag the game
+    could really be carrying.
+    """
+    emu.mem[ram.wNumBagItems] = 2
+    for offset, value in enumerate(BAG_ITEMS):
+        emu.mem[ram.wBagItems + offset] = value
+
+
+def heal_party_slot(emu: Emulator, slot: int) -> None:
+    """Put a party slot back to its own max HP, the way a Pokémon Center would."""
+    base = ram.wPartyMons + slot * ram.PARTY_MON_SIZE
+    max_hp = ram.read_u16(emu.mem, base + ram.MON_MAX_HP)
+    emu.mem[base + ram.MON_HP] = max_hp >> 8
+    emu.mem[base + ram.MON_HP + 1] = max_hp & 0xFF
+
+
+def make_item_states(rom: Path, out: Path) -> None:
+    """`battle_items.state` and `battle_two.state`, both descended from `battle_wild.state`.
+
+    `battle_items` is that battle with a bag written into RAM. `battle_two` is played forward
+    from it: the enemy is put on 1 HP so the ball certainly catches, the nickname box is
+    answered NO (the policy never nicknames), and the overworld walk stumbles into a second
+    wild battle -- this time with the caught Pokémon on the bench, which is what makes a
+    switch decision possible at all. The catch leaves that Pokémon on the 1 HP it was caught
+    at, so it is healed back to full first: a Center would have done the same, and a bench
+    Pokémon one hit from fainting is no switch candidate to ask about.
+    """
+    with Emulator(rom) as emu:
+        emu.load(out / "battle_wild.state")
+        write_bag(emu)
+        emu.tick(1)
+        emu.save(out / "battle_items.state")
+
+    with Emulator(rom) as emu:
+        emu.load(out / "battle_items.state")
+        emu.mem[ram.wEnemyMonHP] = 0
+        emu.mem[ram.wEnemyMonHP + 1] = 1
+        throw_ball(emu)
+        for _ in range(CATCH_PRESSES):
+            if yes_no_at(emu.rows()) is not None:
+                break
+            emu.press("a", settle=40)
+        else:
+            raise SystemExit("the ball never reached the nickname box")
+        emu.press("down", settle=16)
+        emu.press("a", settle=40)
+        for _ in range(40):
+            if snapshot(emu).mode is Mode.OVERWORLD:
+                break
+            emu.press("a", settle=40)
+        else:
+            raise SystemExit("the overworld never came back after the catch")
+        assert emu.mem[ram.wPartyCount] == 2, "the caught Pokémon joined the party"
+        heal_party_slot(emu, 1)
+        for i in range(300):
+            if emu.mem[ram.wIsInBattle] == 1:
+                break
+            step(emu, "up" if i % 2 == 0 else "down", settle=12)
+        else:
+            raise SystemExit("no second wild encounter")
+        wait_for_fight_menu(emu)
+        assert emu.mem[ram.wIsInBattle] == 1, "a wild battle with two Pokémon in the party"
+        emu.save(out / "battle_two.state")
 
 
 def settle_overworld(emu: Emulator, frames: int = 900) -> None:
@@ -330,7 +414,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=Path(os.environ.get("JEVPLAYS_STATES", "states")))
     parser.add_argument(
         "--only",
-        choices=sorted(GROUPS) + list(MILESTONE_1_STATES + BATTLE_STATES + STORY_STATES),
+        choices=sorted(GROUPS) + list(MILESTONE_1_STATES + BATTLE_STATES + ITEM_STATES + STORY_STATES),
         default=None,
         help="one group, or one state (which runs the group that state belongs to)",
     )
@@ -346,6 +430,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run_milestone_1 = selected("milestone1")
     run_battles = selected("battle")
+    run_items = selected("items")
     run_story = selected("story")
 
     if run_milestone_1:
@@ -382,6 +467,11 @@ def main(argv: list[str] | None = None) -> int:
     if run_battles:
         make_battle_states(Path(rom), args.out)
         for name in BATTLE_STATES:
+            print(f"wrote {args.out / name}.state")
+
+    if run_items:
+        make_item_states(Path(rom), args.out)
+        for name in ITEM_STATES:
             print(f"wrote {args.out / name}.state")
 
     if run_story:

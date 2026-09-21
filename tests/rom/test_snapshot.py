@@ -14,6 +14,8 @@ from jevplays.state.snapshot import Battle, snapshot
         ("prompt", Mode.PROMPT),
         ("battle_trainer", Mode.BATTLE_MENU),
         ("battle_wild", Mode.BATTLE_MENU),
+        ("battle_items", Mode.BATTLE_MENU),
+        ("battle_two", Mode.BATTLE_MENU),
         ("battle_wait", Mode.BATTLE_WAIT),
         ("route1", Mode.OVERWORLD),
         ("pallet", Mode.OVERWORLD),

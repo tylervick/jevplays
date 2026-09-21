@@ -1,18 +1,27 @@
 {
   "state": {
     "mode": "battle_menu",
-    "map_id": 40,
-    "map": "Oak's Lab",
+    "map_id": 12,
+    "map": "Route 1",
     "tile": [
-      5,
-      6
+      9,
+      28
     ],
     "player_name": "RED",
     "party_count": 1,
     "badges": 0,
-    "money": 3000,
-    "bag_count": 0,
-    "bag": [],
+    "money": 3175,
+    "bag_count": 2,
+    "bag": [
+      {
+        "name": "POKE BALL",
+        "quantity": 5
+      },
+      {
+        "name": "POTION",
+        "quantity": 3
+      }
+    ],
     "in_battle": true,
     "text": "▶FIGHT PKMN ITEM  RUN",
     "menu_items": [],
@@ -21,12 +30,12 @@
       {
         "name": "CHARMANDER",
         "nickname": "CHARMANDER",
-        "level": 5,
+        "level": 6,
         "types": [
           "Fire"
         ],
-        "hp": 20,
-        "max_hp": 20,
+        "hp": 22,
+        "max_hp": 22,
         "status": "none",
         "moves": [
           {
@@ -49,12 +58,12 @@
     "active": {
       "name": "CHARMANDER",
       "nickname": "CHARMANDER",
-      "level": 5,
+      "level": 6,
       "types": [
         "Fire"
       ],
-      "hp": 20,
-      "max_hp": 20,
+      "hp": 22,
+      "max_hp": 22,
       "status": "none",
       "moves": [
         {
@@ -75,37 +84,32 @@
     },
     "active_slot": 0,
     "enemy": {
-      "name": "SQUIRTLE",
-      "nickname": "SQUIRTLE",
-      "level": 5,
+      "name": "PIDGEY",
+      "nickname": "PIDGEY",
+      "level": 2,
       "types": [
-        "Water"
+        "Normal",
+        "Flying"
       ],
-      "hp": 20,
-      "max_hp": 20,
+      "hp": 2,
+      "max_hp": 14,
       "status": "none",
       "moves": [
         {
-          "name": "TACKLE",
+          "name": "GUST",
           "type": "Normal",
-          "power": 35,
+          "power": 40,
           "pp": 35,
           "max_pp": 35
-        },
-        {
-          "name": "TAIL WHIP",
-          "type": "Normal",
-          "power": 0,
-          "pp": 30,
-          "max_pp": 30
         }
       ]
     },
     "battle": {
-      "kind": "trainer",
-      "trainer_class": "RIVAL1"
+      "kind": "wild",
+      "trainer_class": null
     },
     "flags": [
+      "battled_rival_in_oaks_lab",
       "followed_oak_into_lab",
       "got_starter",
       "oak_appeared_in_pallet",
@@ -114,80 +118,26 @@
     "sprites": [
       {
         "slot": 1,
-        "picture": 2,
+        "picture": 4,
         "x": 5,
-        "y": 5
+        "y": 25
       },
       {
         "slot": 2,
-        "picture": 61,
-        "x": 6,
-        "y": 3
-      },
-      {
-        "slot": 3,
-        "picture": 61,
-        "x": 7,
-        "y": 3
-      },
-      {
-        "slot": 4,
-        "picture": 61,
-        "x": 8,
-        "y": 3
-      },
-      {
-        "slot": 5,
-        "picture": 3,
-        "x": 5,
-        "y": 2
-      },
-      {
-        "slot": 6,
-        "picture": 65,
-        "x": 2,
-        "y": 1
-      },
-      {
-        "slot": 7,
-        "picture": 65,
-        "x": 3,
-        "y": 1
-      },
-      {
-        "slot": 8,
-        "picture": 3,
-        "x": 5,
-        "y": 7
-      },
-      {
-        "slot": 9,
-        "picture": 13,
-        "x": 1,
-        "y": 9
-      },
-      {
-        "slot": 10,
-        "picture": 32,
-        "x": 2,
-        "y": 10
-      },
-      {
-        "slot": 11,
-        "picture": 32,
-        "x": 8,
-        "y": 10
+        "picture": 4,
+        "x": 15,
+        "y": 13
       }
     ],
     "map_size": [
-      10,
-      12
+      20,
+      36
     ]
   },
   "state_json": {
     "our_pokemon": {
       "name": "CHARMANDER",
-      "level": 5,
+      "level": 6,
       "types": [
         "Fire"
       ],
@@ -211,22 +161,23 @@
       ]
     },
     "enemy_pokemon": {
-      "name": "SQUIRTLE",
-      "level": 5,
+      "name": "PIDGEY",
+      "level": 2,
       "types": [
-        "Water"
+        "Normal",
+        "Flying"
       ],
-      "hp": "full",
+      "hp": "low",
       "status": "none"
     },
     "battle": {
-      "kind": "trainer"
+      "kind": "wild"
     },
     "bench": [],
     "party": "one",
     "bag": {
-      "poke_balls": false,
-      "potions": false
+      "poke_balls": true,
+      "potions": true
     },
     "goal": "Win the first battle"
   },
@@ -238,25 +189,53 @@
         "SCRATCH": "Normal-type attack, weak power",
         "GROWL": "Normal-type status, none power"
       }
+    },
+    "heal": {
+      "type": "noul",
+      "instructions": "Should we use a Potion on `our_pokemon` this turn instead of attacking?"
+    },
+    "run": {
+      "type": "noul",
+      "instructions": "Should we run from this wild battle rather than fight it?"
+    },
+    "catch": {
+      "type": "noul",
+      "instructions": "Should we throw a Poké Ball at `enemy_pokemon` this turn?",
+      "criteria": {
+        "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough (asleep or paralyzed helps) for a ball to work",
+        "false": "Its hp is still high, or it is not worth a ball"
+      }
     }
   },
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 603,
-      "output_tokens": 37
+      "input_tokens": 742,
+      "output_tokens": 86
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.87,
+        "confidence": 0.98,
         "probabilities": {
-          "SCRATCH": 0.94,
-          "GROWL": 0.06
+          "GROWL": 0.01,
+          "SCRATCH": 0.99
         }
+      },
+      "heal": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "run": {
+        "type": "noul",
+        "noul": 0.08
+      },
+      "catch": {
+        "type": "noul",
+        "noul": 0.32
       }
     }
   },
-  "latency_ms": 106
+  "latency_ms": 313
 }
