@@ -24,6 +24,10 @@ recognizes decision points, sends Jev a small state and a bundle of narrow quest
 explicit policy to the answers, and presses the buttons. Jev never sees a screenshot or a
 coordinate pair. It sees names, types, and words like "low" for HP.
 
+This is the one decision in the project a reader could reasonably argue with, so the README
+states it up front under "What Jev sees" along with what it costs and what it buys. That section
+is the summary; this one is the design, and it wins if the two ever disagree.
+
 Pricing and limits (jev-1.13 as of 2026-09-17): 4.2 cents per million input tokens, 1,200
 requests per minute, 64k tokens per request. A few decisions per second is well within budget.
 Rate limits are documented as adjusting dynamically, so the loop must tolerate stalls.

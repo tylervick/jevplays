@@ -17,6 +17,34 @@ whether to visit, never what to press once there. Prompts and menus along the wa
 answer. Every run writes its decisions and periodic checkpoints to `runs/`, `--resume`
 continues one, and `jevplays replay` plays a logged run back through the dashboard for demos.
 
+## What Jev sees
+
+Jev is a System One model: it takes text and returns typed answers with calibrated probabilities.
+It does not generate prose, plan, or remember anything between calls, and its documented weak
+spots include arithmetic, counting, and spatial reasoning over raw coordinates. So the line this
+project draws is **Jev judges, code executes**, and it is drawn strictly. Jev never sees a
+screenshot, a coordinate pair, a tilemap, or a raw number. It sees names, types, words like "low"
+for HP, and a short list of options, usually with a sentence saying what each one means.
+
+Everything else follows from that. Code owns the route: `executor/world.py` reads a walkability
+grid live out of the map in RAM and runs A* over it, and the one piece of routing written by hand
+is the map-to-map graph in `executor/maps.py`, which names the next map and says nothing about
+where to stand in it. Jev is never asked which way to step. Code owns the counters: the Pokémon
+Center nurse and the Mart clerk are scripted button sequences, and Jev decides only whether going
+there is the right goal, never what to press once it is inside. Code owns the arithmetic: HP
+becomes "low", move power becomes a bucket, PP becomes "out" or not. What is left for Jev is the
+judgment -- which move, whether to run, which goal to pursue, yes or no -- and every answer
+arrives with a probability the dashboard draws as a bar.
+
+The cost is that code has to be right about more things. A walkability grid, a macro per menu,
+and the goal table in `executor/goals.py` are all ours to write and keep correct, and each one is
+a question Jev is never asked and therefore can never get right for us. What it buys is that
+every failure has an address. A wrong turn is a bug in the pathfinder, not a model that misread a
+map; a lost battle is a judgment, and `decisions.jsonl` says exactly what Jev was asked and how
+sure it was. Hand the model the tilemap instead and it will often do fine, but the run stops
+being evidence about the model and becomes evidence about the harness -- and this is meant to be
+a demonstration of what a System One model is for.
+
 ## Quick start
 
 Tooling is managed by [mise](https://mise.jdx.dev) (uv, hk, and the linters) and
