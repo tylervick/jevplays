@@ -44,6 +44,7 @@ from jevplays.executor.goals import Goal
 from jevplays.executor.maps import VIRIDIAN_MART, node_of
 from jevplays.executor.navigate import Leg, Navigator, goto_far
 from jevplays.executor.talk import talk_to
+from jevplays.runlog import CHECKPOINT_EVERY, RunDir
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import GameState, rows_of, snapshot
 
@@ -106,11 +107,20 @@ def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision
 
 
 class Loop:
-    def __init__(self, emu, broadcaster, config: LoopConfig | None = None, brain=None) -> None:
+    def __init__(
+        self,
+        emu,
+        broadcaster,
+        config: LoopConfig | None = None,
+        brain=None,
+        run_dir: RunDir | None = None,
+    ) -> None:
         self.emu = emu
         self.broadcaster = broadcaster
         self.config = config or LoopConfig()
         self.brain = brain
+        self.run_dir = run_dir
+        self._logged_before = run_dir.count() if run_dir is not None else 0
         self.decisions: list[Decision] = []
         self.navigator = Navigator()
         self.goal: Goal | None = None
@@ -138,6 +148,11 @@ class Loop:
     def blocked_goals(self) -> set[str]:
         """The goals that have used up their retries and are no longer offered to Jev."""
         return {goal_id for goal_id, n in self._goal_failures.items() if n >= GOAL_RETRIES}
+
+    @property
+    def decision_count(self) -> int:
+        """Decisions on record for this run: what the log already held plus this session's."""
+        return self._logged_before + len(self.decisions)
 
     async def advance(self, state: GameState) -> int:
         """Move the game forward one step for the current mode. Returns emulated frames spent."""
@@ -187,7 +202,25 @@ class Loop:
 
     async def _record(self, decision: Decision) -> None:
         self.decisions.append(decision)
+        if self.run_dir is not None:
+            self.run_dir.append(decision)
+            if decision.model:
+                self.run_dir.set_model(decision.model)
         await self.broadcaster.publish(decision_event(decision))
+        await self._maybe_checkpoint()
+
+    async def _maybe_checkpoint(self) -> None:
+        if self.run_dir is not None and self.decision_count % CHECKPOINT_EVERY == 0:
+            await self.checkpoint()
+
+    async def checkpoint(self):
+        """Save the game where it stands, named by the decision count, so `--resume` can pick
+        it up. None without a run dir."""
+        if self.run_dir is None:
+            return None
+        path = self.run_dir.checkpoint(self.emu, self.decision_count)
+        await self.broadcaster.publish(status_event("running", f"checkpoint {self.decision_count}"))
+        return path
 
     async def _wait_for_api(self, error: BrainUnavailable) -> None:
         await self.broadcaster.publish(

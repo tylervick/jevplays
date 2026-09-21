@@ -1,12 +1,13 @@
 import asyncio
 from dataclasses import replace
 
+from jevplays.brain.decision import PromptAction
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.emulator import ram
 from jevplays.executor import maps
 from jevplays.executor.goals import Goal, available_goals, goal_by_id
 from jevplays.executor.world import build_grid
-from jevplays.loop import GOAL_BUDGET_S, GOAL_RETRIES, Loop, LoopConfig
+from jevplays.loop import GOAL_BUDGET_S, GOAL_RETRIES, Loop, LoopConfig, local_decision
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import snapshot
 from tests.support import OVERWORLD_LEAD, FakeEmulator, install_map, overworld_state, write_mon
@@ -590,3 +591,78 @@ def test_nothing_available_says_so_rather_than_naming_no_goals():
     paused = [e for e in bc.events if e["type"] == "status" and e["status"] == "paused"]
     assert len(paused) == 1 and paused[0]["message"] == "no goal is available right now"
     assert loop._goal_failures == {}
+
+
+# --- milestone 3b: the loop writes through the run dir ---------------------------------------
+
+
+def test_every_decision_is_appended_to_the_run_log(tmp_path):
+    from jevplays.runlog import RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    emu = prompt_emu()
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), brain=None, run_dir=run_dir)
+    run(loop, 1)
+    assert run_dir.count() == 1
+    assert next(run_dir.decisions())["kind"] == "prompt"
+    assert loop.decision_count == 1
+
+
+def test_a_checkpoint_is_written_every_checkpoint_every_decisions(tmp_path):
+    from jevplays.runlog import CHECKPOINT_EVERY, RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    emu = prompt_emu()
+    emu.step_effects = {}  # the fake never leaves the prompt, so every iteration decides again
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), brain=None, run_dir=run_dir)
+    run(loop, CHECKPOINT_EVERY * 2 + 1)
+    assert sorted(p.name for p in run_dir.path.glob("checkpoint-*.state")) == [
+        f"checkpoint-{CHECKPOINT_EVERY}.state",
+        f"checkpoint-{CHECKPOINT_EVERY * 2}.state",
+    ]
+
+
+def test_numbering_continues_from_the_log_when_resumed(tmp_path):
+    from jevplays.runlog import CHECKPOINT_EVERY, RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    for _ in range(CHECKPOINT_EVERY - 1):
+        run_dir.append(local_decision("prompt", {}, PromptAction(yes=True), "seed"))
+    emu = prompt_emu()
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), brain=None, run_dir=run_dir)
+    run(loop, 1)
+    assert loop.decision_count == CHECKPOINT_EVERY
+    assert (run_dir.path / f"checkpoint-{CHECKPOINT_EVERY}.state").is_file()
+
+
+def test_the_first_model_id_lands_in_run_json(tmp_path):
+    from jevplays.runlog import RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    emu = prompt_emu()
+    brain = FakeBrain(
+        response={
+            "model": "jev-1.13.0",
+            "usage": {"input_tokens": 3},
+            "answers": {"prompt": {"type": "noul", "noul": 0.9}},
+        }
+    )
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), brain=brain, run_dir=run_dir)
+    run(loop, 1)
+    assert run_dir.info()["model"] == "jev-1.13.0"
+
+
+def test_checkpoint_on_demand_names_the_current_count_and_says_so(tmp_path):
+    from jevplays.runlog import RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    bc = RecordingBroadcaster()
+    loop = Loop(FakeEmulator(), bc, LoopConfig(paced=False), run_dir=run_dir)
+    path = asyncio.run(loop.checkpoint())
+    assert path.name == "checkpoint-0.state"
+    assert any(e["type"] == "status" and e["message"] == "checkpoint 0" for e in bc.events)
+
+
+def test_without_a_run_dir_nothing_is_written_and_checkpoint_is_a_no_op():
+    loop = Loop(FakeEmulator(), RecordingBroadcaster(), LoopConfig(paced=False))
+    assert asyncio.run(loop.checkpoint()) is None
