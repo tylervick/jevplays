@@ -94,7 +94,7 @@ def test_main_says_so_when_no_prediction_was_ever_resolved(tmp_path, capsys):
     assert "no faint predictions resolved" in capsys.readouterr().out
 
 
-def explore_decision(id_, map_name, options, choice=None, fallback_reason=""):
+def explore_decision(id_, map_name, options, choice=None, fallback_reason="", action=""):
     answers = {"explore": {"primitive": "choice", "choice": choice}} if choice is not None else {}
     return {
         "kind": "explore",
@@ -102,6 +102,7 @@ def explore_decision(id_, map_name, options, choice=None, fallback_reason=""):
         "state_summary": {"map": map_name, "options": options},
         "answers": answers,
         "fallback_reason": fallback_reason,
+        "action": action,
     }
 
 
@@ -112,6 +113,7 @@ def test_exploration_summarises_decisions_by_kind_and_explore_picks_by_option_ki
             "VIRIDIAN_CITY",
             {"door_41": "enter the Center (new)", "npc_3": "talk to the nurse (new)"},
             choice="door_41",
+            action="explore: enter the Center",
         ),  # a plain, on-list choice
         explore_decision(
             "e-npc",
@@ -119,12 +121,14 @@ def test_exploration_summarises_decisions_by_kind_and_explore_picks_by_option_ki
             {"npc_3": "talk to the nurse (new)", "grass": "train in the grass (new)"},
             choice="nonsense",
             fallback_reason="'nonsense' is not offered; using npc_3 instead",
+            action="explore: talk to the nurse",
         ),  # an off-list choice: the recorded answer is what Jev said, npc_3 is what ran
         explore_decision(
             "e-milestone",
             "ROUTE_1",
             {"milestone": "go to Pewter (new)"},
             fallback_reason="no usable explore answer; using milestone instead",
+            action="explore: go to Pewter",
         ),  # no explore answer at all: the fallback text is the only source
         decision("EMBER", ["Grass"]),
         decision("SCRATCH", ["Grass"]),
@@ -169,3 +173,20 @@ def test_main_prints_zero_exploration_summary_when_the_run_has_no_explore_decisi
     assert "explore picks: exit 0, door 0, npc 0, grass 0, milestone 0, heal 0" in out
     assert "milestone share: 0%" in out
     assert "maps seen: 0" in out
+
+
+def test_a_heal_first_override_counts_as_heal_not_as_what_jev_said():
+    """`needs_heal` can override a valid explore choice without marking a fallback, so the
+    executed option must come from the action text, never from the recorded choice."""
+    log = [
+        explore_decision(
+            "e-heal",
+            "VIRIDIAN_CITY",
+            {"exit_north": "go north to Route 2 (new)", "heal": "go heal at Viridian Pokémon Center (new)"},
+            choice="exit_north",
+            action="explore: go heal at Viridian Pokémon Center",
+        )
+    ]
+    summary = accuracy_mod.exploration(log)
+    assert summary["explore_by_option_kind"]["heal"] == 1
+    assert summary["explore_by_option_kind"]["exit"] == 0

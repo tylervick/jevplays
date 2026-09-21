@@ -19,7 +19,6 @@ many distinct maps were seen.
 """
 
 import argparse
-import re
 import sys
 from collections.abc import Iterable
 from pathlib import Path
@@ -30,7 +29,6 @@ from jevplays.state.types import best_moves
 
 DECISION_KINDS = ("battle", "explore", "prompt", "menu")
 EXPLORE_OPTION_KINDS = ("exit", "door", "npc", "grass", "milestone", "heal")
-_FALLBACK_ID = re.compile(r"using (\S+) instead$")
 
 
 def accuracy(decisions: Iterable[dict]) -> tuple[int, int, list[dict]]:
@@ -75,20 +73,19 @@ def _option_kind(option_id: str) -> str | None:
 
 
 def _executed_option_id(d: dict) -> str | None:
-    """The option an explore decision actually ran. `Decision.to_dict` drops `action_value`, so
-    the id is not logged directly; work it back out from what is. The common case is
-    `answers["explore"]["choice"]`, so long as it names an option that was really on offer (a
-    choice off the list is recorded as what Jev said, not what ran). When the choice was
-    missing, invalid, or lost to a policy fallback (a heal, or the milestone/first-option
-    fallback), `decide_explore` always ends `fallback_reason` with "using <id> instead", and
-    that id is always one of `state_summary["options"]` -- so parse it from there instead."""
-    options = d.get("state_summary", {}).get("options", {})
-    choice = d.get("answers", {}).get("explore", {}).get("choice")
-    if choice in options:
-        return choice
-    match = _FALLBACK_ID.search(d.get("fallback_reason", ""))
-    if match and match.group(1) in options:
-        return match.group(1)
+    """The option an explore decision actually ran. `Decision.to_dict` drops `action_value`, and
+    `answers["explore"]["choice"]` is what Jev said, not what ran: a heal-first override or an
+    off-list fallback executes something else without changing it. The `action` text is built
+    from the option that ran in every branch ("explore: <option text>"), and the options on offer
+    are logged as id -> "<text> (<memory>)", so matching the two recovers the id exactly."""
+    action = d.get("action", "")
+    prefix = "explore: "
+    if not action.startswith(prefix):
+        return None
+    text = action[len(prefix) :]
+    for option_id, labelled in d.get("state_summary", {}).get("options", {}).items():
+        if labelled.rsplit(" (", 1)[0] == text:
+            return option_id
     return None
 
 
