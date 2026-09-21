@@ -67,7 +67,12 @@ PARTY_LIST_ROWS_SLOT1 = [
     "▶" + PARTY_LIST_ROWS[3][1:],
 ] + PARTY_LIST_ROWS[4:]
 ITEM_PARTY_ROWS = PARTY_LIST_ROWS[:14] + ["·Use item on which ·", "", "·POKéMON?          ·"]
-SWITCH_MENU_ROWS = PARTY_LIST_ROWS[:12] + [
+# The real screen shows the outline glyph (▷, not the ▶ cursor) on the party list's row 1 once
+# the SWITCH/STATS/CANCEL sub-menu is open, so switch_to's "cursor is on SWITCH" check has to
+# look at row 12 specifically rather than the first ▶ on screen.
+_SWITCH_MENU_BASE = list(PARTY_LIST_ROWS[:12])
+_SWITCH_MENU_BASE[1] = "▷" + _SWITCH_MENU_BASE[1][1:]
+SWITCH_MENU_ROWS = _SWITCH_MENU_BASE + [
     "············▶SWITCH·",
     "",
     "·Choose a P· STATS ·",
@@ -75,6 +80,32 @@ SWITCH_MENU_ROWS = PARTY_LIST_ROWS[:12] + [
     "·          · CANCEL·",
 ]
 NO_EFFECT_ROWS = PARTY_LIST_ROWS[:14] + ["·It won't have any  ·", "", "·effect.           ·"]
+FAINTED_ROWS = PARTY_LIST_ROWS[:14] + ["·There's no will    ·", "", "·to fight!        ▼·"]
+
+# A four-item bag (only three slots show at once) so select_item has to scroll to reach the
+# fourth. Cursor starts on POKé BALL; down moves it to POTION, then a second down scrolls the
+# list so POTION/ANTIDOTE/ETHER are visible with the cursor landing on ETHER.
+ITEM_SCROLL_ROWS_0 = [""] * 4 + [
+    "····▶POKé BALL    ·",
+    "",
+    "···· POTION       ·",
+    "",
+    "···· ANTIDOTE     ·",
+]
+ITEM_SCROLL_ROWS_1 = [""] * 4 + [
+    "···· POKé BALL    ·",
+    "",
+    "····▶POTION       ·",
+    "",
+    "···· ANTIDOTE     ·",
+]
+ITEM_SCROLL_ROWS_2 = [""] * 4 + [
+    "···· POTION       ·",
+    "",
+    "···· ANTIDOTE     ·",
+    "",
+    "····▶ETHER        ·",
+]
 
 
 class ScriptedEmulator(FakeEmulator):
@@ -177,3 +208,16 @@ def test_select_move_without_a_cursor_raises_macro_error_not_stop_iteration():
     emu = ScriptedEmulator([MOVES_WITHOUT_CURSOR] * 2)
     with pytest.raises(MacroError, match="cursor"):
         select_move(emu, "SCRATCH")
+
+
+def test_switch_to_raises_when_the_target_has_fainted():
+    emu = ScriptedEmulator([MENU_PKMN, PARTY_LIST_ROWS, FAINTED_ROWS])
+    with pytest.raises(MacroError, match="fainted"):
+        switch_to(emu, 0)
+    assert emu.presses[-2:] == ["b", "b"]
+
+
+def test_select_item_scrolls_past_the_three_visible_slots():
+    emu = ScriptedEmulator([MENU_ITEM, ITEM_SCROLL_ROWS_0, ITEM_SCROLL_ROWS_1, ITEM_SCROLL_ROWS_2])
+    select_item(emu, "ETHER")
+    assert emu.presses[-3:] == ["down", "down", "a"]

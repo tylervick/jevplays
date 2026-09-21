@@ -116,6 +116,11 @@ def use_potion(emu, slot: int) -> None:
     for _ in range(abs(slot - c)):
         emu.press(button, settle=16)
     emu.press("a", settle=40)
+    wait_for(
+        emu,
+        lambda rows: "won't have any" in _text(rows) or "Use item on which" not in _text(rows),
+        frames=90,
+    )
     rows = rows_of(emu.tilemap())
     if "won't have any" in _text(rows):
         emu.press("b", settle=20)
@@ -135,6 +140,11 @@ def switch_to(emu, slot: int) -> None:
     for _ in range(abs(slot - c)):
         emu.press(button, settle=16)
     emu.press("a", settle=40)
+    wait_for(
+        emu,
+        lambda rows: "no will" in _text(rows) or "Choose a POKéMON" not in _text(rows),
+        frames=90,
+    )
     rows = rows_of(emu.tilemap())
     if "no will" in _text(rows):
         emu.press("b", settle=20)
