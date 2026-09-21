@@ -347,25 +347,27 @@ def _viridian_old_man(state: GameState) -> bool:
     )
 
 
-MILESTONES: dict[str, Callable[[GameState], bool]] = {
+STATE_CONDITIONS: dict[str, Callable[[GameState], bool]] = {
     "viridian": _in(maps.VIRIDIAN_CITY),
     "mart_parcel": _in(maps.VIRIDIAN_MART, "got_oaks_parcel"),
     "dex": _in(maps.OAKS_LAB, "got_pokedex"),
     "mart_dex": _in(maps.VIRIDIAN_MART, "got_pokedex"),
     "viridian_oldman": _viridian_old_man,
 }
-"""Each state the scripted walk writes, and the first moment it may be written. The loop chooses
-its own options, so these are conditions rather than a fixed sequence of button presses."""
+"""Each save state the scripted walk writes, and the first moment it may be written. Not the
+run's milestones (`executor.goals.MILESTONES`), which it shares a walk with but not a list. The
+loop chooses its own options, so these are conditions rather than a fixed sequence of button
+presses."""
 
 
 class RecordingLoop(Loop):
-    """The real loop with a save hook. Before every turn it writes the milestone states whose
+    """The real loop with a save hook. Before every turn it writes the save states whose
     condition now holds, and gives up the walk as soon as none are left."""
 
     def __init__(self, emu: Emulator, out: Path) -> None:
         super().__init__(emu, Quiet(), LoopConfig(paced=False, fps=0.001), brain=FirstChoiceBrain())
         self.out = out
-        self.pending = dict(MILESTONES)
+        self.pending = dict(STATE_CONDITIONS)
 
     async def advance(self, state: GameState) -> int:
         for name in [n for n, holds in self.pending.items() if holds(state)]:
