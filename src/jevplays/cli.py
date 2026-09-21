@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -91,7 +92,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         try:
             with Emulator(rom) as emu:
                 if start_state:
-                    await broadcaster.publish(status_event("running", f"loading {start_state}"))
+                    what = "resuming from" if args.resume is not None else "loading"
+                    await broadcaster.publish(status_event("running", f"{what} {start_state}"))
                     emu.load(start_state)
                 else:
                     await broadcaster.publish(status_event("running", "walking the intro"))
@@ -131,9 +133,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                         await brain.close()
         finally:
             server.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            # uvicorn re-raises the signal it captured once it has shut down; by then we are
+            # already on our way out, so that second KeyboardInterrupt is nothing but noise.
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
                 await server  # let uvicorn shut down before the process exits
 
+    # A plain `kill` (SIGTERM) is how a supervisor stops a run. Point it at the SIGINT handler so
+    # it becomes the KeyboardInterrupt below and the exit checkpoint in the finally still runs.
+    with contextlib.suppress(ValueError):  # not the main thread (a test runner)
+        signal.signal(signal.SIGTERM, signal.getsignal(signal.SIGINT))
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
