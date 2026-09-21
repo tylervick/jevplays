@@ -39,20 +39,6 @@ def choose_battle_action(answers: dict[str, dict], state_json: dict) -> tuple[Ba
     return None, []
 
 
-def choose_goal(answers: dict[str, dict], available_ids: list[str]) -> tuple[str, list[str]]:
-    """The goal to pursue and the answer ids used. Heals first when `needs_heal` clears the
-    threshold and healing is available; otherwise the `goal` choice, or the first available id
-    when there is no usable choice answer. Does not guarantee the id is in `available_ids`; the
-    caller (decide_goal) is responsible for falling back when it is not."""
-    if _noul(answers, "needs_heal") > HEAL_FIRST_THRESHOLD and "heal_at_center" in available_ids:
-        used = ["needs_heal"] if "needs_heal" in answers else []
-        return "heal_at_center", used
-    goal = answers.get("goal")
-    if goal and goal.get("type") == "choice":
-        return goal["choice"], ["goal"]
-    return (available_ids[0] if available_ids else ""), []
-
-
 def choose_explore(answers: dict[str, dict], option_ids: list[str]) -> tuple[str, list[str]]:
     """The option to take next, and the answer ids used. Heals first when `needs_heal` clears
     the threshold and a `heal` option is on offer; otherwise the `explore` choice, so long as it

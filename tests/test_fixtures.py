@@ -4,10 +4,8 @@ from pathlib import Path
 import pytest
 
 from jevplays.brain.battle import ALL_ACTIONS, decide_battle
-from jevplays.brain.goal import decide_goal
 from jevplays.brain.policy import (
     CATCH_THRESHOLD,
-    HEAL_FIRST_THRESHOLD,
     HEAL_THRESHOLD,
     RUN_THRESHOLD,
     SWITCH_THRESHOLD,
@@ -56,31 +54,6 @@ def replay(name, decoder, **extra):
         latency_ms=f["latency_ms"],
         **extra,
     )
-
-
-@pytest.mark.parametrize("name", ["goal_route1", "goal_hurt"])
-def test_recorded_goal_response_decodes_to_an_available_goal(name):
-    f = load(name)
-    ids = list(f["state_json"]["goals"])
-    _, d = replay(name, decide_goal, available_ids=ids)
-    assert d.action_value.goal_id in ids and d.fallback is False
-    assert d.answers["goal"]["applied"] is True or d.answers["needs_heal"]["applied"] is True
-
-
-def test_route1_fixture_goes_after_the_parcel():
-    f, d = replay("goal_route1", decide_goal, available_ids=list(load("goal_route1")["state_json"]["goals"]))
-    assert d.action == "pursue deliver_parcel"
-    probs = f["response"]["answers"]["goal"]["probabilities"]
-    assert probs["deliver_parcel"] > probs["train_nearby"]
-
-
-def test_hurt_fixture_heals_before_anything_else():
-    f, d = replay("goal_hurt", decide_goal, available_ids=list(load("goal_hurt")["state_json"]["goals"]))
-    assert d.action == "pursue heal_at_center"
-    # Both routes to that answer agree: the `goal` choice picked it, and `needs_heal` cleared
-    # the heal-first threshold on its own.
-    assert f["response"]["answers"]["goal"]["choice"] == "heal_at_center"
-    assert f["response"]["answers"]["needs_heal"]["noul"] > HEAL_FIRST_THRESHOLD
 
 
 def test_starter_prompt_fixture_answers_yes():
