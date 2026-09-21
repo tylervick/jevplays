@@ -8,10 +8,12 @@ const fields = {
   map: document.getElementById("map"),
   text: document.getElementById("text"),
   menu: document.getElementById("menu"),
+  flags: document.getElementById("flags"),
 };
 
 const decisionEl = document.getElementById("decision");
 const goalEl = document.getElementById("goal");
+const legEl = document.getElementById("leg");
 const logEl = document.getElementById("log");
 const partyEl = document.getElementById("party");
 
@@ -68,7 +70,11 @@ function renderDecision(d) {
     decisionEl.append(a.primitive === "choice" ? renderChoice(id, q, a) : renderNoul(id, q, a));
   }
   decisionEl.append(el("p", "meta", `${d.model} · ${d.latency_ms} ms · ${d.input_tokens} tokens`));
-  goalEl.textContent = d.state_summary.goal || "–";
+  if (d.kind === "goal") {
+    const id = (d.action.match(/^pursue (.+)$/) || [])[1];
+    const goals = d.state_summary.goals || {};
+    goalEl.textContent = (id && goals[id]) || d.action;
+  }
   const top = d.answers.move ? ` (${d.answers.move.confidence.toFixed(2)})` : "";
   const item = el("li", "", `${d.kind}: ${d.action}${top}`);
   logEl.prepend(item);
@@ -109,11 +115,17 @@ function connect() {
       fields.menu.textContent = s.menu_items.length
         ? s.menu_items.map((item, i) => (i === s.cursor ? `▶${item}` : item)).join("  ")
         : "–";
+      fields.flags.textContent = s.flags && s.flags.length ? s.flags.join(", ") : "–";
       raw.textContent = JSON.stringify(s, null, 2);
       renderParty(s.party || []);
     } else if (event.type === "status") {
       status.textContent = event.message ? `${event.status}: ${event.message}` : event.status;
       status.dataset.status = event.status;
+      legEl.textContent = event.message || event.status;
+      legEl.dataset.status = event.status;
+      if (/^goal (done|blocked):/.test(event.message || "")) {
+        goalEl.textContent = "–";
+      }
     } else if (event.type === "decision") {
       renderDecision(event.decision);
     }
