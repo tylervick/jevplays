@@ -87,7 +87,9 @@ function renderDecision(d) {
     goalEl.textContent = d.state_summary.milestone || d.action;
   }
   const top = d.answers.move ? ` (${d.answers.move.confidence.toFixed(2)})` : "";
-  const item = el("li", "", `${d.kind}: ${d.action}${top}`);
+  // An explore action already reads "explore: ...", so only the other kinds get the prefix.
+  const headline = d.action.startsWith(`${d.kind}:`) ? d.action : `${d.kind}: ${d.action}`;
+  const item = el("li", "", `${headline}${top}`);
   logEl.prepend(item);
   while (logEl.children.length > 50) logEl.lastChild.remove();
 }
