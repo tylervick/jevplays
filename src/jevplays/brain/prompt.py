@@ -69,6 +69,11 @@ def decide_prompt(
         state_summary["policy_note"] = reason
     else:
         yes, used = choose_prompt(raw, text)
+        if not used:
+            # No usable `prompt` answer came back, so NO is code's own safe default, not a
+            # judgment: spec 12 says to mark it.
+            fallback = True
+            reason = "no usable prompt answer; answering NO"
     for qid in used:
         if qid in answers:
             answers[qid]["applied"] = True

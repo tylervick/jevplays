@@ -138,3 +138,20 @@ def test_decide_goal_falls_back_when_the_model_picks_an_id_outside_available_ids
     assert d.action == "pursue get_starter"
     assert d.action_value == GoalAction(goal_id="get_starter")
     assert d.answers["goal"]["applied"] is False  # the invalid choice was not the one used
+
+
+def test_decide_goal_marks_a_missing_goal_answer_as_a_fallback():
+    """Spec 12: when the policy cannot act on the answers and code picks instead, say so."""
+    state = overworld_state(party=(LEAD,))
+    sj = goal_state(state, GOALS)
+    qs = goal_questions(sj)
+    available_ids = list(sj["goals"])
+    response = {
+        "model": "m",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+        "answers": answers(needs_heal=0.1),  # no `goal` answer came back at all
+    }
+    d = decide_goal(sj, qs, response, available_ids, model="m", input_tokens=1, latency_ms=1)
+    assert d.action == f"pursue {available_ids[0]}"
+    assert d.fallback is True and "no usable goal answer" in d.fallback_reason
+    assert d.answers["needs_heal"]["applied"] is False

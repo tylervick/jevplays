@@ -171,3 +171,14 @@ def test_decide_menu_falls_back_when_the_menu_question_is_missing():
     assert d.fallback is True and d.fallback_reason == "menu: model chose an item not on screen"
     assert d.action == "close the menu"
     assert d.action_value == MenuAction(item=None)
+
+
+def test_decide_prompt_marks_a_missing_prompt_answer_as_a_fallback():
+    """Spec 12: NO with no answer to go on is code's default, not Jev's judgment."""
+    sj = {"prompt": "SAVE THE GAME?", "goal": "Beat Brock"}
+    qs = prompt_questions(sj)
+    response = {"model": "m", "usage": {"input_tokens": 1, "output_tokens": 1}, "answers": {}}
+    d = decide_prompt(sj, qs, response, model="m", input_tokens=1, latency_ms=1)
+    assert d.action == "answer NO" and d.action_value == PromptAction(yes=False)
+    assert d.fallback is True and "no usable prompt answer" in d.fallback_reason
+    assert "policy_note" not in d.state_summary

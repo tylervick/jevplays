@@ -61,6 +61,11 @@ def decide_goal(
         fallback = True
         reason = f"{chosen_id!r} is not an available goal; using the first available goal instead"
         chosen_id, used = available_ids[0], []
+    elif not used:
+        # choose_goal fell through to available_ids[0] because no answer was usable: the policy
+        # did not decide this, code did, and spec 12 says that is a fallback.
+        fallback = True
+        reason = "no usable goal answer; using the first available goal instead"
     for qid in used:
         if qid in answers:
             answers[qid]["applied"] = True
