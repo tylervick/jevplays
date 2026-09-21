@@ -81,10 +81,10 @@ function renderDecision(d) {
   if (d.model) {
     decisionEl.append(el("p", "meta", `${d.model} · ${d.latency_ms} ms · ${d.input_tokens} tokens`));
   }
-  if (d.kind === "goal") {
-    const id = (d.action.match(/^pursue (.+)$/) || [])[1];
-    const goals = d.state_summary.goals || {};
-    goalEl.textContent = (id && goals[id]) || d.action;
+  if (d.kind === "explore") {
+    // The line shows the milestone the run is working towards, not the option just chosen:
+    // the option is already in the log line below, and the milestone is what it is all for.
+    goalEl.textContent = d.state_summary.milestone || d.action;
   }
   const top = d.answers.move ? ` (${d.answers.move.confidence.toFixed(2)})` : "";
   const item = el("li", "", `${d.kind}: ${d.action}${top}`);
@@ -134,9 +134,8 @@ function connect() {
       status.dataset.status = event.status;
       legEl.textContent = event.message || event.status;
       legEl.dataset.status = event.status;
-      // Every way the loop lets go of a goal: "goal done:", "goal blocked:",
-      // "goal failed 1/3:", "goal budget spent:". The line is stale the moment any of them lands.
-      if (/^goal (done|blocked|failed|budget)[ :]/.test(event.message || "")) {
+      // The milestone the line names is done, so it is stale the moment this lands.
+      if (/^milestone done[ :]/.test(event.message || "")) {
         goalEl.textContent = "–";
       }
     } else if (event.type === "decision") {

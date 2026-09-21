@@ -27,6 +27,8 @@ h2 { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spa
 .status[data-status="running"] { background: var(--accent); color: #0f1115; }
 .status[data-status="waiting_for_api"], .status[data-status="paused"] { background: var(--warn); color: #0f1115; }
 .status[data-status="stopped"] { background: var(--stop); color: #0f1115; }
+/* A run that reached the last milestone, rather than one that merely ended (#29). */
+.status[data-status="finished"] { background: var(--accent); color: #0f1115; }
 main { display: grid; grid-template-columns: 640px 1fr; gap: 20px; padding: 20px; }
 .screen img { image-rendering: pixelated; background: #000; display: block; }
 .panel { background: var(--panel); border-radius: 8px; padding: 4px 16px 16px; min-width: 0; }
