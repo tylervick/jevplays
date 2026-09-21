@@ -9,13 +9,13 @@ macros and the accuracy script. The emulator boots, walks the intro or loads a s
 game state including the party, an active battle, story flags, and nearby sprites, and streams it
 all to the dashboard. At the battle menu, the loop asks Jev, publishes the decision, and the
 executor presses the buttons; all five actions execute now, so battles can heal with a Potion,
-catch a wild Pokémon, and switch in a bench member, not just attack or run. In the overworld, Jev picks a goal
-from the table in `executor/goals.py` (through Brock's badge), code walks there using a
-walkability grid read live from the map in RAM rather than a hand-written route, and the Pokémon
-Center nurse and the Mart clerk are scripted counters that Jev only decides whether to visit,
-never what to press once there. Prompts and menus along the way are Jev's to answer. Every run
-writes its decisions and periodic checkpoints to `runs/`, `--resume` continues one, and
-`jevplays replay` plays a logged run back through the dashboard for demos.
+catch a wild Pokémon, and switch in a bench member, not just attack or run. In the overworld,
+Jev picks a goal from the table in `executor/goals.py` (through Brock's badge), code walks
+there using a walkability grid read live from the map in RAM rather than a hand-written route,
+and the Pokémon Center nurse and the Mart clerk are scripted counters that Jev only decides
+whether to visit, never what to press once there. Prompts and menus along the way are Jev's to
+answer. Every run writes its decisions and periodic checkpoints to `runs/`, `--resume`
+continues one, and `jevplays replay` plays a logged run back through the dashboard for demos.
 
 ## Quick start
 
@@ -94,8 +94,9 @@ are offered again and the goal choice starts fresh.
 `decision` events to the dashboard at `http://127.0.0.1:8765` with a pause between them (`--delay`,
 seconds; `--limit`, stop after N decisions), plus a `status` update naming its progress. It holds
 the first decision until a browser connects, for up to `--wait` seconds (default 30; `--wait 0`
-starts at once), so nothing is played to an empty room. It needs no ROM and no `TYPESAFE_API_KEY` -- the game screen stays blank, since frames were never logged,
-only decisions.
+starts at once), so nothing is played to an empty room. It needs no ROM and no
+`TYPESAFE_API_KEY` -- the game screen stays blank, since frames were never logged, only
+decisions.
 
 For streaming or recording, add `http://127.0.0.1:8765/?layout=stream` as an OBS browser source at
 1920x1080; it lays the game, the decision panel, and the log out to fill that fixed canvas instead

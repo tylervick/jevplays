@@ -322,7 +322,7 @@ Decision
 
 ## 9. The executor
 
-`macros.py` turns an action into button presses using the current `GameState` for cursor
+`executor/battle.py` turns an action into button presses using the current `GameState` for cursor
 positions: FIGHT then the move's slot, PKMN then the bench slot, ITEM then the item's slot, RUN.
 It reads the cursor's label from the screen buffer before every A press, so a wrong cursor
 position is caught before it can select anything; the loop retries a failed macro once, then uses
@@ -330,15 +330,20 @@ the first move, then pauses until the screen changes.
 
 Milestone 4a added the heal, catch, and switch macros to `executor/battle.py`. Heal opens ITEM,
 walks the visible slots down to POTION, and picks the active Pokémon off the item's target
-screen; a Potion that would have no effect -- the target already at full HP -- backs out with two
-B presses and raises `MacroError` rather than leaving the cursor on a screen nothing consumed.
-Catch opens the same ITEM list and picks POKé BALL. Switch opens PKMN, walks the party list to
-the chosen slot, and presses A into the SWITCH option that appears in the sub-menu below it;
-choosing a fainted Pokémon there backs out the same way heal does, with `MacroError` instead of a
-half-finished switch. All three read the cursor's label before every A press, the same rule
-`select_command` and `select_move` already followed. A bench label like `PIDGEY (second)` is
-resolved to its party slot by `bench_slots` in `brain/battle.py` before the executor ever runs --
-the label is what Jev answered with, never a raw index.
+screen; a Potion that would have no effect -- the target already at full HP -- raises
+`MacroError` rather than leaving the cursor on a screen nothing consumed. Catch opens the same
+ITEM list and picks POKé BALL. Switch opens PKMN, walks the party list to the chosen slot, and
+presses A into the SWITCH option that appears in the sub-menu below it; choosing a fainted
+Pokémon there raises the same way heal does, instead of leaving a half-finished switch. All
+three check the cursor before every A press, the same rule `select_command` and `select_move`
+already followed -- but on the party list the check is positional, `CURSOR in
+rows[PARTY_ROWS[slot]]`, because the cursor sits on the slot's HP row and the label there reads
+the HP text ("22/ 22") and never a name. Every failure inside a macro goes through `_back_out`
+first, which presses B until FIGHT is back on the battle menu row (at most four times), so a
+failed macro always leaves the game on the battle menu, which is the one screen the loop knows
+how to pick up from; the loop's own retry then needs no blind presses of its own. A bench label
+like `PIDGEY (second)` is resolved to its party slot by `bench_slots` in `brain/battle.py` before
+the executor ever runs -- the label is what Jev answered with, never a raw index.
 
 Milestone 3a replaced the collision-window waypoint design this section originally called for with
 navigation over the full current map, read from the running game rather than hand-written.
