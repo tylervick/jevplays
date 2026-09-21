@@ -195,8 +195,18 @@ def make_item_states(rom: Path, out: Path) -> None:
     at, so it is healed back to full first: a Center would have done the same, and a bench
     Pokémon one hit from fainting is no switch candidate to ask about.
     """
+    source = out / "battle_wild.state"
+    if not source.exists():
+        # Exit 2 like the missing-ROM check: a precondition the caller has to fix, not a run
+        # that went wrong halfway.
+        print(
+            f"{source} is missing; the item states are played forward from it.\n"
+            "Write the battle group first: uv run Scripts/make-states.py --only battle",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     with Emulator(rom) as emu:
-        emu.load(out / "battle_wild.state")
+        emu.load(source)
         write_bag(emu)
         emu.tick(1)
         emu.save(out / "battle_items.state")
