@@ -1,4 +1,4 @@
-"""One run on disk: `runs/<stamp>/` with run.json, decisions.jsonl, and numbered checkpoints.
+"""One run on disk: `runs/<stamp>/` with run.json, decisions.jsonl, memory.json, and checkpoints.
 
 The loop writes through a RunDir; `jevplays run --resume` opens one and continues it; `jevplays
 replay` reads the log back. Nothing here imports the emulator: `checkpoint` takes any object with
@@ -219,6 +219,29 @@ class RunDir:
             info["torn_lines"] = [number for number in info["torn_lines"] if number <= n]
             self._write_info(info)
         return len(surplus)
+
+    # -- memory.json --------------------------------------------------------------------
+
+    @property
+    def memory_path(self) -> Path:
+        return self.path / "memory.json"
+
+    def save_memory(self, d: dict) -> None:
+        """Write the run's `executor.options.Memory` out, whole, after every change to it.
+
+        Through a temp file and a rename, like `truncate_to`: the loop rewrites this file every
+        few seconds, and a crash mid-write must leave the last good memory rather than half of
+        the new one -- a `--resume` reads it back and would otherwise start the run amnesiac."""
+        tmp = self.memory_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, self.memory_path)
+
+    def load_memory(self) -> dict | None:
+        """What `save_memory` last wrote, or None for a run that never wrote any (one from
+        before memory existed, or one that stopped before its first decision)."""
+        if not self.memory_path.is_file():
+            return None
+        return json.loads(self.memory_path.read_text(encoding="utf-8"))
 
     # -- outcomes.jsonl -----------------------------------------------------------------
 
