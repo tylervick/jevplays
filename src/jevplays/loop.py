@@ -279,12 +279,12 @@ class Loop:
         second failure means the decision could not be carried out at all, so we fall through to
         `_after_second_failure` rather than silently pressing on.
 
-        The macros back out to the battle menu themselves before raising, so usually there is
-        nothing to press here and the snapshot below is already `BATTLE_MENU`. When it is not --
-        a screen the macro could not close, or one that opened after it gave up -- B is pressed
-        up to `MACRO_BACKOUT_PRESSES` times, re-snapshotting each time, and if the battle menu
-        still has not come back the retry is skipped: the next loop iteration reads the screen
-        afresh."""
+        The macros back out to the battle menu themselves before raising, so the first B here is
+        usually a settling press on a menu that ignores it (B does nothing at the top-level battle
+        menu). When the macro could not close its screen, or one opened after it gave up, B is
+        pressed up to `MACRO_BACKOUT_PRESSES` times, re-snapshotting each time, and if the battle
+        menu still has not come back the retry is skipped: the next loop iteration reads the
+        screen afresh."""
         await self.broadcaster.publish(status_event("running", f"macro failed: {error}; retrying once"))
         frames = 0
         for _ in range(MACRO_BACKOUT_PRESSES):
