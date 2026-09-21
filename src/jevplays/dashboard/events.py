@@ -20,8 +20,12 @@ def status_event(status: str, message: str = "") -> dict:
     return {"type": "status", "status": status, "message": message}
 
 
+def decision_event_from_dict(d: dict) -> dict:
+    return {"type": "decision", "decision": d}
+
+
 def decision_event(decision: Decision) -> dict:
-    return {"type": "decision", "decision": decision.to_dict()}
+    return decision_event_from_dict(decision.to_dict())
 
 
 def encode(event: dict) -> str:

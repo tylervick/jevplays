@@ -156,6 +156,47 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_replay(args: argparse.Namespace) -> int:
+    from jevplays.dashboard.replay import replay
+    from jevplays.dashboard.server import Broadcaster, create_app, serve
+    from jevplays.runlog import RunDir
+
+    try:
+        run_dir = RunDir.open(args.run_dir)
+    except FileNotFoundError as error:
+        print(f"jevplays replay: {error}", file=sys.stderr)
+        return 2
+
+    async def main_async() -> None:
+        broadcaster = Broadcaster()
+        server = asyncio.create_task(serve(create_app(broadcaster), port=args.port))
+        try:
+            await asyncio.sleep(0.2)
+            if server.done():
+                server.result()
+            print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
+            print(f"replaying {run_dir.path} ({run_dir.count()} decisions)", flush=True)
+            await replay(run_dir, broadcaster, delay=args.delay, limit=args.limit)
+            print("replay finished; the dashboard stays up until Ctrl-C", flush=True)
+            await server  # keep serving
+        finally:
+            server.cancel()
+            # uvicorn re-raises the signal it captured once it has shut down; by then we are
+            # already on our way out, so that second KeyboardInterrupt is nothing but noise.
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
+                await server  # let uvicorn shut down before the process exits
+
+    # A plain `kill` (SIGTERM) is how a supervisor stops a replay. Point it at the SIGINT handler
+    # so it becomes the KeyboardInterrupt below and shutdown still runs cleanly.
+    with contextlib.suppress(ValueError):  # not the main thread (a test runner)
+        signal.signal(signal.SIGTERM, signal.getsignal(signal.SIGINT))
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     # Imported here, not at module scope, so `import jevplays.cli` alone never touches the
     # brain/executor/pyboy stack (see test_imports.py); build_parser() only runs from main().
@@ -191,6 +232,15 @@ def build_parser() -> argparse.ArgumentParser:
     state.add_argument("state", type=Path)
     state.add_argument("--rom", type=Path, help="Pokémon Red/Blue ROM (default: $JEVPLAYS_ROM)")
     state.set_defaults(func=cmd_state)
+
+    replay = sub.add_parser(
+        "replay", help="play a logged run back on the dashboard, no emulator or API key needed"
+    )
+    replay.add_argument("run_dir", type=Path)
+    replay.add_argument("--port", type=int, default=8765)
+    replay.add_argument("--delay", type=float, default=1.0, help="seconds between decisions")
+    replay.add_argument("--limit", type=int, default=None, help="stop after this many decisions")
+    replay.set_defaults(func=cmd_replay)
     return parser
 
 
