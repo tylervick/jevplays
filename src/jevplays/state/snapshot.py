@@ -197,16 +197,28 @@ def read_mon(mem: ram.Memory, base: int, nick_addr: int, *, in_battle_layout: bo
 
 
 def read_party(mem: ram.Memory) -> tuple[Mon, ...]:
+    """The party, stopping at the first slot whose species byte is 0.
+
+    Mid-catch, the game bumps wPartyCount before it writes the new record, so for one frame
+    the last slot up to that count is a species-0 placeholder. Stopping there (rather than
+    skipping a zero wherever it appears) never shifts the index of a real, already-written
+    slot, which is what active_slot (from wPlayerMonNumber) indexes into.
+    """
     count = min(mem[ram.wPartyCount], 6)
-    return tuple(
-        read_mon(
-            mem,
-            ram.wPartyMons + i * ram.PARTY_MON_SIZE,
-            ram.wPartyMonNicks + i * ram.NAME_LENGTH,
-            in_battle_layout=False,
+    mons = []
+    for i in range(count):
+        base = ram.wPartyMons + i * ram.PARTY_MON_SIZE
+        if mem[base] == 0:
+            break
+        mons.append(
+            read_mon(
+                mem,
+                base,
+                ram.wPartyMonNicks + i * ram.NAME_LENGTH,
+                in_battle_layout=False,
+            )
         )
-        for i in range(count)
-    )
+    return tuple(mons)
 
 
 def read_bag(mem: ram.Memory) -> tuple[BagItem, ...]:

@@ -15,11 +15,32 @@ from jevplays.brain.record import answer_record as _answer_record
 from jevplays.brain.record import question_record as _question_record
 from jevplays.state.snapshot import GameState, Mon
 
+ALL_ACTIONS = frozenset({"move", "run", "heal", "catch", "switch"})
+"""Every battle action kind decide_battle can produce. The loop passes this as `supported`
+once the executor can carry out all of them; decide_battle's own default stays the smaller
+set so existing callers that only handle move/run keep their current fallback behavior."""
 
-def _mon(mon: Mon, *, with_moves: bool) -> dict:
+_BENCH_LABEL_SUFFIXES = ("", " (second)", " (third)", " (fourth)", " (fifth)")
+"""Word suffixes for a same-nickname bench duplicate, in bench order. Words, not digits, so a
+duplicate label never adds a number to what Jev sees."""
+
+
+def _bench_labels(nicknames: list[str]) -> list[str]:
+    seen: dict[str, int] = {}
+    labels = []
+    for nick in nicknames:
+        n = seen.get(nick, 0)
+        seen[nick] = n + 1
+        suffix = _BENCH_LABEL_SUFFIXES[n] if n < len(_BENCH_LABEL_SUFFIXES) else f" (#{n + 1})"
+        labels.append(f"{nick}{suffix}")
+    return labels
+
+
+def _mon(mon: Mon, *, with_moves: bool, with_status: bool = False) -> dict:
     d = {"name": mon.name, "level": mon.level, "types": list(mon.types), "hp": hp_bucket(mon.hp, mon.max_hp)}
-    if with_moves:
+    if with_moves or with_status:
         d["status"] = mon.status
+    if with_moves:
         d["moves"] = [
             {
                 "name": m.name,
@@ -35,12 +56,20 @@ def _mon(mon: Mon, *, with_moves: bool) -> dict:
 
 def battle_state(state: GameState, goal: str) -> dict:
     assert state.active is not None and state.enemy is not None and state.battle is not None
-    bench = [m for i, m in enumerate(state.party) if i != state.active_slot]
+    bench_indexed = [(i, m) for i, m in enumerate(state.party) if i != state.active_slot and m.hp > 0]
+    labels = _bench_labels([m.nickname for _, m in bench_indexed])
+    bench = [
+        {**_mon(m, with_moves=False), "label": label, "slot": i}
+        for (i, m), label in zip(bench_indexed, labels, strict=True)
+    ]
+    alive = sum(1 for m in state.party if m.hp > 0)
+    party_word = "one" if alive <= 1 else "two" if alive == 2 else "three or more"
     return {
         "our_pokemon": _mon(state.active, with_moves=True),
-        "enemy_pokemon": _mon(state.enemy, with_moves=False),
+        "enemy_pokemon": _mon(state.enemy, with_moves=False, with_status=True),
         "battle": {"kind": state.battle.kind},
-        "bench": [_mon(m, with_moves=False) for m in bench if m.hp > 0],
+        "bench": bench,
+        "party": party_word,
         "bag": {
             "poke_balls": any(item.name.endswith("BALL") and item.quantity > 0 for item in state.bag),
             "potions": any(
@@ -75,7 +104,7 @@ def battle_questions(sj: dict) -> dict[str, dict]:
             "type": "choice",
             "instructions": "If we switch, which Pokémon from `bench` should come in against `enemy_pokemon`?",
             "criteria": {
-                m["name"]: f"{'/'.join(m['types'])} type, level {m['level']}, hp {m['hp']}"
+                m["label"]: f"{'/'.join(m['types'])} type, level {m['level']}, hp {m['hp']}"
                 for m in sj["bench"]
             },
         }
@@ -94,7 +123,7 @@ def battle_questions(sj: dict) -> dict[str, dict]:
                 "type": "noul",
                 "instructions": "Should we throw a Poké Ball at `enemy_pokemon` this turn?",
                 "criteria": {
-                    "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough for a ball to work",
+                    "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough (asleep or paralyzed helps) for a ball to work",
                     "false": "Its hp is still high, or it is not worth a ball",
                 },
             }
@@ -129,6 +158,10 @@ def decide_battle(
         fallback, reason = True, f"{action.kind} is not executable yet; using the move answer instead"
         action = BattleAction(kind="move", move=raw["move"]["choice"])
         used = used + ["move"]
+    elif action.kind == "switch":
+        # switch_to's choice is a bench label; resolve it to the party index the executor needs.
+        slot = next((m.get("slot") for m in sj.get("bench", []) if m.get("label") == action.target), None)
+        action = BattleAction(kind="switch", target=action.target, slot=slot)
     for qid in used:
         if qid in answers:
             answers[qid]["applied"] = True

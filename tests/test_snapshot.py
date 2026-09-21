@@ -277,3 +277,25 @@ def test_sprites_flags_and_map_size_are_parsed():
     assert state.sprites == (Sprite(slot=1, picture=72, x=18, y=9), Sprite(slot=5, picture=3, x=5, y=2))
     assert state.flags == frozenset({"got_starter"})
     assert state.to_dict()["flags"] == ["got_starter"]
+
+
+def test_a_party_slot_with_species_zero_is_skipped_mid_catch():
+    emu = FakeEmulator()
+    bedroom(emu)
+    write_mon(
+        emu.mem,
+        ram.wPartyMons,
+        ram.wPartyMonNicks,
+        species=176,
+        level=5,
+        hp=19,
+        max_hp=19,
+        types=(20, 20),
+        moves=(10, 45),
+        pps=(35, 40),
+        nickname="CHARMANDER",
+    )
+    emu.mem[ram.wPartyCount] = 2  # the game bumps the count before writing the new record
+    emu.mem[ram.wPartyMons + ram.PARTY_MON_SIZE] = 0  # species byte for the still-empty second slot
+    s = snapshot(emu)
+    assert [m.name for m in s.party] == ["CHARMANDER"] and s.party_count == 2

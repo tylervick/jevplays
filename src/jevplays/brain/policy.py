@@ -31,6 +31,8 @@ def choose_battle_action(answers: dict[str, dict], state_json: dict) -> tuple[Ba
     if _noul(answers, "run") > RUN_THRESHOLD:
         return BattleAction(kind="run"), ["run"]
     if _noul(answers, "switch") > SWITCH_THRESHOLD and answers.get("switch_to", {}).get("type") == "choice":
+        # switch_to's choice is a bench label now, not a species name; decide_battle resolves
+        # it to a party slot once it knows the action is supported.
         return BattleAction(kind="switch", target=answers["switch_to"]["choice"]), ["switch", "switch_to"]
     if answers.get("move", {}).get("type") == "choice":
         return BattleAction(kind="move", move=answers["move"]["choice"]), ["move"]
