@@ -59,12 +59,15 @@ def is_blank(raw: bytes) -> bool:
 def detect(rows: list[list[str]], *, in_battle: bool, blank: bool) -> Mode:
     if blank:
         return Mode.TRANSITION
+    if yes_no_at(rows) is not None:
+        # A YES/NO box outranks the battle flag: the nickname box after a catch and "use next
+        # POKéMON?" open while the game still counts itself in battle, and pressing A through
+        # them answers YES (the catch bug typed AAAAAAAAAA as a nickname).
+        return Mode.PROMPT
     if in_battle:
         if "FIGHT" in row_text(rows[BATTLE_MENU_ROW]):
             return Mode.BATTLE_MENU
         return Mode.BATTLE_WAIT
-    if yes_no_at(rows) is not None:
-        return Mode.PROMPT
     if find_cursor(rows) is not None:
         return Mode.MENU
     if any(has_text(rows[r]) for r in DIALOG_ROWS):
