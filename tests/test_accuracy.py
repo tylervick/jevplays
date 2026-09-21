@@ -92,3 +92,80 @@ def test_main_says_so_when_no_prediction_was_ever_resolved(tmp_path, capsys):
     run = RunDir.create(tmp_path / "runs", rom=None, flags={})
     assert accuracy_mod.main([str(run.path)]) == 0
     assert "no faint predictions resolved" in capsys.readouterr().out
+
+
+def explore_decision(id_, map_name, options, choice=None, fallback_reason=""):
+    answers = {"explore": {"primitive": "choice", "choice": choice}} if choice is not None else {}
+    return {
+        "kind": "explore",
+        "id": id_,
+        "state_summary": {"map": map_name, "options": options},
+        "answers": answers,
+        "fallback_reason": fallback_reason,
+    }
+
+
+def test_exploration_summarises_decisions_by_kind_and_explore_picks_by_option_kind():
+    log = [
+        explore_decision(
+            "e-door",
+            "VIRIDIAN_CITY",
+            {"door_41": "enter the Center (new)", "npc_3": "talk to the nurse (new)"},
+            choice="door_41",
+        ),  # a plain, on-list choice
+        explore_decision(
+            "e-npc",
+            "VIRIDIAN_CITY",
+            {"npc_3": "talk to the nurse (new)", "grass": "train in the grass (new)"},
+            choice="nonsense",
+            fallback_reason="'nonsense' is not offered; using npc_3 instead",
+        ),  # an off-list choice: the recorded answer is what Jev said, npc_3 is what ran
+        explore_decision(
+            "e-milestone",
+            "ROUTE_1",
+            {"milestone": "go to Pewter (new)"},
+            fallback_reason="no usable explore answer; using milestone instead",
+        ),  # no explore answer at all: the fallback text is the only source
+        decision("EMBER", ["Grass"]),
+        decision("SCRATCH", ["Grass"]),
+        {"kind": "prompt", "id": "p-1", "state_summary": {}, "answers": {}},
+    ]
+    summary = accuracy_mod.exploration(log)
+    assert summary["by_kind"] == {"battle": 2, "explore": 3, "prompt": 1, "menu": 0}
+    assert summary["explore_by_option_kind"] == {
+        "exit": 0,
+        "door": 1,
+        "npc": 1,
+        "grass": 0,
+        "milestone": 1,
+        "heal": 0,
+    }
+    assert summary["milestone_share"] == 1 / 3
+    assert summary["maps_seen"] == 2
+    assert summary["total"] == 6
+
+
+def test_main_prints_zero_exploration_summary_when_the_run_has_no_explore_decisions(tmp_path, capsys):
+    from jevplays.brain.decision import BattleAction, Decision
+    from jevplays.runlog import RunDir
+
+    run = RunDir.create(tmp_path / "runs", rom=None, flags={})
+    d = decision("EMBER", ["Grass"])
+    run.append(
+        Decision(
+            id=d["id"],
+            ts=1.0,
+            kind="battle",
+            state_summary=d["state_summary"],
+            questions={},
+            answers=d["answers"],
+            action="use EMBER",
+            action_value=BattleAction(kind="move", move="EMBER"),
+        )
+    )
+    assert accuracy_mod.main([str(run.path)]) == 0
+    out = capsys.readouterr().out
+    assert "decisions: 1 (battle 1, explore 0, prompt 0, menu 0)" in out
+    assert "explore picks: exit 0, door 0, npc 0, grass 0, milestone 0, heal 0" in out
+    assert "milestone share: 0%" in out
+    assert "maps seen: 0" in out
