@@ -4,7 +4,14 @@ from jevplays.emulator import ram
 from jevplays.executor import maps
 from jevplays.executor.goals import Goal, legs_to
 from jevplays.executor.navigate import Leg
-from jevplays.executor.options import NPC_CAP, Memory, generate, place_words, sprite_noun
+from jevplays.executor.options import (
+    NPC_CAP,
+    Memory,
+    generate,
+    option_verb,
+    place_words,
+    sprite_noun,
+)
 from jevplays.state.snapshot import Sprite, snapshot
 from tests.support import FakeEmulator, install_map, write_mon
 
@@ -74,6 +81,18 @@ def test_options_cover_exits_doors_reachable_npcs_and_grass_in_order():
     assert texts["npc_3"] == "talk to the nurse behind the counter"
     assert texts["npc_4"].startswith("talk to a youngster")
     assert texts["grass"] == "train in the tall grass here"
+
+
+def test_an_item_on_the_ground_is_picked_up_rather_than_talked_to():
+    """A Poké Ball sprite is an item lying there, not somebody to talk to. The macro is the same
+    `talk_<slot>` -- walking up and pressing A is how an item ball is picked up -- so only the
+    words change, and they are the only part of it Jev ever reads."""
+    emu, state, memory = town(sprites=((3, 0x3D, 6, 1), (4, 0x04, 1, 6)))
+    texts = {o.id: o.text for o in generate(emu, state, memory, None)}
+    assert texts["npc_3"] == "pick up an item on the ground to the north-east"
+    assert texts["npc_4"].startswith("talk to a youngster")
+    ball = next(o for o in generate(emu, state, memory, None) if o.id == "npc_3")
+    assert ball.kind == "npc" and ball.after == "talk_3"
 
 
 def test_an_unreachable_npc_is_not_offered_and_the_cap_holds():
@@ -202,6 +221,7 @@ def test_texts_and_labels_carry_no_numbers():
 def test_place_words_and_nouns():
     assert sprite_noun(0x29) == "the nurse" and sprite_noun(0x03) == "Professor Oak"
     assert sprite_noun(0x3D) == "an item on the ground"
+    assert option_verb("an item on the ground") == "pick up" and option_verb("the nurse") == "talk to"
     assert sprite_noun(200) == "someone"
     assert place_words((4, 4), Sprite(1, 4, 4, 1), 4) == "just to the north"
     assert place_words((4, 4), Sprite(1, 4, 12, 12), 4) == "to the south-east"

@@ -116,6 +116,18 @@ def sprite_noun(picture: int) -> str:
     return SPRITE_NOUNS.get(picture, "someone")
 
 
+GROUND_SUFFIX = "on the ground"
+"""How `sprites.json` ends the nouns for an item ball: "an item on the ground", "a fossil on the
+ground". A ball is not talked to, so the option reads "pick up" instead."""
+
+
+def option_verb(noun: str) -> str:
+    """What the option does to a sprite: "talk to" for a person, "pick up" for an item lying on
+    the ground. The macro is `talk_<slot>` either way -- walking up to an item ball and pressing
+    A is how it is picked up -- so this changes only the words Jev reads."""
+    return "pick up" if noun.endswith(GROUND_SUFFIX) else "talk to"
+
+
 def place_words(player: tuple[int, int], sprite: Sprite, picture: int) -> str:
     if picture in COUNTER_PICTURES:
         return "behind the counter"
@@ -251,7 +263,7 @@ def _npc_options(grid: world.MapGrid, state: GameState) -> list[Option]:
     options = []
     for _path_len, sprite, neighbour, face in candidates[:NPC_CAP]:
         noun = sprite_noun(sprite.picture)
-        text = f"talk to {noun} {place_words(state.tile, sprite, sprite.picture)}"
+        text = f"{option_verb(noun)} {noun} {place_words(state.tile, sprite, sprite.picture)}"
         after = f"talk_{sprite.slot}"
         if sprite.picture == NURSE_PICTURE:
             after = "heal"
