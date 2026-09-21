@@ -12,6 +12,7 @@ with wall-clock time at 60 frames per second. That is what makes the dashboard w
 """
 
 import asyncio
+import heapq
 import time
 import uuid
 from dataclasses import dataclass
@@ -424,9 +425,11 @@ class Loop:
     def _step_towards_grass(self, grid, here, grass) -> bool:
         """One step of the shortest path to the nearest reachable grass cell, so the walk shows
         on the dashboard a tile at a time like every other move the loop makes."""
-        nearest = sorted(grass, key=lambda c: abs(c[0] - here[0]) + abs(c[1] - here[1]))
+        nearest = heapq.nsmallest(
+            GRASS_CANDIDATES, grass, key=lambda c: abs(c[0] - here[0]) + abs(c[1] - here[1])
+        )
         best = None
-        for cell in nearest[:GRASS_CANDIDATES]:
+        for cell in nearest:
             straight = abs(cell[0] - here[0]) + abs(cell[1] - here[1])
             if best is not None and straight >= len(best):
                 break  # every remaining candidate is further off than the path we already have
