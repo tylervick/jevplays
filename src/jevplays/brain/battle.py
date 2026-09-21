@@ -65,10 +65,18 @@ def _mon(mon: Mon, *, with_moves: bool, with_status: bool = False) -> dict:
 
 
 def battle_state(state: GameState, goal: str) -> dict:
+    """What Jev is shown at a battle menu: both Pokémon in buckets, the bench, and two bag flags.
+
+    The bag flags name exactly the items the macros can use -- `throw_ball` picks POKé BALL and
+    `use_potion` picks POTION, the same two names `executor/goals.py` counts -- so a GREAT BALL
+    or a SUPER RESTORE in the bag does not offer Jev a catch or a heal the executor would then
+    fail to carry out."""
     assert state.active is not None and state.enemy is not None and state.battle is not None
     bench = [{**_mon(state.party[i], with_moves=False), "label": label} for label, i in bench_slots(state)]
     alive = sum(1 for m in state.party if m.hp > 0)
-    party_word = "one" if alive <= 1 else "two" if alive == 2 else "three or more"
+    # alive == 0 cannot happen at a battle menu -- the game would be asking for the next
+    # Pokémon, or the run would be over -- but the word is there so the count is never a lie.
+    party_word = "none" if alive == 0 else "one" if alive == 1 else "two" if alive == 2 else "three or more"
     return {
         "our_pokemon": _mon(state.active, with_moves=True),
         "enemy_pokemon": _mon(state.enemy, with_moves=False, with_status=True),
@@ -76,10 +84,8 @@ def battle_state(state: GameState, goal: str) -> dict:
         "bench": bench,
         "party": party_word,
         "bag": {
-            "poke_balls": any(item.name.endswith("BALL") and item.quantity > 0 for item in state.bag),
-            "potions": any(
-                ("POTION" in item.name or "RESTORE" in item.name) and item.quantity > 0 for item in state.bag
-            ),
+            "poke_balls": any(item.name == "POKE BALL" and item.quantity > 0 for item in state.bag),
+            "potions": any(item.name == "POTION" and item.quantity > 0 for item in state.bag),
         },
         "goal": goal,
     }

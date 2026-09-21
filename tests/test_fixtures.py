@@ -9,6 +9,7 @@ from jevplays.brain.policy import (
     CATCH_THRESHOLD,
     HEAL_FIRST_THRESHOLD,
     HEAL_THRESHOLD,
+    RUN_THRESHOLD,
     SWITCH_THRESHOLD,
 )
 from jevplays.brain.prompt import decide_menu, decide_prompt
@@ -110,6 +111,11 @@ def test_catch_fixture_agrees_with_the_catch_noul():
     f, d = battle("battle_catch")
     assert f["state_json"]["enemy_pokemon"]["hp"] in ("low", "critical")
     assert f["state_json"]["bag"]["poke_balls"] is True and "catch" in f["questions"]
+    # The catch rule is second: heal fires before it and run after it, so what the catch noul
+    # decides here is only really the catch noul's if neither of those would have fired.
+    answers = f["response"]["answers"]
+    assert answers.get("heal", {}).get("noul", 0.0) <= HEAL_THRESHOLD
+    assert answers.get("run", {}).get("noul", 0.0) <= RUN_THRESHOLD
     catch = f["response"]["answers"]["catch"]["noul"]
     assert (d.action == "throw a Poké Ball") == (catch > CATCH_THRESHOLD)
     assert d.fallback is False
@@ -120,6 +126,8 @@ def test_heal_fixture_agrees_with_the_heal_noul():
     Potions in the bag, and Jev still preferred to attack. Same pinning as the catch fixture --
     the noul and the action agree, whichever way the noul goes."""
     f, d = battle("battle_heal")
+    # Heal is the first rule in the policy, so nothing earlier can pre-empt it: the hp bucket
+    # below is the whole precondition -- the rule also requires low or critical hp.
     assert f["state_json"]["our_pokemon"]["hp"] in ("low", "critical")
     assert f["state_json"]["bag"]["potions"] is True and "heal" in f["questions"]
     heal = f["response"]["answers"]["heal"]["noul"]
@@ -135,6 +143,12 @@ def test_switch_fixture_agrees_with_the_switch_noul():
     labels = [m["label"] for m in f["state_json"]["bench"]]
     assert len(labels) == 1 and labels[0]  # whichever species Route 1 rolled when the state was made
     assert f["state_json"]["party"] == "two" and "switch" in f["questions"]
+    # Switch is the last rule before the plain move, so heal, catch, and run all have to have
+    # stayed under their thresholds for the switch noul to be what decided this turn.
+    answers = f["response"]["answers"]
+    assert answers.get("heal", {}).get("noul", 0.0) <= HEAL_THRESHOLD
+    assert answers.get("catch", {}).get("noul", 0.0) <= CATCH_THRESHOLD
+    assert answers.get("run", {}).get("noul", 0.0) <= RUN_THRESHOLD
     switch = f["response"]["answers"]["switch"]["noul"]
     assert (d.action_value.kind == "switch") == (switch > SWITCH_THRESHOLD)
     assert d.fallback is False
