@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from jevplays.brain.battle import ALL_ACTIONS, decide_battle
+from jevplays.brain.explore import decide_explore
 from jevplays.brain.policy import (
     CATCH_THRESHOLD,
     HEAL_THRESHOLD,
@@ -11,6 +12,7 @@ from jevplays.brain.policy import (
     SWITCH_THRESHOLD,
 )
 from jevplays.brain.prompt import decide_menu, decide_prompt
+from jevplays.executor.options import Option
 
 FIXTURES = Path(__file__).parent / "fixtures" / "responses"
 
@@ -106,6 +108,37 @@ def test_heal_fixture_agrees_with_the_heal_noul():
     heal = f["response"]["answers"]["heal"]["noul"]
     assert (d.action == "use a Potion") == (heal > HEAL_THRESHOLD)
     assert d.fallback is False
+
+
+def _option_from_labelled(option_id: str, labelled: str) -> Option:
+    """Rebuild the `Option` stub `decide_explore` needs from a fixture's `state_json["options"]`
+    entry: `kind` from the id's prefix before the first "_" (an id with none, like "heal" or
+    "milestone", is its own kind), `text` with the trailing " (word)" stripped, and `memory` the
+    word itself. No legs or after -- decide_explore only reads id, kind, and text."""
+    text, _, tail = labelled.rpartition(" (")
+    memory = tail[:-1] if tail.endswith(")") else tail
+    kind = option_id.split("_", 1)[0]
+    return Option(id=option_id, kind=kind, text=text, memory=memory, legs=(), after=None)
+
+
+def test_explore_fixture_picks_an_offered_option():
+    """Jev chose "heal" at probability 0.51 (confidence 0.47) -- the recorded state has a hurt
+    lead standing in Viridian City with a route to the Pokémon Center, so the heal option and the
+    move together read as `needs_heal` 0.65 backing up a judgment that the party should mend up
+    before whatever the milestone or an old man's chat has to offer."""
+    f = load("explore_viridian")
+    options = [_option_from_labelled(oid, labelled) for oid, labelled in f["state_json"]["options"].items()]
+    d = decide_explore(
+        f["state_json"],
+        f["questions"],
+        f["response"],
+        options,
+        model=f["response"]["model"],
+        input_tokens=f["response"]["usage"]["input_tokens"],
+        latency_ms=f["latency_ms"],
+    )
+    assert d.fallback is False
+    assert d.action_value.option_id in f["state_json"]["options"]
 
 
 def test_switch_fixture_agrees_with_the_switch_noul():

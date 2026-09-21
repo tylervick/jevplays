@@ -40,11 +40,12 @@ from jevplays.executor.options import Memory, generate
 from jevplays.state.snapshot import GameState, snapshot
 
 OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "responses"
-GOAL = battle_goal(None, fallback="Win every battle and explore")
+GOAL = battle_goal(MILESTONES[1], fallback="Win every battle and explore")
 """The objective recorded with the battle fixtures: the loop's own fallback, composed the way
 the loop composes it, so a change to either one shows up in the fixtures instead of drifting
-away from what a run actually sends. None for a milestone because these battles are fought
-before the loop has stood in the overworld and picked one up."""
+away from what a run actually sends. MILESTONES[1] (get_pokedex) because a real run almost
+always has a milestone by the time it reaches a battle; the fallback stays here for the gap
+before the loop has ever stood in the overworld."""
 
 HURT_HP = 3
 """What the lead's HP is set to for the hurt fixtures. No state has a lead below half health --
