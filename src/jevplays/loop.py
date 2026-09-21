@@ -36,7 +36,7 @@ from jevplays.dashboard.events import decision_event, frame_event, state_event, 
 from jevplays.emulator import ram
 from jevplays.executor import battle as battle_macros
 from jevplays.executor import goals as goal_table
-from jevplays.executor import navigate, shop
+from jevplays.executor import navigate, shop, world
 from jevplays.executor.battle import MacroError
 from jevplays.executor.dialog import answer_prompt, cursor_label, skip_dialog
 from jevplays.executor.goals import Goal
@@ -54,6 +54,13 @@ ticks the emulator itself, so this is only what the pacer is told; under-reporti
 sleep less, never stall."""
 MACRO_FRAMES = 60
 """Same idea for a scripted macro, which spends far more than this talking and reading."""
+
+GOAL_RETRIES = 3
+"""How many times a goal may fail -- a stuck navigator, a macro that does not work -- before it
+is dropped for the rest of the run. One failure is often a wandering NPC or a mistimed script."""
+GRASS_CANDIDATES = 40
+"""How many of the nearest grass cells `wander` runs a path search to. Bounded so the search
+cannot grow with the map."""
 
 MAX_POKEBALLS = 5
 """How many balls one `buy_pokeballs` trip buys at most, money permitting."""
@@ -103,8 +110,10 @@ class Loop:
         self.navigator = Navigator()
         self.goal: Goal | None = None
         self.goal_started_at: float = 0.0
-        self.blocked_goals: set[str] = set()
-        """Goals the navigator or a macro could not carry out. Never offered again this run."""
+        self._goal_failures: dict[str, int] = {}
+        """How many times each goal has failed. At GOAL_RETRIES it is out for the rest of the run."""
+        self._announced_dead_end = False
+        """Whether the "all goals blocked" pause has already been published for this dead end."""
         self._goal_map: int | None = None
         """The map the active goal's legs were planned on (or arrived at). A different map with
         the navigator idle means the game moved us -- the starter cutscene walks the player into
@@ -117,6 +126,11 @@ class Loop:
         """Set after a macro fails twice and the safe default fails too: (mode, decision id) to
         wait out until the screen changes, so the loop stops asking the brain about a decision
         it cannot carry out."""
+
+    @property
+    def blocked_goals(self) -> set[str]:
+        """The goals that have used up their retries and are no longer offered to Jev."""
+        return {goal_id for goal_id, n in self._goal_failures.items() if n >= GOAL_RETRIES}
 
     async def advance(self, state: GameState) -> int:
         """Move the game forward one step for the current mode. Returns emulated frames spent."""
@@ -246,9 +260,16 @@ class Loop:
         return await self._plan(state)
 
     async def _pick_goal(self, state: GameState) -> int:
-        options = [g for g in goal_table.available_goals(state) if g.id not in self.blocked_goals]
+        blocked = self.blocked_goals
+        options = [g for g in goal_table.available_goals(state) if g.id not in blocked]
         if not options:
+            if not self._announced_dead_end:
+                self._announced_dead_end = True
+                await self.broadcaster.publish(
+                    status_event("paused", f"all goals blocked: {', '.join(sorted(blocked)) or 'none'}")
+                )
             return self.emu.tick(self.config.idle_frames)
+        self._announced_dead_end = False
         sj = goal_state(state, options)
         questions = goal_questions(sj)
         ids = [g.id for g in options]
@@ -302,14 +323,22 @@ class Loop:
         return self.emu.tick(self.config.idle_frames)
 
     async def _block_goal(self, why: str) -> int:
-        blocked = self.goal.id
-        self.blocked_goals.add(blocked)
+        """A goal that did not work. It gets GOAL_RETRIES tries before it is dropped, because one
+        failure is usually an NPC in a doorway rather than a goal that cannot be done at all."""
+        goal_id = self.goal.id
+        failures = self._goal_failures.get(goal_id, 0) + 1
+        self._goal_failures[goal_id] = failures
         self._clear_goal()
-        await self.broadcaster.publish(status_event("running", f"goal blocked: {blocked} ({why})"))
+        if failures >= GOAL_RETRIES:
+            message = f"goal blocked: {goal_id} ({why})"
+        else:
+            message = f"goal failed {failures}/{GOAL_RETRIES}: {goal_id} ({why})"
+        await self.broadcaster.publish(status_event("running", message))
         return self.emu.tick(self.config.idle_frames)
 
     def _clear_goal(self) -> None:
         self.goal = None
+        self.goal_started_at = 0.0
         self.navigator.clear()
         self._goal_map, self._arrived = None, False
 
@@ -323,7 +352,11 @@ class Loop:
         if macro is None:
             return await self._block_goal("arrived, but the goal has no macro to finish it")
         await self.broadcaster.publish(status_event("running", f"{self.goal.id}: {macro}"))
-        if not self._apply_macro(macro, snapshot(self.emu)):
+        try:
+            worked = self._apply_macro(macro, snapshot(self.emu))
+        except Exception as error:  # a macro is a script over a live game: never kill the run
+            return await self._block_goal(f"{macro} raised {type(error).__name__}: {error}")
+        if not worked:
             return await self._block_goal(f"{macro} did not work")
         self._arrived = False
         return MACRO_FRAMES
@@ -335,6 +368,11 @@ class Loop:
                 # `deliver_parcel` runs this macro twice: once at the Mart, where the clerk hands
                 # the parcel over, and once in the lab, where Oak takes it. (5, 3) is Oak's tile;
                 # in the Mart it is behind the counter, so the walk there fails outright.
+                if "got_oaks_parcel" in state.flags:
+                    # Walking in already fired the clerk's trigger. Pressing A at him now would
+                    # only open BUY/SELL/QUIT, so leave the Mart alone: the next plan routes to
+                    # the lab, because the goal's legs read the same flag.
+                    return True
                 return talk_to(emu, *shop.CLERK_TILE, shop.CLERK_FACE)
             return talk_to(emu, 5, 3, "up")
         if macro == "talk_old_man":
@@ -365,12 +403,58 @@ class Loop:
         return True
 
     def _wander(self) -> bool:
-        """One step in the grass, alternating up and down, until something jumps out."""
-        direction = "up" if self._wander_up else "down"
-        self._wander_up = not self._wander_up
-        if navigate.step(self.emu, direction):
+        """One step towards, or inside, the tall grass -- which is the only place a wild battle
+        can start. Walking on the road forever is how the first version of this stalled."""
+        grid = world.build_grid(self.emu)
+        grass = grid.grass()
+        if not grass:
+            return False  # nothing to train in here; the honest answer is to give up on the goal
+        here = (self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
+        if here in grass:
+            moved = self._step_inside_grass(grid, here, grass)
+        else:
+            moved = self._step_towards_grass(grid, here, grass)
+        if moved:
             return True
-        return navigate.step(self.emu, "down" if direction == "up" else "up")
+        # Nothing moved. If the screen has left the overworld, a wild battle started on the way
+        # in -- which is exactly what wandering is for -- so that is not a failure to charge
+        # against the goal's retries; the loop's battle branch takes it from here.
+        return snapshot(self.emu).mode is not Mode.OVERWORLD
+
+    def _step_towards_grass(self, grid, here, grass) -> bool:
+        """One step of the shortest path to the nearest reachable grass cell, so the walk shows
+        on the dashboard a tile at a time like every other move the loop makes."""
+        nearest = sorted(grass, key=lambda c: abs(c[0] - here[0]) + abs(c[1] - here[1]))
+        best = None
+        for cell in nearest[:GRASS_CANDIDATES]:
+            straight = abs(cell[0] - here[0]) + abs(cell[1] - here[1])
+            if best is not None and straight >= len(best):
+                break  # every remaining candidate is further off than the path we already have
+            path = world.astar(grid, here, cell)
+            if path and (best is None or len(path) < len(best)):
+                best = path
+                if len(best) == straight:
+                    break  # an unobstructed path; nothing closer can exist
+        if not best:
+            return False
+        return navigate.step(self.emu, world.direction_to(here, best[0]))
+
+    def _step_inside_grass(self, grid, here, grass) -> bool:
+        """Standing in the grass already: step to another grass cell, alternating up and down so
+        the walk stays in the patch instead of drifting out of it."""
+        first = "up" if self._wander_up else "down"
+        self._wander_up = not self._wander_up
+        order = [first, "down" if first == "up" else "up", "left", "right"]
+        neighbours = [
+            (d, (here[0] + world.DIRECTIONS[d][0], here[1] + world.DIRECTIONS[d][1])) for d in order
+        ]
+        for direction, cell in neighbours:
+            if cell in grass and navigate.step(self.emu, direction):
+                return True
+        for direction, cell in neighbours:
+            if grid.walkable(*cell) and navigate.step(self.emu, direction):
+                return True
+        return False
 
     # -- prompts and menus --------------------------------------------------------------
 
@@ -416,18 +500,23 @@ class Loop:
         await self.broadcaster.publish(status_event("running", decision.action))
         if decision.action_value.item is None:
             return self.emu.press("b", settle=30)
-        return self._select_menu_item(decision.action_value.item, len(state.menu_items))
+        return await self._select_menu_item(decision.action_value.item, sj)
 
-    def _select_menu_item(self, item: str, item_count: int) -> int:
+    async def _select_menu_item(self, item: str, sj: dict) -> int:
         """Walk the cursor down to `item` and press A. Bounded by the number of items on screen
-        so a label that never comes up under the cursor cannot spin the menu forever."""
+        so a label that never comes up under the cursor cannot spin the menu forever -- and when
+        it never does come up, back out with B rather than press A on whatever is highlighted:
+        selecting the wrong thing in a shop or a PC costs money or a Pokémon."""
         frames = 0
-        for _ in range(item_count):
+        for _ in range(len(sj["menu_items"])):
             label = cursor_label(rows_of(self.emu.tilemap()))
             if label is not None and label.startswith(item):
-                break
+                return frames + self.emu.press("a", settle=30)
             frames += self.emu.press("down", settle=16)
-        return frames + self.emu.press("a", settle=30)
+        reason = f"menu: {item} not reached under the cursor"
+        await self._record(local_decision("menu", sj, MenuAction(item=None), reason))
+        await self.broadcaster.publish(status_event("running", f"{reason}; closing it instead"))
+        return frames + self.emu.press("b", settle=30)
 
     # -- the loop itself ----------------------------------------------------------------
 

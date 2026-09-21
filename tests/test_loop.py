@@ -2,10 +2,13 @@ import asyncio
 
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.emulator import ram
-from jevplays.loop import Loop, LoopConfig
+from jevplays.executor import maps
+from jevplays.executor.goals import Goal, goal_by_id
+from jevplays.executor.world import build_grid
+from jevplays.loop import GOAL_RETRIES, Loop, LoopConfig
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import snapshot
-from tests.support import FakeEmulator, install_map, write_mon
+from tests.support import FakeEmulator, install_map, overworld_state, write_mon
 
 DIALOG = [""] * 12 + [
     "····················",
@@ -409,8 +412,107 @@ def test_a_stuck_navigator_blocks_the_goal_and_the_next_goal_is_asked_for():
     emu.step_effects = {}  # nothing the navigator presses ever moves the player
     brain = QuestionBrain(goal={"get_starter": 0.9}, needs_heal=0.1)
     loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
-    run(loop, 40)
+    run(loop, 200)  # GOAL_RETRIES stuck-navigator rounds, at ~19 iterations each
     assert "get_starter" in loop.blocked_goals
     assert brain.calls >= 2  # asked again once the first goal was given up on
     blocked = [e for e in bc.events if e["type"] == "status" and "blocked" in e["message"]]
     assert blocked and "get_starter" in blocked[0]["message"]
+
+
+# --- fix round 1: grass-aware wander, retries, and menu/macro safety nets --------------------
+
+WANDER_ROWS = [
+    "........",
+    "........",
+    "....~~..",
+    "....~~..",
+    "........",
+    "........",
+]
+"""8x6 cells of road with a 2x2 patch of tall grass at (4, 2)-(5, 3)."""
+
+
+def grass_emu(x=0, y=0):
+    emu = overworld_emu(map_id=maps.ROUTE_1, x=x, y=y)
+    install_map(emu, WANDER_ROWS)
+    emu.mem[ram.wCurMap], emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = maps.ROUTE_1, x, y
+    return emu
+
+
+def test_wander_walks_to_the_grass_and_then_stays_in_it():
+    emu, bc = grass_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.goal = goal_by_id("train_nearby")  # legs are empty, so `wander` runs every turn
+    run(loop, 12)
+    grid = build_grid(emu)
+    here = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
+    assert grid.is_grass(*here), f"{here} is not grass"
+    assert loop.blocked_goals == set()
+    assert emu.presses  # it walked there a step at a time
+
+
+def test_wander_gives_up_on_a_map_with_no_grass_at_all():
+    emu, bc = overworld_emu(), RecordingBroadcaster()
+    install_map(emu, OVERWORLD_MAP)  # every cell is road
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.goal = goal_by_id("train_nearby")
+    assert loop._wander() is False
+    assert emu.presses == []
+
+
+MART_PARCEL = "got_oaks_parcel"
+
+
+def test_talk_oak_in_the_mart_presses_nothing_once_the_parcel_is_already_in_hand():
+    emu, bc = overworld_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    state = overworld_state(map_id=maps.VIRIDIAN_MART, flags=(MART_PARCEL,))
+    assert loop._apply_macro("talk_oak", state) is True
+    assert emu.presses == []
+    assert loop.blocked_goals == set()
+
+
+def test_a_menu_item_that_is_never_reached_closes_the_menu_instead_of_pressing_a():
+    emu, bc = overworld_emu(), RecordingBroadcaster()
+    emu.mem[ram.wTopMenuItemY], emu.mem[ram.wTopMenuItemX] = 2, 2
+    emu.mem[ram.wMaxMenuItem] = 1
+    emu.set_rows(MENU_ROWS)  # the cursor never moves off HEAL, whatever gets pressed
+    brain = QuestionBrain(menu={"CANCEL": 0.8, "HEAL": 0.2}, close=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    run(loop, 1)
+    assert emu.presses == ["down", "down", "b"] and "a" not in emu.presses
+    assert loop.decisions[-1].action == "close the menu"
+    assert "not reached" in loop.decisions[-1].fallback_reason
+
+
+def test_a_goal_gets_three_tries_before_it_is_blocked_and_then_the_loop_pauses():
+    emu, bc = overworld_emu(), RecordingBroadcaster()
+    install_map(emu, OVERWORLD_MAP)
+    emu.step_effects = {}  # nothing the navigator presses ever moves the player
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 300)
+    # In Pallet Town with no flags and no grass, get_starter is the only goal on offer.
+    assert loop.blocked_goals == {"get_starter"}
+    statuses = [e["message"] for e in bc.events if e["type"] == "status"]
+    assert [m for m in statuses if m.startswith("goal failed")] == [
+        f"goal failed {n}/{GOAL_RETRIES}: get_starter (the navigator gave up)" for n in range(1, GOAL_RETRIES)
+    ]
+    paused = [e for e in bc.events if e["type"] == "status" and e["status"] == "paused"]
+    assert len(paused) == 1 and paused[0]["message"] == "all goals blocked: get_starter"
+
+
+def test_a_macro_that_raises_blocks_the_goal_instead_of_killing_the_run():
+    emu, bc = overworld_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.goal = Goal(
+        id="bogus",
+        description="A goal whose macro does not exist",
+        available=lambda s: True,
+        done=lambda s: False,
+        legs=lambda s: [],
+        after="no_such_macro",
+    )
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.goal is None and loop._goal_failures == {"bogus": 1}
+    message = [e["message"] for e in bc.events if e["type"] == "status"][-1]
+    assert "no_such_macro raised ValueError" in message
