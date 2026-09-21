@@ -80,7 +80,10 @@ async def serve(
     serving = asyncio.create_task(server.serve())
     stopped = asyncio.create_task(stop.wait())
     await asyncio.wait({serving, stopped}, return_when=asyncio.FIRST_COMPLETED)
+    stopped.cancel()
     if not serving.done():
         server.should_exit = True
-        await serving
-    stopped.cancel()
+    # Awaited either way: when serving finished first it did so on its own -- a port already in
+    # use is the usual reason -- and its exception belongs to the caller, not to a task nobody
+    # ever looks at again.
+    await serving
