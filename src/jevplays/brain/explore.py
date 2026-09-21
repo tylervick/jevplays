@@ -50,8 +50,11 @@ def explore_questions(sj: dict) -> dict[str, dict]:
             "type": "choice",
             "instructions": (
                 'Which of "options" should we do next to make progress in the game, given '
-                '"progress", the "milestone", and what each option says about whether we have '
-                "done it before?"
+                '"progress" and the "milestone"? Each option ends with a word in parentheses: '
+                '"new" means we have never done it from here; "visited" or "talked already" means '
+                'we have done it before and may not need to again; "tried" means we chose it '
+                "before from here and nothing came of it, so repeat it only if nothing else is "
+                "worth doing."
             ),
             "criteria": dict(sj["options"]),
         },
