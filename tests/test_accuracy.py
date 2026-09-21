@@ -31,7 +31,7 @@ def test_accuracy_counts_matches_against_the_best_typed_move():
     log = [
         decision("EMBER", ["Grass"]),  # ok
         decision("SCRATCH", ["Grass"]),  # miss
-        decision("SCRATCH", ["Rock", "Ground"]),  # ok (Fire is resisted)
+        decision("EMBER", ["Rock", "Ground"]),  # ok: Rock resists both, and STAB keeps Ember ahead
         {"kind": "goal", "id": "g", "state_summary": {}, "answers": {}},  # ignored
     ]
     judged, matched, rows = accuracy_mod.accuracy(log)

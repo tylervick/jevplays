@@ -28,7 +28,7 @@ def accuracy(decisions: Iterable[dict]) -> tuple[int, int, list[dict]]:
             continue
         sj = d["state_summary"]
         ours = sj["our_pokemon"]
-        best = best_moves(ours["moves"], sj["enemy_pokemon"]["types"])
+        best = best_moves(ours["moves"], sj["enemy_pokemon"]["types"], attacker_types=ours.get("types", ()))
         if not best:
             continue
         choice = d["answers"]["move"]["choice"]
