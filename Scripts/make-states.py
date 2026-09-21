@@ -48,11 +48,15 @@ from jevplays.executor import maps
 from jevplays.executor.autoplay import finish_battle, play_one_turn, wait_for_fight_menu
 from jevplays.executor.battle import throw_ball
 from jevplays.executor.dialog import skip_dialog
-from jevplays.executor.goals import OLD_MAN_PICTURE
 from jevplays.executor.navigate import Leg, Navigator, goto, step
 from jevplays.loop import Loop, LoopConfig
 from jevplays.state.modes import Mode, yes_no_at
 from jevplays.state.snapshot import GameState, snapshot
+
+OLD_MAN_PICTURE = 72
+"""The sprite picture id of the old man asleep across the road north out of Viridian City. A
+local constant since milestone 4b: the goal that used to own it is gone, and he is one of the
+NPCs `executor.options` offers Jev now."""
 
 MILESTONE_1_STATES = ("overworld", "dialog", "menu", "prompt")
 BATTLE_STATES = ("route1", "battle_trainer", "battle_wait", "battle_wild")
@@ -297,7 +301,7 @@ class FirstChoiceBrain:
     """Jev's stand-in for a scripted walk: always the first choice, every noul at zero. No API key
     and no network, so building states never spends a request; what Jev really answers at these
     screens is recorded separately by `Scripts/record-fixtures.py`. It exists so the battles the
-    walk runs into get fought and the goals run to completion."""
+    walk runs into get fought and the options run to completion."""
 
     async def ask(self, state: dict, questions: dict) -> tuple[dict, int]:
         answers = {}
@@ -351,7 +355,7 @@ MILESTONES: dict[str, Callable[[GameState], bool]] = {
     "viridian_oldman": _viridian_old_man,
 }
 """Each state the scripted walk writes, and the first moment it may be written. The loop chooses
-its own goals, so these are conditions rather than a fixed sequence of button presses."""
+its own options, so these are conditions rather than a fixed sequence of button presses."""
 
 
 class RecordingLoop(Loop):
@@ -374,8 +378,8 @@ class RecordingLoop(Loop):
 
 
 def make_walked_story_states(rom: Path, out: Path) -> None:
-    """Route 1 to the old man, played by the loop itself: Jev's stand-in picks the goals, the
-    navigator walks them, and the milestones fall out along the way."""
+    """Route 1 to the old man, played by the loop itself: Jev's stand-in picks the options, the
+    navigator walks them, and the saved states fall out along the way."""
     with Emulator(rom) as emu:
         emu.load(out / "route1.state")
         loop = RecordingLoop(emu, out)
