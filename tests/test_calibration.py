@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from jevplays.calibration import Pending, brier, buckets, resolve_prediction
+from jevplays.calibration import Pending, brier, buckets, observe, resolve_prediction
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import Mon, Move
 from tests.support import overworld_state
@@ -68,3 +68,24 @@ def test_buckets_group_by_predicted_probability_and_report_the_observed_rate():
     assert [(r["low"], r["high"], r["n"]) for r in rows] == [(0.0, 0.5, 2), (0.5, 1.0, 2)]
     assert rows[0]["predicted"] == 0.1 and rows[0]["observed"] == 0.5
     assert rows[1]["observed"] == 1.0
+
+
+def test_a_faint_that_ended_the_battle_is_not_undone_by_the_heal_that_follows():
+    """Gen 1 heals the whole party on a blackout. Reading HP at the next decision point therefore
+    reads the healed party and scores a faint as no faint (#36) -- and with a party of one, every
+    faint ends the battle, so every faint in a run was being missed. The observation is latched
+    while it is visible instead."""
+    pending = observe(PENDING, battling(0, mode=Mode.BATTLE_WAIT))
+    healed = overworld_state(party=(mon(23),))  # scurried to a Pokémon Center, back to full
+    assert resolve_prediction(pending, healed, ts=5.0)["observed"] is True
+
+
+def test_the_latch_only_fires_on_the_slot_the_prediction_was_about():
+    pending = observe(Pending(decision_id="d1", slot=1, predicted=0.7), battling(0))
+    assert pending.seen_faint is False
+
+
+def test_a_pokemon_that_never_fainted_still_resolves_false():
+    pending = observe(PENDING, battling(12, mode=Mode.BATTLE_WAIT))
+    assert pending.seen_faint is False
+    assert resolve_prediction(pending, battling(12), ts=5.0)["observed"] is False

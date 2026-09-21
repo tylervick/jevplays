@@ -1180,3 +1180,18 @@ def test_pacing_follows_the_frames_the_game_really_spent():
     run(loop, 3)
     assert emu.frame_count() > before
     assert loop.game_frames == emu.frame_count() - before
+
+
+def test_the_loop_latches_a_faint_before_the_heal_can_hide_it(tmp_path):
+    """#36: the lead faints, the blackout heals the party, and the next decision point reads a
+    healthy Pokémon. The loop has to notice the zero while it is on screen."""
+    emu, loop, run_dir = faint_loop(tmp_path)
+    run(loop, 1)
+    configure_battle_memory(emu, hp=0)  # "CHARMANDER fainted!"
+    emu.set_rows(DIALOG)
+    run(loop, 1)
+    assert list(run_dir.outcomes()) == []  # nothing to resolve against yet
+    configure_battle_memory(emu, hp=19)  # scurried to a Pokémon Center, back to full
+    emu.set_rows(BATTLE_MENU)
+    run(loop, 1)
+    assert [o["observed"] for o in run_dir.outcomes()] == [True]
