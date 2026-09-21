@@ -250,11 +250,14 @@ class Loop:
         decision = await self._decide("battle", sj, questions, partial(decide_battle, supported=ALL_ACTIONS))
         if decision is None:
             return 0
+        # Before the macros, not after: the turn happens whether or not this decision's own
+        # action survives (a failed switch falls back to a move), so the prediction is still
+        # about a turn that was played and still deserves to be scored.
+        self._note_prediction(decision, state)
         try:
             decision.action_value = self._resolve_switch(decision.action_value, state)
         except MacroError as error:
             return await self._retry_after_macro_error(decision, error, state)
-        self._note_prediction(decision, state)
         await self.broadcaster.publish(status_event("running", f"pressing: {decision.action}"))
         try:
             battle_macros.apply(self.emu, decision.action_value, active_slot=state.active_slot or 0)
