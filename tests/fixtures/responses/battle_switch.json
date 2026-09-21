@@ -1,0 +1,305 @@
+{
+  "state": {
+    "mode": "battle_menu",
+    "map_id": 12,
+    "map": "Route 1",
+    "tile": [
+      9,
+      28
+    ],
+    "player_name": "RED",
+    "party_count": 2,
+    "badges": 0,
+    "money": 3175,
+    "bag_count": 2,
+    "bag": [
+      {
+        "name": "POKE BALL",
+        "quantity": 4
+      },
+      {
+        "name": "POTION",
+        "quantity": 3
+      }
+    ],
+    "in_battle": true,
+    "text": "▶FIGHT PKMN ITEM  RUN",
+    "menu_items": [],
+    "cursor": null,
+    "party": [
+      {
+        "name": "CHARMANDER",
+        "nickname": "CHARMANDER",
+        "level": 6,
+        "types": [
+          "Fire"
+        ],
+        "hp": 3,
+        "max_hp": 22,
+        "status": "none",
+        "moves": [
+          {
+            "name": "SCRATCH",
+            "type": "Normal",
+            "power": 40,
+            "pp": 35,
+            "max_pp": 35
+          },
+          {
+            "name": "GROWL",
+            "type": "Normal",
+            "power": 0,
+            "pp": 40,
+            "max_pp": 40
+          }
+        ]
+      },
+      {
+        "name": "PIDGEY",
+        "nickname": "PIDGEY",
+        "level": 2,
+        "types": [
+          "Normal",
+          "Flying"
+        ],
+        "hp": 14,
+        "max_hp": 14,
+        "status": "none",
+        "moves": [
+          {
+            "name": "GUST",
+            "type": "Normal",
+            "power": 40,
+            "pp": 35,
+            "max_pp": 35
+          }
+        ]
+      }
+    ],
+    "active": {
+      "name": "CHARMANDER",
+      "nickname": "CHARMANDER",
+      "level": 6,
+      "types": [
+        "Fire"
+      ],
+      "hp": 3,
+      "max_hp": 22,
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "power": 40,
+          "pp": 35,
+          "max_pp": 35
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "power": 0,
+          "pp": 40,
+          "max_pp": 40
+        }
+      ]
+    },
+    "active_slot": 0,
+    "enemy": {
+      "name": "RATTATA",
+      "nickname": "RATTATA",
+      "level": 3,
+      "types": [
+        "Normal"
+      ],
+      "hp": 15,
+      "max_hp": 15,
+      "status": "none",
+      "moves": [
+        {
+          "name": "TACKLE",
+          "type": "Normal",
+          "power": 35,
+          "pp": 35,
+          "max_pp": 35
+        },
+        {
+          "name": "TAIL WHIP",
+          "type": "Normal",
+          "power": 0,
+          "pp": 30,
+          "max_pp": 30
+        }
+      ]
+    },
+    "battle": {
+      "kind": "wild",
+      "trainer_class": null
+    },
+    "flags": [
+      "battled_rival_in_oaks_lab",
+      "followed_oak_into_lab",
+      "got_starter",
+      "oak_appeared_in_pallet",
+      "oak_asked_to_choose_mon"
+    ],
+    "sprites": [
+      {
+        "slot": 1,
+        "picture": 4,
+        "x": 5,
+        "y": 26
+      },
+      {
+        "slot": 2,
+        "picture": 4,
+        "x": 15,
+        "y": 13
+      }
+    ],
+    "map_size": [
+      20,
+      36
+    ]
+  },
+  "state_json": {
+    "our_pokemon": {
+      "name": "CHARMANDER",
+      "level": 6,
+      "types": [
+        "Fire"
+      ],
+      "hp": "low",
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "kind": "attack",
+          "power": "weak",
+          "pp": "plenty"
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "kind": "status",
+          "power": "none",
+          "pp": "plenty"
+        }
+      ]
+    },
+    "enemy_pokemon": {
+      "name": "RATTATA",
+      "level": 3,
+      "types": [
+        "Normal"
+      ],
+      "hp": "full",
+      "status": "none"
+    },
+    "battle": {
+      "kind": "wild"
+    },
+    "bench": [
+      {
+        "name": "PIDGEY",
+        "level": 2,
+        "types": [
+          "Normal",
+          "Flying"
+        ],
+        "hp": "full",
+        "label": "PIDGEY"
+      }
+    ],
+    "party": "two",
+    "bag": {
+      "poke_balls": true,
+      "potions": true
+    },
+    "goal": "Win the first battle"
+  },
+  "questions": {
+    "move": {
+      "type": "choice",
+      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon?",
+      "criteria": {
+        "SCRATCH": "Normal-type attack, weak power",
+        "GROWL": "Normal-type status, none power"
+      }
+    },
+    "switch": {
+      "type": "noul",
+      "instructions": "Should we switch out `our_pokemon` this turn instead of using a move?",
+      "criteria": {
+        "true": "A Pokémon in `bench` would clearly do better against `enemy_pokemon`, or `our_pokemon` is about to faint",
+        "false": "`our_pokemon` can keep fighting"
+      }
+    },
+    "switch_to": {
+      "type": "choice",
+      "instructions": "If we switch, which Pokémon from `bench` should come in against `enemy_pokemon`?",
+      "criteria": {
+        "PIDGEY": "Normal/Flying type, level 2, hp full"
+      }
+    },
+    "heal": {
+      "type": "noul",
+      "instructions": "Should we use a Potion on `our_pokemon` this turn instead of attacking?"
+    },
+    "run": {
+      "type": "noul",
+      "instructions": "Should we run from this wild battle rather than fight it?"
+    },
+    "catch": {
+      "type": "noul",
+      "instructions": "Should we throw a Poké Ball at `enemy_pokemon` this turn?",
+      "criteria": {
+        "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough (asleep or paralyzed helps) for a ball to work",
+        "false": "Its hp is still high, or it is not worth a ball"
+      }
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 928,
+      "output_tokens": 128
+    },
+    "answers": {
+      "move": {
+        "type": "choice",
+        "choice": "SCRATCH",
+        "confidence": 0.96,
+        "probabilities": {
+          "GROWL": 0.02,
+          "SCRATCH": 0.98
+        }
+      },
+      "switch": {
+        "type": "noul",
+        "noul": 0.15
+      },
+      "switch_to": {
+        "type": "choice",
+        "choice": "PIDGEY",
+        "confidence": 1.0,
+        "probabilities": {
+          "PIDGEY": 1.0
+        }
+      },
+      "heal": {
+        "type": "noul",
+        "noul": 0.25
+      },
+      "run": {
+        "type": "noul",
+        "noul": 0.17
+      },
+      "catch": {
+        "type": "noul",
+        "noul": 0.06
+      }
+    }
+  },
+  "latency_ms": 97
+}

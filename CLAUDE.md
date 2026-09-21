@@ -18,6 +18,7 @@ Jev is asked anything.
 - `import typesafe_sdk` lives in `src/jevplays/brain/client.py` (and the fixture script) and
   nowhere else; unit tests replay `tests/fixtures/responses/`, never the API.
 - Never commit a ROM, a save state, a `.ram` file, or `mise.local.toml`.
+- `runs/` is per-run output (logs and checkpoints), gitignored; tests write runs under `tmp_path`.
 
 ## Backlog
 
@@ -42,5 +43,9 @@ without an issue behind it.
 - Never edit or delete a test to make it pass.
 - Jev judges, code executes. The model never receives coordinates, raw numbers, or
   screenshots; buckets, arithmetic, and policy stay in code.
+- Type effectiveness lives in `state/types.py` for measurement only; never pass it to Jev.
 - A change to a question's wording or a state field Jev sees re-records the fixtures
   (`Scripts/record-fixtures.py`) in the same PR.
+- Story facts (goals, flags, scripted macros) live in `src/jevplays/executor/goals.py`.
+- RAM facts (addresses, layouts) live in `src/jevplays/emulator/ram.py`.
+- Never hand-write map waypoints; read the map (`src/jevplays/executor/world.py`).

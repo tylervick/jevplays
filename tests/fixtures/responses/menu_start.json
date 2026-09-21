@@ -1,0 +1,96 @@
+{
+  "state": {
+    "mode": "menu",
+    "map_id": 38,
+    "map": "Red's House 2F",
+    "tile": [
+      3,
+      7
+    ],
+    "player_name": "RED",
+    "party_count": 0,
+    "badges": 0,
+    "money": 3000,
+    "bag_count": 0,
+    "bag": [],
+    "in_battle": false,
+    "text": "",
+    "menu_items": [
+      "POKéMON",
+      "ITEM",
+      "RED",
+      "SAVE",
+      "OPTION",
+      "EXIT"
+    ],
+    "cursor": 0,
+    "party": [],
+    "active": null,
+    "active_slot": null,
+    "enemy": null,
+    "battle": null,
+    "flags": [],
+    "sprites": [],
+    "map_size": [
+      8,
+      8
+    ]
+  },
+  "state_json": {
+    "menu_items": [
+      "POKéMON",
+      "ITEM",
+      "RED",
+      "SAVE",
+      "OPTION",
+      "EXIT"
+    ],
+    "screen_text": "",
+    "goal": "Get a starter Pokémon from Professor Oak"
+  },
+  "questions": {
+    "menu": {
+      "type": "choice",
+      "instructions": "Which item in \"menu_items\" best serves \"goal\"?",
+      "criteria": {
+        "POKéMON": "POKéMON",
+        "ITEM": "ITEM",
+        "RED": "RED",
+        "SAVE": "SAVE",
+        "OPTION": "OPTION",
+        "EXIT": "EXIT"
+      }
+    },
+    "close": {
+      "type": "noul",
+      "instructions": "Should this menu be closed without choosing anything, because none of \"menu_items\" serves \"goal\"?"
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 448,
+      "output_tokens": 82
+    },
+    "answers": {
+      "menu": {
+        "type": "choice",
+        "choice": "POKéMON",
+        "confidence": 0.91,
+        "probabilities": {
+          "OPTION": 0.01,
+          "SAVE": 0.0,
+          "RED": 0.05,
+          "EXIT": 0.0,
+          "ITEM": 0.01,
+          "POKéMON": 0.93
+        }
+      },
+      "close": {
+        "type": "noul",
+        "noul": 0.17
+      }
+    }
+  },
+  "latency_ms": 119
+}

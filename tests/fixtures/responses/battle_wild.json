@@ -73,6 +73,7 @@
         }
       ]
     },
+    "active_slot": 0,
     "enemy": {
       "name": "PIDGEY",
       "nickname": "PIDGEY",
@@ -97,7 +98,32 @@
     "battle": {
       "kind": "wild",
       "trainer_class": null
-    }
+    },
+    "flags": [
+      "battled_rival_in_oaks_lab",
+      "followed_oak_into_lab",
+      "got_starter",
+      "oak_appeared_in_pallet",
+      "oak_asked_to_choose_mon"
+    ],
+    "sprites": [
+      {
+        "slot": 1,
+        "picture": 4,
+        "x": 5,
+        "y": 25
+      },
+      {
+        "slot": 2,
+        "picture": 4,
+        "x": 15,
+        "y": 13
+      }
+    ],
+    "map_size": [
+      20,
+      36
+    ]
   },
   "state_json": {
     "our_pokemon": {
@@ -132,12 +158,14 @@
         "Normal",
         "Flying"
       ],
-      "hp": "full"
+      "hp": "full",
+      "status": "none"
     },
     "battle": {
       "kind": "wild"
     },
     "bench": [],
+    "party": "one",
     "bag": {
       "poke_balls": false,
       "potions": false
@@ -161,24 +189,24 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 609,
+      "input_tokens": 625,
       "output_tokens": 54
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.97,
+        "confidence": 0.98,
         "probabilities": {
-          "SCRATCH": 0.99,
-          "GROWL": 0.01
+          "GROWL": 0.01,
+          "SCRATCH": 0.99
         }
       },
       "run": {
         "type": "noul",
-        "noul": 0.12
+        "noul": 0.1
       }
     }
   },
-  "latency_ms": 132
+  "latency_ms": 150
 }

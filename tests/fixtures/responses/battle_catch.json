@@ -1,0 +1,241 @@
+{
+  "state": {
+    "mode": "battle_menu",
+    "map_id": 12,
+    "map": "Route 1",
+    "tile": [
+      9,
+      28
+    ],
+    "player_name": "RED",
+    "party_count": 1,
+    "badges": 0,
+    "money": 3175,
+    "bag_count": 2,
+    "bag": [
+      {
+        "name": "POKE BALL",
+        "quantity": 5
+      },
+      {
+        "name": "POTION",
+        "quantity": 3
+      }
+    ],
+    "in_battle": true,
+    "text": "▶FIGHT PKMN ITEM  RUN",
+    "menu_items": [],
+    "cursor": null,
+    "party": [
+      {
+        "name": "CHARMANDER",
+        "nickname": "CHARMANDER",
+        "level": 6,
+        "types": [
+          "Fire"
+        ],
+        "hp": 22,
+        "max_hp": 22,
+        "status": "none",
+        "moves": [
+          {
+            "name": "SCRATCH",
+            "type": "Normal",
+            "power": 40,
+            "pp": 35,
+            "max_pp": 35
+          },
+          {
+            "name": "GROWL",
+            "type": "Normal",
+            "power": 0,
+            "pp": 40,
+            "max_pp": 40
+          }
+        ]
+      }
+    ],
+    "active": {
+      "name": "CHARMANDER",
+      "nickname": "CHARMANDER",
+      "level": 6,
+      "types": [
+        "Fire"
+      ],
+      "hp": 22,
+      "max_hp": 22,
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "power": 40,
+          "pp": 35,
+          "max_pp": 35
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "power": 0,
+          "pp": 40,
+          "max_pp": 40
+        }
+      ]
+    },
+    "active_slot": 0,
+    "enemy": {
+      "name": "PIDGEY",
+      "nickname": "PIDGEY",
+      "level": 2,
+      "types": [
+        "Normal",
+        "Flying"
+      ],
+      "hp": 2,
+      "max_hp": 14,
+      "status": "none",
+      "moves": [
+        {
+          "name": "GUST",
+          "type": "Normal",
+          "power": 40,
+          "pp": 35,
+          "max_pp": 35
+        }
+      ]
+    },
+    "battle": {
+      "kind": "wild",
+      "trainer_class": null
+    },
+    "flags": [
+      "battled_rival_in_oaks_lab",
+      "followed_oak_into_lab",
+      "got_starter",
+      "oak_appeared_in_pallet",
+      "oak_asked_to_choose_mon"
+    ],
+    "sprites": [
+      {
+        "slot": 1,
+        "picture": 4,
+        "x": 5,
+        "y": 25
+      },
+      {
+        "slot": 2,
+        "picture": 4,
+        "x": 15,
+        "y": 13
+      }
+    ],
+    "map_size": [
+      20,
+      36
+    ]
+  },
+  "state_json": {
+    "our_pokemon": {
+      "name": "CHARMANDER",
+      "level": 6,
+      "types": [
+        "Fire"
+      ],
+      "hp": "full",
+      "status": "none",
+      "moves": [
+        {
+          "name": "SCRATCH",
+          "type": "Normal",
+          "kind": "attack",
+          "power": "weak",
+          "pp": "plenty"
+        },
+        {
+          "name": "GROWL",
+          "type": "Normal",
+          "kind": "status",
+          "power": "none",
+          "pp": "plenty"
+        }
+      ]
+    },
+    "enemy_pokemon": {
+      "name": "PIDGEY",
+      "level": 2,
+      "types": [
+        "Normal",
+        "Flying"
+      ],
+      "hp": "low",
+      "status": "none"
+    },
+    "battle": {
+      "kind": "wild"
+    },
+    "bench": [],
+    "party": "one",
+    "bag": {
+      "poke_balls": true,
+      "potions": true
+    },
+    "goal": "Win the first battle"
+  },
+  "questions": {
+    "move": {
+      "type": "choice",
+      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon?",
+      "criteria": {
+        "SCRATCH": "Normal-type attack, weak power",
+        "GROWL": "Normal-type status, none power"
+      }
+    },
+    "heal": {
+      "type": "noul",
+      "instructions": "Should we use a Potion on `our_pokemon` this turn instead of attacking?"
+    },
+    "run": {
+      "type": "noul",
+      "instructions": "Should we run from this wild battle rather than fight it?"
+    },
+    "catch": {
+      "type": "noul",
+      "instructions": "Should we throw a Poké Ball at `enemy_pokemon` this turn?",
+      "criteria": {
+        "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough (asleep or paralyzed helps) for a ball to work",
+        "false": "Its hp is still high, or it is not worth a ball"
+      }
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 742,
+      "output_tokens": 86
+    },
+    "answers": {
+      "move": {
+        "type": "choice",
+        "choice": "SCRATCH",
+        "confidence": 0.98,
+        "probabilities": {
+          "GROWL": 0.01,
+          "SCRATCH": 0.99
+        }
+      },
+      "heal": {
+        "type": "noul",
+        "noul": 0.05
+      },
+      "run": {
+        "type": "noul",
+        "noul": 0.08
+      },
+      "catch": {
+        "type": "noul",
+        "noul": 0.32
+      }
+    }
+  },
+  "latency_ms": 313
+}

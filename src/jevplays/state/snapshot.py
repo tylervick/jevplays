@@ -10,6 +10,7 @@ from typing import Protocol
 
 from jevplays.emulator import ram
 from jevplays.emulator.text import ARROW, NON_TEXT, decode_cells, has_text, row_text
+from jevplays.state.events import flags_set
 from jevplays.state.modes import DIALOG_ROWS, Mode, detect, is_blank
 from jevplays.state.names import item_name, map_name, move_data, species_name, trainer_class_name, type_name
 
@@ -49,6 +50,14 @@ class Battle:
 
 
 @dataclass(frozen=True)
+class Sprite:
+    slot: int
+    picture: int
+    x: int
+    y: int
+
+
+@dataclass(frozen=True)
 class BagItem:
     name: str
     quantity: int
@@ -80,10 +89,14 @@ class GameState:
     """Index into `party` of the Pokémon currently out in battle. None outside battle."""
     enemy: Mon | None
     battle: Battle | None
+    flags: frozenset[str]
+    sprites: tuple[Sprite, ...]
+    map_size: tuple[int, int]
 
     def to_dict(self) -> dict:
         d = _listify(asdict(self))
         d["mode"] = str(self.mode)
+        d["flags"] = sorted(self.flags)
         return d
 
 
@@ -184,16 +197,28 @@ def read_mon(mem: ram.Memory, base: int, nick_addr: int, *, in_battle_layout: bo
 
 
 def read_party(mem: ram.Memory) -> tuple[Mon, ...]:
+    """The party, stopping at the first slot whose species byte is 0.
+
+    Mid-catch, the game bumps wPartyCount before it writes the new record, so for one frame
+    the last slot up to that count is a species-0 placeholder. Stopping there (rather than
+    skipping a zero wherever it appears) never shifts the index of a real, already-written
+    slot, which is what active_slot (from wPlayerMonNumber) indexes into.
+    """
     count = min(mem[ram.wPartyCount], 6)
-    return tuple(
-        read_mon(
-            mem,
-            ram.wPartyMons + i * ram.PARTY_MON_SIZE,
-            ram.wPartyMonNicks + i * ram.NAME_LENGTH,
-            in_battle_layout=False,
+    mons = []
+    for i in range(count):
+        base = ram.wPartyMons + i * ram.PARTY_MON_SIZE
+        if mem[base] == 0:
+            break
+        mons.append(
+            read_mon(
+                mem,
+                base,
+                ram.wPartyMonNicks + i * ram.NAME_LENGTH,
+                in_battle_layout=False,
+            )
         )
-        for i in range(count)
-    )
+    return tuple(mons)
 
 
 def read_bag(mem: ram.Memory) -> tuple[BagItem, ...]:
@@ -206,6 +231,24 @@ def read_bag(mem: ram.Memory) -> tuple[BagItem, ...]:
         items.append(BagItem(name=item_name(item_id), quantity=mem[addr + 1]))
         addr += 2
     return tuple(items)
+
+
+def read_sprites(mem: ram.Memory) -> tuple[Sprite, ...]:
+    out = []
+    for slot in range(1, ram.SPRITE_SLOTS + 1):
+        picture = mem[ram.wSpriteStateData1 + ram.SPRITE_SLOT_SIZE * slot]
+        if picture == 0:
+            continue
+        base = ram.wSpriteStateData2 + ram.SPRITE_SLOT_SIZE * slot
+        out.append(
+            Sprite(
+                slot=slot,
+                picture=picture,
+                x=mem[base + 5] - ram.SPRITE_COORD_OFFSET,
+                y=mem[base + 4] - ram.SPRITE_COORD_OFFSET,
+            )
+        )
+    return tuple(out)
 
 
 def snapshot(emu: EmulatorLike) -> GameState:
@@ -246,4 +289,7 @@ def snapshot(emu: EmulatorLike) -> GameState:
         active_slot=active_slot,
         enemy=enemy,
         battle=battle,
+        flags=flags_set(mem),
+        sprites=read_sprites(mem),
+        map_size=(mem[ram.wCurMapWidth] * 2, mem[ram.wCurMapHeight] * 2),
     )

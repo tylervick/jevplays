@@ -1,7 +1,18 @@
 from jevplays.emulator import ram
 from jevplays.emulator.text import encode
+from jevplays.state.events import flag_index
 from jevplays.state.modes import Mode
-from jevplays.state.snapshot import BagItem, Battle, GameState, Mon, Move, dialog_text, menu_items, snapshot
+from jevplays.state.snapshot import (
+    BagItem,
+    Battle,
+    GameState,
+    Mon,
+    Move,
+    Sprite,
+    dialog_text,
+    menu_items,
+    snapshot,
+)
 from tests.support import FakeEmulator, FakeMemory, rows_from, write_mon
 
 
@@ -251,3 +262,40 @@ def test_to_dict_serializes_nested_records():
         "max_pp": 35,
     }
     assert d["active"] is None and d["bag"] == []
+
+
+def test_sprites_flags_and_map_size_are_parsed():
+    emu = FakeEmulator()
+    bedroom(emu)
+    emu.mem[ram.wCurMapWidth] = 10
+    emu.mem[ram.wCurMapHeight] = 18
+    emu.set_sprites([(1, 72, 18, 9), (5, 3, 5, 2)])
+    n = flag_index("got_starter")
+    emu.mem[ram.wEventFlags + n // 8] = 1 << (n % 8)
+    state = snapshot(emu)
+    assert state.map_size == (20, 36)
+    assert state.sprites == (Sprite(slot=1, picture=72, x=18, y=9), Sprite(slot=5, picture=3, x=5, y=2))
+    assert state.flags == frozenset({"got_starter"})
+    assert state.to_dict()["flags"] == ["got_starter"]
+
+
+def test_a_party_slot_with_species_zero_is_skipped_mid_catch():
+    emu = FakeEmulator()
+    bedroom(emu)
+    write_mon(
+        emu.mem,
+        ram.wPartyMons,
+        ram.wPartyMonNicks,
+        species=176,
+        level=5,
+        hp=19,
+        max_hp=19,
+        types=(20, 20),
+        moves=(10, 45),
+        pps=(35, 40),
+        nickname="CHARMANDER",
+    )
+    emu.mem[ram.wPartyCount] = 2  # the game bumps the count before writing the new record
+    emu.mem[ram.wPartyMons + ram.PARTY_MON_SIZE] = 0  # species byte for the still-empty second slot
+    s = snapshot(emu)
+    assert [m.name for m in s.party] == ["CHARMANDER"] and s.party_count == 2

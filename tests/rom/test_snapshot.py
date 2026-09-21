@@ -14,8 +14,18 @@ from jevplays.state.snapshot import Battle, snapshot
         ("prompt", Mode.PROMPT),
         ("battle_trainer", Mode.BATTLE_MENU),
         ("battle_wild", Mode.BATTLE_MENU),
+        ("battle_items", Mode.BATTLE_MENU),
+        ("battle_two", Mode.BATTLE_MENU),
         ("battle_wait", Mode.BATTLE_WAIT),
         ("route1", Mode.OVERWORLD),
+        ("pallet", Mode.OVERWORLD),
+        ("prompt_starter", Mode.PROMPT),
+        ("viridian", Mode.OVERWORLD),
+        ("viridian_center", Mode.OVERWORLD),
+        ("mart_parcel", Mode.OVERWORLD),
+        ("dex", Mode.OVERWORLD),
+        ("mart_dex", Mode.OVERWORLD),
+        ("viridian_oldman", Mode.OVERWORLD),
     ],
 )
 def test_each_saved_state_is_detected_as_its_mode(rom, state_path, name, mode):
@@ -79,3 +89,12 @@ def test_wild_battle_state(rom, state_path):
         # Route 1's wild species depend on the RNG at the encounter frame; both are Normal types.
         assert state.enemy.name in ("RATTATA", "PIDGEY") and "Normal" in state.enemy.types
         assert state.active.name == "CHARMANDER" and state.active.hp == state.active.max_hp
+
+
+def test_route1_state_carries_flags_and_size(rom, state_path):
+    with Emulator(rom) as emu:
+        emu.load(state_path("route1"))
+        state = snapshot(emu)
+        assert state.map_size == (20, 36)
+        assert "got_starter" in state.flags and "got_pokedex" not in state.flags
+        assert all(0 <= s.x < 20 and 0 <= s.y < 36 for s in state.sprites)

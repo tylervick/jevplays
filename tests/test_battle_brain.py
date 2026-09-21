@@ -1,7 +1,7 @@
 import json
 import re
 
-from jevplays.brain.battle import battle_questions, battle_state, decide_battle
+from jevplays.brain.battle import ALL_ACTIONS, battle_questions, battle_state, bench_slots, decide_battle
 from jevplays.brain.decision import BattleAction
 from jevplays.brain.policy import choose_battle_action
 from jevplays.state.modes import Mode
@@ -52,7 +52,10 @@ CHARMANDER_TWIN = Mon(
 )
 
 
-def make_state(*, kind="wild", bench=(), bag=()):
+def make_state(*, kind="wild", bench=(), bag=(), lead_hp=None):
+    """`lead_hp="low"` swaps in a hurt-enough-to-heal CHARMANDER; existing calls (no `lead_hp`)
+    keep the original level-8, hp-8/23 ("hurt") lead unchanged."""
+    active = CHARMANDER if lead_hp is None else CHARMANDER.__class__(**{**CHARMANDER.__dict__, "hp": 3})
     return GameState(
         mode=Mode.BATTLE_MENU,
         map_id=12,
@@ -67,12 +70,15 @@ def make_state(*, kind="wild", bench=(), bag=()):
         text="",
         menu_items=(),
         cursor=None,
-        party=(CHARMANDER, *bench),
-        active=CHARMANDER,
+        party=(active, *bench),
+        active=active,
         active_slot=0,
         enemy=BULBASAUR,
         battle=Battle(kind=kind, trainer_class=None if kind == "wild" else "RIVAL1"),
         bag=tuple(bag),
+        flags=frozenset(),
+        sprites=(),
+        map_size=(20, 18),
     )
 
 
@@ -95,6 +101,7 @@ def test_state_json_uses_words_not_numbers_for_hp_and_pp():
         "level": 5,
         "types": ["Grass", "Poison"],
         "hp": "healthy",
+        "status": "none",
     }
     assert (
         s["battle"] == {"kind": "wild"}
@@ -215,3 +222,49 @@ def test_decide_battle_plain_move():
     d = decide_battle(sj, qs, response, model="m", input_tokens=1, latency_ms=1)
     assert d.fallback is False and d.action == "use SCRATCH"
     assert d.answers["run"]["applied"] is False
+
+
+def test_bench_labels_are_unique_and_switch_to_leaves_slot_resolution_to_the_caller():
+    state = make_state(bench=(PIDGEY, PIDGEY))
+    sj = battle_state(state, goal="g")
+    assert [m["label"] for m in sj["bench"]] == ["PIDGEY", "PIDGEY (second)"]
+    assert "slot" not in sj["bench"][0] and "slot" not in sj["bench"][1]
+    assert sj["party"] == "three or more" and sj["enemy_pokemon"]["status"] == "none"
+    assert bench_slots(state) == [("PIDGEY", 1), ("PIDGEY (second)", 2)]
+    qs = battle_questions(sj)
+    assert list(qs["switch_to"]["criteria"]) == ["PIDGEY", "PIDGEY (second)"]
+    response = {
+        "model": "m",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+        "answers": answers(
+            move={"SCRATCH": 0.9, "GROWL": 0.1}, switch=0.9, switch_to={"PIDGEY (second)": 1.0}
+        ),
+    }
+    d = decide_battle(sj, qs, response, model="m", input_tokens=1, latency_ms=1, supported=ALL_ACTIONS)
+    assert d.action_value == BattleAction(kind="switch", target="PIDGEY (second)", slot=None)
+    assert d.fallback is False and d.answers["switch"]["applied"] and d.answers["switch_to"]["applied"]
+
+
+def test_heal_and_catch_are_executable_now():
+    state = make_state(bag=(BagItem("POTION", 1), BagItem("POKE BALL", 2)), lead_hp="low")
+    sj = battle_state(state, goal="g")
+    qs = battle_questions(sj)
+    heal_response = {
+        "model": "m",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+        "answers": answers(move={"SCRATCH": 0.9, "GROWL": 0.1}, heal=0.9),
+    }
+    d = decide_battle(sj, qs, heal_response, model="m", input_tokens=1, latency_ms=1, supported=ALL_ACTIONS)
+    assert d.action_value == BattleAction(kind="heal") and d.fallback is False
+    catch_response = {
+        "model": "m",
+        "usage": {"input_tokens": 1, "output_tokens": 1},
+        "answers": answers(move={"SCRATCH": 0.9, "GROWL": 0.1}, catch=0.8),
+    }
+    d = decide_battle(sj, qs, catch_response, model="m", input_tokens=1, latency_ms=1, supported=ALL_ACTIONS)
+    assert d.action_value == BattleAction(kind="catch") and d.fallback is False
+
+
+def test_party_word_counts_only_the_living():
+    fainted = PIDGEY.__class__(**{**PIDGEY.__dict__, "hp": 0})
+    assert battle_state(make_state(bench=(fainted,)), goal="g")["party"] == "one"

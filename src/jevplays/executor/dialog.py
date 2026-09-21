@@ -7,7 +7,7 @@ from jevplays.emulator.text import ARROW, NON_TEXT, row_text
 from jevplays.state.modes import DIALOG_ROWS, yes_no_at
 from jevplays.state.snapshot import rows_of
 
-__all__ = ["answer_prompt", "cursor_label", "dialog_lines", "skip_dialog", "yes_no_open"]
+__all__ = ["answer_prompt", "cursor_label", "dialog_lines", "skip_dialog", "wait_for", "yes_no_open"]
 
 
 def dialog_lines(rows: list[list[str]]) -> list[str]:
@@ -28,6 +28,22 @@ def answer_prompt(emu, yes: bool) -> None:
     if not yes:
         emu.press("down")
     emu.press("a", settle=40)
+
+
+def wait_for(emu, predicate: Callable[[list[list[str]]], bool], frames: int = 900) -> bool:
+    """Poll the screen for `predicate`, pressing A through any arrow-driven dialog along the way
+    (some menus, like the Mart's, take a few dozen frames to draw). Bounded by `frames`; shared
+    by `talk.talk_to` and `shop.py`'s scripted counters, both of which wait on mechanical screens
+    rather than free text."""
+    for _ in range(0, frames, 10):
+        rows = rows_of(emu.tilemap())
+        if predicate(rows):
+            return True
+        if rows[ARROW_ROW][ARROW_COL] == ARROW:
+            emu.press("a", settle=30)
+        else:
+            emu.tick(10)
+    return False
 
 
 def skip_dialog(

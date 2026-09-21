@@ -135,3 +135,8 @@ def test_is_blank_only_for_spaces_and_zeros():
     assert is_blank(bytes(360))
     assert not is_blank(tilemap_bytes([]))  # map tiles are not blank
     assert not is_blank(tilemap_bytes(["·▶NEW GAME"]))
+
+
+def test_a_yes_no_box_during_a_battle_is_a_prompt_not_battle_text():
+    """The nickname box after a catch opens while the game still counts itself in battle."""
+    assert detect(SAVE_PROMPT, in_battle=True, blank=False) is Mode.PROMPT

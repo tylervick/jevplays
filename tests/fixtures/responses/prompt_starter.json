@@ -1,0 +1,130 @@
+{
+  "state": {
+    "mode": "prompt",
+    "map_id": 40,
+    "map": "Oak's Lab",
+    "tile": [
+      6,
+      4
+    ],
+    "player_name": "RED",
+    "party_count": 0,
+    "badges": 0,
+    "money": 3000,
+    "bag_count": 0,
+    "bag": [],
+    "in_battle": false,
+    "text": "fire POKéMON, CHARMANDER?",
+    "menu_items": [
+      "YES",
+      "NO"
+    ],
+    "cursor": 0,
+    "party": [],
+    "active": null,
+    "active_slot": null,
+    "enemy": null,
+    "battle": null,
+    "flags": [
+      "followed_oak_into_lab",
+      "oak_appeared_in_pallet",
+      "oak_asked_to_choose_mon"
+    ],
+    "sprites": [
+      {
+        "slot": 1,
+        "picture": 2,
+        "x": 4,
+        "y": 3
+      },
+      {
+        "slot": 2,
+        "picture": 61,
+        "x": 6,
+        "y": 3
+      },
+      {
+        "slot": 3,
+        "picture": 61,
+        "x": 7,
+        "y": 3
+      },
+      {
+        "slot": 4,
+        "picture": 61,
+        "x": 8,
+        "y": 3
+      },
+      {
+        "slot": 5,
+        "picture": 3,
+        "x": 5,
+        "y": 2
+      },
+      {
+        "slot": 6,
+        "picture": 65,
+        "x": 2,
+        "y": 1
+      },
+      {
+        "slot": 7,
+        "picture": 65,
+        "x": 3,
+        "y": 1
+      },
+      {
+        "slot": 8,
+        "picture": 3,
+        "x": 5,
+        "y": 7
+      },
+      {
+        "slot": 9,
+        "picture": 13,
+        "x": 1,
+        "y": 10
+      },
+      {
+        "slot": 10,
+        "picture": 32,
+        "x": 2,
+        "y": 10
+      },
+      {
+        "slot": 11,
+        "picture": 32,
+        "x": 8,
+        "y": 10
+      }
+    ],
+    "map_size": [
+      10,
+      12
+    ]
+  },
+  "state_json": {
+    "prompt": "fire POKéMON, CHARMANDER?",
+    "goal": "Get a starter Pokémon from Professor Oak"
+  },
+  "questions": {
+    "prompt": {
+      "type": "noul",
+      "instructions": "Would answering YES to the on-screen question in \"prompt\" help make progress on \"goal\"?"
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 316,
+      "output_tokens": 20
+    },
+    "answers": {
+      "prompt": {
+        "type": "noul",
+        "noul": 0.88
+      }
+    }
+  },
+  "latency_ms": 89
+}

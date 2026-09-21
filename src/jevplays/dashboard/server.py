@@ -1,5 +1,6 @@
 """A Starlette app: the static page, and a websocket that fans events out to every open tab."""
 
+import asyncio
 from pathlib import Path
 
 import uvicorn
@@ -20,9 +21,12 @@ class Broadcaster:
     def __init__(self) -> None:
         self.clients: set = set()
         self.latest: dict[str, dict] = {}
+        self.first_client = asyncio.Event()
+        """Set the first time a tab connects, so `replay` can hold off until someone is watching."""
 
     async def connect(self, ws) -> None:
         self.clients.add(ws)
+        self.first_client.set()
         for event in self.latest.values():
             await self._send(ws, event)
 
