@@ -5,7 +5,7 @@ from jevplays.emulator import ram
 from jevplays.loop import Loop, LoopConfig
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import snapshot
-from tests.support import FakeEmulator, write_mon
+from tests.support import FakeEmulator, install_map, write_mon
 
 DIALOG = [""] * 12 + [
     "····················",
@@ -237,3 +237,180 @@ def test_a_macro_that_keeps_failing_holds_instead_of_re_asking():
     assert statuses[-1]["status"] == "paused"
     decisions = [e for e in bc.events if e["type"] == "decision"]
     assert len(decisions) == 1  # no further decision events after the fallback re-publish
+
+
+# --- milestone 3: goals, navigation, prompts, and menus -------------------------------------
+
+OVERWORLD_MAP = ["." * 12] * 8
+"""12x8 walkable tiles: room enough for get_starter's walk to (10, 1)."""
+
+
+class QuestionBrain:
+    """Answers by question id, so one fake serves the goal, prompt, and menu branches."""
+
+    def __init__(self, **answers):
+        self.answers = answers
+        self.calls = 0
+        self.asked: list[list[str]] = []
+
+    async def ask(self, state, questions):
+        self.calls += 1
+        self.asked.append(sorted(questions))
+        answered = {}
+        for qid in questions:
+            value = self.answers.get(qid)
+            if value is None:
+                continue
+            if isinstance(value, dict):
+                answered[qid] = {
+                    "type": "choice",
+                    "choice": max(value, key=value.get),
+                    "probabilities": value,
+                    "confidence": 0.5,
+                }
+            else:
+                answered[qid] = {"type": "noul", "noul": value}
+        return {"model": "jev-test", "usage": {"input_tokens": 7}, "answers": answered}, 5
+
+
+def overworld_emu(map_id=0, x=2, y=5):
+    emu = FakeEmulator()
+    install_map(emu, OVERWORLD_MAP)
+    emu.mem[ram.wCurMap] = map_id
+    emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = x, y
+    write_mon(
+        emu.mem,
+        ram.wPartyMons,
+        ram.wPartyMonNicks,
+        species=176,
+        level=5,
+        hp=19,
+        max_hp=19,
+        types=(20, 20),
+        moves=(10, 45),
+        pps=(35, 40),
+        nickname="CHARMANDER",
+    )
+    emu.mem[ram.wPartyCount] = 1
+    return emu
+
+
+def test_an_idle_overworld_asks_for_a_goal_once_and_starts_walking():
+    emu, bc = overworld_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(goal={"get_starter": 0.9}, needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    run(loop, 3)
+    assert brain.calls == 1  # the goal is asked once, then the navigator just walks
+    assert brain.asked[0] == ["goal", "needs_heal"]
+    assert loop.goal is not None and loop.goal.id == "get_starter"
+    assert loop.navigator.busy
+    assert any(p in ("up", "down", "left", "right") for p in emu.presses)
+    kinds = [d.kind for d in loop.decisions]
+    assert kinds == ["goal"] and loop.decisions[0].action == "pursue get_starter"
+
+
+def test_without_a_brain_the_first_available_goal_is_taken_and_recorded():
+    emu, bc = overworld_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 2)
+    assert loop.goal is not None and loop.goal.id == "get_starter"
+    assert [d.kind for d in loop.decisions] == ["goal"]
+    assert loop.decisions[0].fallback and "no brain" in loop.decisions[0].fallback_reason
+    assert [e["type"] for e in bc.events if e["type"] == "decision"] == ["decision"]
+
+
+PROMPT_ROWS = [""] * 6 + [
+    "·············▶YES··",
+    "···················",
+    "············· NO···",
+]
+NICKNAME_ROWS = (
+    PROMPT_ROWS
+    + [""] * 4
+    + [
+        "····················",
+        "·Do you want to give·",
+        "·a NICKNAME to it?  ·",
+    ]
+)
+
+
+def prompt_emu(rows=PROMPT_ROWS):
+    emu = overworld_emu()
+    emu.set_rows(rows)
+    return emu
+
+
+def test_a_prompt_asks_jev_and_presses_yes_or_no():
+    for noul, expected in ((0.9, ["a"]), (0.1, ["down", "a"])):
+        emu, bc = prompt_emu(), RecordingBroadcaster()
+        brain = QuestionBrain(prompt=noul)
+        loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+        assert snapshot(emu).mode is Mode.PROMPT
+        run(loop, 1)
+        assert brain.calls == 1 and brain.asked[0] == ["prompt"]
+        assert emu.presses == expected
+        assert loop.decisions[-1].kind == "prompt"
+
+
+def test_a_nickname_prompt_never_asks_jev_and_answers_no():
+    emu, bc = prompt_emu(NICKNAME_ROWS), RecordingBroadcaster()
+    brain = QuestionBrain(prompt=0.99)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    assert "NICKNAME" in snapshot(emu).text
+    run(loop, 1)
+    assert brain.calls == 0
+    assert emu.presses == ["down", "a"]
+    assert loop.decisions[-1].kind == "prompt"
+    assert "nickname" in loop.decisions[-1].fallback_reason
+
+
+MENU_ROWS = [""] * 2 + ["··▶HEAL····", "···········", "·· CANCEL··"]
+MENU_ROWS_MOVED = [""] * 2 + ["·· HEAL····", "···········", "··▶CANCEL··"]
+
+
+def menu_emu():
+    emu = overworld_emu()
+    emu.mem[ram.wTopMenuItemY], emu.mem[ram.wTopMenuItemX] = 2, 2
+    emu.mem[ram.wMaxMenuItem] = 1
+    emu.set_rows(MENU_ROWS)
+    original = emu.press
+
+    def press(button, **kw):
+        if button == "down":
+            emu.set_rows(MENU_ROWS_MOVED)  # the cursor moves with the press, as the game's does
+        return original(button, **kw)
+
+    emu.press = press
+    return emu
+
+
+def test_a_menu_walks_the_cursor_to_jevs_choice_and_presses_a():
+    emu, bc = menu_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(menu={"CANCEL": 0.8, "HEAL": 0.2}, close=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    assert snapshot(emu).mode is Mode.MENU and snapshot(emu).menu_items == ("HEAL", "CANCEL")
+    run(loop, 1)
+    assert brain.calls == 1 and brain.asked[0] == ["close", "menu"]
+    assert emu.presses == ["down", "a"]
+    assert loop.decisions[-1].action == "select CANCEL"
+
+
+def test_without_a_brain_a_menu_is_closed():
+    emu, bc = menu_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 1)
+    assert emu.presses == ["b"]
+    assert loop.decisions[-1].action == "close the menu"
+
+
+def test_a_stuck_navigator_blocks_the_goal_and_the_next_goal_is_asked_for():
+    emu, bc = overworld_emu(map_id=12, x=5, y=4), RecordingBroadcaster()  # Route 1: grass nearby
+    emu.step_effects = {}  # nothing the navigator presses ever moves the player
+    brain = QuestionBrain(goal={"get_starter": 0.9}, needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    run(loop, 40)
+    assert "get_starter" in loop.blocked_goals
+    assert brain.calls >= 2  # asked again once the first goal was given up on
+    blocked = [e for e in bc.events if e["type"] == "status" and "blocked" in e["message"]]
+    assert blocked and "get_starter" in blocked[0]["message"]

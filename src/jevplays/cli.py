@@ -33,6 +33,18 @@ def cmd_state(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _print_goals(loop, interval: float = 0.2) -> None:
+    """Print the overworld goal on the terminal whenever it changes, so a run is followable
+    without the dashboard open. The loop owns `goal`; this only reads it."""
+    last = object()
+    while True:
+        current = loop.goal.id if loop.goal is not None else None
+        if current != last:
+            print(f"goal: {current or 'none'}", flush=True)
+            last = current
+        await asyncio.sleep(interval)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     rom = args.rom or _rom_from_env()
     if rom is None:
@@ -74,10 +86,15 @@ def cmd_run(args: argparse.Namespace) -> int:
                     print("brain: jev-latest", flush=True)
                 else:
                     print("brain: off" + ("" if args.no_brain else " (no TYPESAFE_API_KEY)"), flush=True)
-                loop = Loop(emu, broadcaster, LoopConfig(paced=not args.unpaced, goal=args.goal), brain=brain)
+                config = LoopConfig(paced=not args.unpaced, goal=args.battle_goal)
+                loop = Loop(emu, broadcaster, config, brain=brain)
+                watcher = asyncio.create_task(_print_goals(loop))
                 try:
                     await loop.run()
                 finally:
+                    watcher.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await watcher
                     await broadcaster.publish(status_event("stopped"))
                     if brain is not None:
                         await brain.close()
@@ -113,8 +130,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--state", type=Path, help="start from this save state instead of the intro")
     run.add_argument("--port", type=int, default=8765)
     run.add_argument("--unpaced", action="store_true", help="run the emulator as fast as it can")
-    run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; idle at decision points")
-    run.add_argument("--goal", default=LoopConfig().goal)
+    run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; let code decide instead")
+    # --goal is the old spelling, kept working: it is the battle brain's free-text objective,
+    # not the overworld goal (those come from executor/goals.py and are Jev's to pick).
+    run.add_argument(
+        "--battle-goal",
+        "--goal",
+        dest="battle_goal",
+        default=LoopConfig().goal,
+        help="the objective told to Jev with every battle question",
+    )
     run.set_defaults(func=cmd_run)
 
     state = sub.add_parser("state", help="print the GameState parsed from a save state")
