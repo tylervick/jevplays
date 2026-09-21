@@ -39,13 +39,21 @@ def choose_battle_action(answers: dict[str, dict], state_json: dict) -> tuple[Ba
     return None, []
 
 
-def choose_explore(answers: dict[str, dict], option_ids: list[str]) -> tuple[str, list[str]]:
+def choose_explore(
+    answers: dict[str, dict], option_ids: list[str], *, tried: frozenset[str] = frozenset()
+) -> tuple[str, list[str]]:
     """The option to take next, and the answer ids used. Heals first when `needs_heal` clears
     the threshold and a `heal` option is on offer; otherwise the `explore` choice, so long as it
     names an option actually on the list. When it does not (or there is no usable `explore`
     answer at all), falls back to `milestone` when that is on offer, else the first option --
-    code decided that, not Jev, so `used` comes back empty."""
-    if _noul(answers, "needs_heal") > HEAL_FIRST_THRESHOLD and "heal" in option_ids:
+    code decided that, not Jev, so `used` comes back empty.
+
+    `tried` names the options this map has already been given up on. A heal trip that failed
+    once -- the walk did not get there, or the counter did not run -- would otherwise fire every
+    single turn while the lead is still hurt, and the run would never do anything else: the
+    memory word is the record, so a `tried` heal loses its priority and goes back to being one
+    option among the rest."""
+    if _noul(answers, "needs_heal") > HEAL_FIRST_THRESHOLD and "heal" in option_ids and "heal" not in tried:
         used = ["needs_heal"] if "needs_heal" in answers else []
         return "heal", used
     explore = answers.get("explore")

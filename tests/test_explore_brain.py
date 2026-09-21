@@ -60,6 +60,23 @@ def test_policy_heals_first_only_when_a_heal_option_exists_and_the_noul_clears()
     assert choose_explore(a, ["grass"]) == ("grass", ["explore"])
 
 
+def test_a_tried_heal_option_loses_its_priority_so_the_run_does_not_loop_on_it():
+    """A heal trip that already failed from here is `tried`, and the lead is still hurt, so
+    `needs_heal` fires again every turn. Without the `tried` check the run would walk at the
+    Center for ever; with it the heal is one option among the rest and Jev's choice stands."""
+    a = answers(needs_heal=0.9, explore={"grass": 1.0})
+    assert choose_explore(a, ["heal", "grass"], tried=frozenset({"heal"})) == ("grass", ["explore"])
+    options = [
+        Option("heal", "heal", "go heal at Viridian Pokémon Center", "tried", (), "heal"),
+        Option("grass", "grass", "train in the tall grass here", "new", (), "wander"),
+    ]
+    sj = explore_state(overworld_state(), options, milestone=None)
+    qs = explore_questions(sj)
+    response = {"model": "m", "usage": {"input_tokens": 1, "output_tokens": 1}, "answers": a}
+    d = decide_explore(sj, qs, response, options, model="m", input_tokens=1, latency_ms=1)
+    assert d.action_value.option_id == "grass" and d.fallback is False
+
+
 def test_off_list_choice_falls_back_to_the_milestone_with_fallback_set():
     options = [
         Option("exit_north", "exit", "go north to Route 2", "new", (), None, dest_map=13),

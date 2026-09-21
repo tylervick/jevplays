@@ -83,7 +83,8 @@ def decide_explore(
     raw = {qid: a for qid, a in response["answers"].items() if qid in questions}
     by_id = {option.id: option for option in options}
     option_ids = list(by_id)
-    chosen_id, used = choose_explore(raw, option_ids)
+    tried = frozenset(option.id for option in options if option.memory == "tried")
+    chosen_id, used = choose_explore(raw, option_ids, tried=tried)
     fallback, reason = False, ""
     if chosen_id not in by_id:
         if not option_ids:
