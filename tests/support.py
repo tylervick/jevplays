@@ -173,6 +173,9 @@ class FakeEmulator:
         self.frames += frames
         return frames
 
+    def frame_count(self) -> int:
+        return self.frames
+
     def collision(self) -> list[list[int]]:
         return [row[:] for row in self.grid]
 
