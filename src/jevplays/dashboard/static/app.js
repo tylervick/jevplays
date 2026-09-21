@@ -62,14 +62,20 @@ function renderNoul(id, q, a) {
 function renderDecision(d) {
   decisionEl.replaceChildren();
   const action = el("div", "action", d.action);
-  if (d.fallback) action.append(el("span", "badge fallback", `fallback: ${d.fallback_reason}`));
+  // Any recorded reason is worth showing, not just d.fallback: the never-nickname policy
+  // decides without the model and is deliberately not a fallback, but the page should say so.
+  if (d.fallback_reason) action.append(el("span", "badge fallback", `fallback: ${d.fallback_reason}`));
   decisionEl.append(action);
   for (const [id, q] of Object.entries(d.questions)) {
     const a = d.answers[id];
     if (!a) continue;
     decisionEl.append(a.primitive === "choice" ? renderChoice(id, q, a) : renderNoul(id, q, a));
   }
-  decisionEl.append(el("p", "meta", `${d.model} · ${d.latency_ms} ms · ${d.input_tokens} tokens`));
+  // No model means code decided this one on its own, so there is no latency or token count to
+  // show -- "· 0 ms · 0 tokens" would read as a measurement rather than an absence.
+  if (d.model) {
+    decisionEl.append(el("p", "meta", `${d.model} · ${d.latency_ms} ms · ${d.input_tokens} tokens`));
+  }
   if (d.kind === "goal") {
     const id = (d.action.match(/^pursue (.+)$/) || [])[1];
     const goals = d.state_summary.goals || {};
@@ -123,7 +129,9 @@ function connect() {
       status.dataset.status = event.status;
       legEl.textContent = event.message || event.status;
       legEl.dataset.status = event.status;
-      if (/^goal (done|blocked):/.test(event.message || "")) {
+      // Every way the loop lets go of a goal: "goal done:", "goal blocked:",
+      // "goal failed 1/3:", "goal budget spent:". The line is stale the moment any of them lands.
+      if (/^goal (done|blocked|failed|budget)[ :]/.test(event.message || "")) {
         goalEl.textContent = "–";
       }
     } else if (event.type === "decision") {
