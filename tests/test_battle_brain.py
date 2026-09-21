@@ -1,7 +1,7 @@
 import json
 import re
 
-from jevplays.brain.battle import ALL_ACTIONS, battle_questions, battle_state, decide_battle
+from jevplays.brain.battle import ALL_ACTIONS, battle_questions, battle_state, bench_slots, decide_battle
 from jevplays.brain.decision import BattleAction
 from jevplays.brain.policy import choose_battle_action
 from jevplays.state.modes import Mode
@@ -109,9 +109,7 @@ def test_state_json_uses_words_not_numbers_for_hp_and_pp():
         and s["goal"] == "Reach Viridian City"
     )
     numbers = re.findall(r"\d+", json.dumps({k: v for k, v in s.items()}, ensure_ascii=False))
-    # the two levels, the bench Pokémon's level, and its bench "slot" (a list index, not a game
-    # quantity — see battle.py's ALL_ACTIONS/slot note)
-    assert set(numbers) == {"8", "5", "4", "1"}
+    assert set(numbers) == {"8", "5", "4"}  # the two levels plus the bench Pokémon's level
 
     qs = battle_questions(s)
     q_numbers = re.findall(r"\d+", json.dumps(qs, ensure_ascii=False))
@@ -226,11 +224,13 @@ def test_decide_battle_plain_move():
     assert d.answers["run"]["applied"] is False
 
 
-def test_bench_labels_are_unique_and_switch_to_resolves_to_the_party_slot():
+def test_bench_labels_are_unique_and_switch_to_leaves_slot_resolution_to_the_caller():
     state = make_state(bench=(PIDGEY, PIDGEY))
     sj = battle_state(state, goal="g")
     assert [m["label"] for m in sj["bench"]] == ["PIDGEY", "PIDGEY (second)"]
+    assert "slot" not in sj["bench"][0] and "slot" not in sj["bench"][1]
     assert sj["party"] == "three or more" and sj["enemy_pokemon"]["status"] == "none"
+    assert bench_slots(state) == [("PIDGEY", 1), ("PIDGEY (second)", 2)]
     qs = battle_questions(sj)
     assert list(qs["switch_to"]["criteria"]) == ["PIDGEY", "PIDGEY (second)"]
     response = {
@@ -241,7 +241,7 @@ def test_bench_labels_are_unique_and_switch_to_resolves_to_the_party_slot():
         ),
     }
     d = decide_battle(sj, qs, response, model="m", input_tokens=1, latency_ms=1, supported=ALL_ACTIONS)
-    assert d.action_value == BattleAction(kind="switch", target="PIDGEY (second)", slot=2)
+    assert d.action_value == BattleAction(kind="switch", target="PIDGEY (second)", slot=None)
     assert d.fallback is False and d.answers["switch"]["applied"] and d.answers["switch_to"]["applied"]
 
 

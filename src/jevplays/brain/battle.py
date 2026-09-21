@@ -36,6 +36,16 @@ def _bench_labels(nicknames: list[str]) -> list[str]:
     return labels
 
 
+def bench_slots(state: GameState) -> list[tuple[str, int]]:
+    """(label, party index) for every party member that isn't out in battle and has hp > 0, in
+    party order. This is the only place a bench label's party index lives — sj never carries it
+    (Jev sees no raw numbers besides levels), so the caller (the loop) resolves a switch_to
+    label back to a party slot by looking it up here, not in state_json."""
+    indexed = [(i, m) for i, m in enumerate(state.party) if i != state.active_slot and m.hp > 0]
+    labels = _bench_labels([m.nickname for _, m in indexed])
+    return [(label, i) for (i, _), label in zip(indexed, labels, strict=True)]
+
+
 def _mon(mon: Mon, *, with_moves: bool, with_status: bool = False) -> dict:
     d = {"name": mon.name, "level": mon.level, "types": list(mon.types), "hp": hp_bucket(mon.hp, mon.max_hp)}
     if with_moves or with_status:
@@ -56,12 +66,7 @@ def _mon(mon: Mon, *, with_moves: bool, with_status: bool = False) -> dict:
 
 def battle_state(state: GameState, goal: str) -> dict:
     assert state.active is not None and state.enemy is not None and state.battle is not None
-    bench_indexed = [(i, m) for i, m in enumerate(state.party) if i != state.active_slot and m.hp > 0]
-    labels = _bench_labels([m.nickname for _, m in bench_indexed])
-    bench = [
-        {**_mon(m, with_moves=False), "label": label, "slot": i}
-        for (i, m), label in zip(bench_indexed, labels, strict=True)
-    ]
+    bench = [{**_mon(state.party[i], with_moves=False), "label": label} for label, i in bench_slots(state)]
     alive = sum(1 for m in state.party if m.hp > 0)
     party_word = "one" if alive <= 1 else "two" if alive == 2 else "three or more"
     return {
@@ -158,10 +163,9 @@ def decide_battle(
         fallback, reason = True, f"{action.kind} is not executable yet; using the move answer instead"
         action = BattleAction(kind="move", move=raw["move"]["choice"])
         used = used + ["move"]
-    elif action.kind == "switch":
-        # switch_to's choice is a bench label; resolve it to the party index the executor needs.
-        slot = next((m.get("slot") for m in sj.get("bench", []) if m.get("label") == action.target), None)
-        action = BattleAction(kind="switch", target=action.target, slot=slot)
+    # A supported "switch" action keeps target=<label>, slot=None: sj never carries a bench
+    # index (see bench_slots' docstring), so resolving the label to a party slot is the
+    # caller's job, via bench_slots(state).
     for qid in used:
         if qid in answers:
             answers[qid]["applied"] = True
