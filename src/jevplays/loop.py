@@ -15,12 +15,12 @@ import asyncio
 import heapq
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from itertools import count
 from time import monotonic
 
-from jevplays.brain.battle import battle_questions, battle_state, decide_battle
+from jevplays.brain.battle import ALL_ACTIONS, battle_questions, battle_state, bench_slots, decide_battle
 from jevplays.brain.decision import Action, BattleAction, Decision, GoalAction, MenuAction, PromptAction
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.brain.goal import decide_goal, goal_questions, goal_state
@@ -239,16 +239,35 @@ class Loop:
             return self.emu.tick(self.config.idle_frames)
         sj = battle_state(state, goal=self.config.goal)
         questions = battle_questions(sj)
-        decision = await self._decide("battle", sj, questions, decide_battle)
+        decision = await self._decide("battle", sj, questions, partial(decide_battle, supported=ALL_ACTIONS))
         if decision is None:
             return 0
+        try:
+            decision.action_value = self._resolve_switch(decision.action_value, state)
+        except MacroError as error:
+            return await self._retry_after_macro_error(decision, error, state)
         await self.broadcaster.publish(status_event("running", f"pressing: {decision.action}"))
         try:
-            battle_macros.apply(self.emu, decision.action_value)
+            battle_macros.apply(self.emu, decision.action_value, active_slot=state.active_slot or 0)
         except MacroError as error:
             return await self._retry_after_macro_error(decision, error, state)
         await self.broadcaster.publish(status_event("running", decision.action))
         return self.emu.tick(30)
+
+    def _resolve_switch(self, action: BattleAction, state: GameState) -> BattleAction:
+        """A "switch" decision names a bench label, not a party index -- sj never carries one
+        (see `bench_slots`' docstring), so this is where the label becomes the slot `apply` needs.
+        Every other kind passes through untouched. A label `bench_slots(state)` does not
+        recognize -- the bench Pokémon fainted or was swapped between the snapshot and this
+        decision -- raises MacroError, so the caller treats it exactly like any other macro
+        failure: retried once (against the original, still-unresolved action, which fails
+        `apply`'s own "switch requires a slot" check), then the safe default."""
+        if action.kind != "switch":
+            return action
+        for label, idx in bench_slots(state):
+            if label == action.target:
+                return replace(action, slot=idx)
+        raise MacroError(f"switch target {action.target!r} is not on the bench")
 
     async def _retry_after_macro_error(self, decision: Decision, error: MacroError, state: GameState) -> int:
         """A macro can fail mid-way (e.g. a move fell out of the list between snapshot and
@@ -260,7 +279,7 @@ class Loop:
         retry_state = snapshot(self.emu)
         if retry_state.mode is Mode.BATTLE_MENU:
             try:
-                battle_macros.apply(self.emu, decision.action_value)
+                battle_macros.apply(self.emu, decision.action_value, active_slot=state.active_slot or 0)
             except MacroError:
                 return await self._after_second_failure(decision, state)
         return frames
@@ -272,7 +291,9 @@ class Loop:
         moves = decision.state_summary["our_pokemon"]["moves"]
         first = next((m["name"] for m in moves if m["pp"] != "out"), moves[0]["name"])
         try:
-            battle_macros.apply(self.emu, BattleAction(kind="move", move=first))
+            battle_macros.apply(
+                self.emu, BattleAction(kind="move", move=first), active_slot=state.active_slot or 0
+            )
         except MacroError:
             frames = self.emu.press("b", settle=20)
             self._hold = (state.mode, decision.id)

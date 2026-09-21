@@ -11,6 +11,17 @@ from jevplays.loop import GOAL_BUDGET_S, GOAL_RETRIES, Loop, LoopConfig, local_d
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import snapshot
 from tests.support import OVERWORLD_LEAD, FakeEmulator, install_map, overworld_state, write_mon
+from tests.test_battle_macros import (
+    ITEM_LIST_ROWS,
+    ITEM_LIST_ROWS_POTION,
+    ITEM_PARTY_ROWS,
+    MENU_ITEM,
+    MENU_PKMN,
+    PARTY_LIST_ROWS,
+    PARTY_LIST_ROWS_SLOT1,
+    SWITCH_MENU_ROWS,
+    ScriptedEmulator,
+)
 
 DIALOG = [""] * 12 + [
     "····················",
@@ -87,9 +98,11 @@ class FakeBrain:
         return self.response, 12
 
 
-def battle_emu():
-    emu = FakeEmulator()
-    emu.step_effects = {}
+def configure_battle_memory(emu, *, hp=19, max_hp=19, bag=(), party_extra=None):
+    """Write the lead's party record, its in-battle record, the enemy, and an optional bag onto
+    `emu.mem` -- everything `battle_state`/`battle_questions` read, independent of whatever the
+    screen shows. `party_extra` is a second `write_mon` call's kwargs, for a bench slot
+    (`bench_slots` needs a second, living party member to offer a switch)."""
     emu.mem[ram.wIsInBattle] = 1
     write_mon(
         emu.mem,
@@ -97,22 +110,31 @@ def battle_emu():
         ram.wPartyMonNicks,
         species=176,
         level=5,
-        hp=19,
-        max_hp=19,
+        hp=hp,
+        max_hp=max_hp,
         types=(20, 20),
         moves=(10, 45),
         pps=(35, 40),
         nickname="CHARMANDER",
     )
-    emu.mem[ram.wPartyCount] = 1
+    party_count = 1
+    if party_extra is not None:
+        write_mon(
+            emu.mem,
+            ram.wPartyMons + ram.PARTY_MON_SIZE,
+            ram.wPartyMonNicks + ram.NAME_LENGTH,
+            **party_extra,
+        )
+        party_count = 2
+    emu.mem[ram.wPartyCount] = party_count
     write_mon(
         emu.mem,
         ram.wBattleMonSpecies,
         ram.wBattleMonNick,
         species=176,
         level=5,
-        hp=19,
-        max_hp=19,
+        hp=hp,
+        max_hp=max_hp,
         types=(20, 20),
         moves=(10, 45),
         pps=(35, 40),
@@ -133,6 +155,16 @@ def battle_emu():
         nickname="RATTATA",
         layout="battle",
     )
+    for i, (item_id, quantity) in enumerate(bag):
+        emu.mem[ram.wBagItems + 2 * i] = item_id
+        emu.mem[ram.wBagItems + 2 * i + 1] = quantity
+    emu.mem[ram.wNumBagItems] = len(bag)
+
+
+def battle_emu(*, hp=19, max_hp=19, bag=(), party_extra=None):
+    emu = FakeEmulator()
+    emu.step_effects = {}
+    configure_battle_memory(emu, hp=hp, max_hp=max_hp, bag=bag, party_extra=party_extra)
     emu.set_rows(BATTLE_MENU)
     return emu
 
@@ -242,6 +274,117 @@ def test_a_macro_that_keeps_failing_holds_instead_of_re_asking():
     assert statuses[-1]["status"] == "paused"
     decisions = [e for e in bc.events if e["type"] == "decision"]
     assert len(decisions) == 1  # no further decision events after the fallback re-publish
+
+
+# --- milestone 4a: heal, catch, and switch decisions are carried out -------------------------
+
+# The battle item list, missing POTION -- for the "macro raises" test, so the lead stays low on
+# hp (a Potion is the right call) while the screen the loop actually walks cannot supply one, the
+# same kind of desync `_retry_after_macro_error`'s docstring already describes.
+ITEM_LIST_NO_POTION = [""] * 4 + [
+    "····▶POKé BALL    ·",
+    "····         × 5  ·",
+    "···· CANCEL       ·",
+]
+
+
+def test_battle_heal_uses_a_potion_via_the_item_path():
+    """heal=0.95 with the lead low on hp and a Potion in the bag: the loop presses ITEM (not
+    FIGHT) and the recorded decision is "use a Potion"."""
+    emu = battle_emu(hp=5, bag=[(20, 3)])  # item 20 is POTION; hp 5/19 buckets to "low"
+    original = emu.press
+
+    def press(button, **kw):
+        r = original(button, **kw)
+        if emu.presses == ["down"]:
+            emu.set_rows(MENU_ITEM)  # cursor walked from FIGHT down to ITEM
+        elif emu.presses == ["down", "a"]:
+            emu.set_rows(ITEM_LIST_ROWS)  # ITEM opened the bag, cursor on POKé BALL
+        elif emu.presses == ["down", "a", "down"]:
+            emu.set_rows(ITEM_LIST_ROWS_POTION)  # scrolled one down to POTION
+        elif emu.presses == ["down", "a", "down", "a"]:
+            emu.set_rows(ITEM_PARTY_ROWS)  # POTION picked -> "Use item on which POKéMON?"
+        return r
+
+    emu.press = press
+    bc = RecordingBroadcaster()
+    brain = QuestionBrain(move={"SCRATCH": 0.6}, heal=0.95)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    asyncio.run(loop.run(max_iterations=1))
+
+    assert brain.calls == 1
+    decisions = [e["decision"] for e in bc.events if e["type"] == "decision"]
+    assert decisions[0]["action"] == "use a Potion"
+    assert emu.presses == ["down", "a", "down", "a", "a"]  # ITEM path, then the target slot
+
+
+def test_battle_switch_resolves_the_bench_label_to_a_party_slot():
+    """A switch answer names a bench label (bench_slots' labels, not a party index); the loop
+    looks it up and hands apply() a concrete slot, walking the PKMN path to get there."""
+    emu = ScriptedEmulator([BATTLE_MENU, MENU_PKMN, PARTY_LIST_ROWS, PARTY_LIST_ROWS_SLOT1, SWITCH_MENU_ROWS])
+    configure_battle_memory(
+        emu,
+        party_extra=dict(
+            species=16,
+            level=8,
+            hp=14,
+            max_hp=14,
+            types=(0, 0),
+            moves=(33,),
+            pps=(35,),
+            nickname="PIDGEY",
+        ),
+    )
+    bc = RecordingBroadcaster()
+    brain = QuestionBrain(move={"SCRATCH": 0.5}, switch=0.95, switch_to={"PIDGEY": 0.9})
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    asyncio.run(loop.run(max_iterations=1))
+
+    assert brain.calls == 1
+    assert emu.presses[:2] == ["right", "a"]  # the PKMN path, not FIGHT
+    decision = loop.decisions[-1]
+    assert decision.action_value.kind == "switch"
+    assert decision.action_value.slot == 1  # PIDGEY's party index, resolved from its label
+
+
+def test_battle_heal_macro_error_falls_back_to_the_safe_default_move():
+    """The screen's item list has no POTION (it fell out of the bag between the snapshot and the
+    press -- the same race `_retry_after_macro_error` is built for), so the macro raises twice
+    and the loop lands on the safe default: the first usable move, SCRATCH."""
+    emu = battle_emu(hp=5, bag=[(20, 3)])
+    screen = "MENU"
+    transitions = {
+        ("MENU", "down"): ("MENU_ITEM", MENU_ITEM),
+        ("MENU", "a"): ("MOVES", MOVES),
+        ("MENU_ITEM", "a"): ("ITEM_LIST", ITEM_LIST_NO_POTION),
+        ("ITEM_LIST", "down"): ("ITEM_LIST", ITEM_LIST_NO_POTION),
+        ("ITEM_LIST", "b"): ("MENU_ITEM", MENU_ITEM),
+        ("MENU_ITEM", "b"): ("MENU", BATTLE_MENU),
+    }
+    original = emu.press
+
+    def press(button, **kw):
+        nonlocal screen
+        r = original(button, **kw)
+        step = transitions.get((screen, button))
+        if step is not None:
+            screen, rows = step
+            emu.set_rows(rows)
+        return r
+
+    emu.press = press
+    bc = RecordingBroadcaster()
+    brain = QuestionBrain(move={"SCRATCH": 0.6}, heal=0.95)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    asyncio.run(loop.run(max_iterations=1))
+
+    assert brain.calls == 1
+    decisions = [e["decision"] for e in bc.events if e["type"] == "decision"]
+    assert len(decisions) == 1  # no fallback re-publish; the same decision's macro was retried
+    statuses = [e for e in bc.events if e["type"] == "status"]
+    assert statuses[-1]["status"] == "running"
+    assert "macro failed" in statuses[-1]["message"]
+    assert emu.presses[-2:] == ["a", "a"]  # FIGHT, then SCRATCH
 
 
 # --- milestone 3: goals, navigation, prompts, and menus -------------------------------------
