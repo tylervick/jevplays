@@ -38,7 +38,7 @@ from jevplays.brain.goal import goal_questions, goal_state
 from jevplays.brain.prompt import menu_questions, menu_state, prompt_questions, prompt_state
 from jevplays.emulator import ram
 from jevplays.emulator.pyboy import Emulator
-from jevplays.executor.goals import Goal, available_goals, battle_goal, goal_by_id
+from jevplays.executor.goals import active_milestone, available_goals, battle_goal, goal_by_id
 from jevplays.executor.options import Memory, generate
 from jevplays.state.snapshot import GameState, snapshot
 
@@ -96,21 +96,8 @@ def goal_ask(state: GameState) -> tuple[dict, dict]:
     return sj, goal_questions(sj)
 
 
-MILESTONE_IDS = ("get_starter", "deliver_parcel", "beat_brock")
-"""Milestone 4b's spine, in order. A stand-in for the `active_milestone` helper task 3 adds:
-the first of these whose goal is available and not yet done."""
-
-
-def _active_milestone(state: GameState) -> Goal | None:
-    for goal_id in MILESTONE_IDS:
-        goal = goal_by_id(goal_id)
-        if goal.available(state) and not goal.done(state):
-            return goal
-    return None
-
-
 def explore_ask(emu, state: GameState) -> tuple[dict, dict]:
-    milestone = _active_milestone(state)
+    milestone = active_milestone(state)
     options = generate(emu, state, Memory.empty(), milestone)
     sj = explore_state(state, options, milestone)
     return sj, explore_questions(sj)

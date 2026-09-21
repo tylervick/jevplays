@@ -119,6 +119,13 @@ def _beat_brock_legs(state: GameState) -> list[Leg]:
     return legs_to(state, "pewter_gym") + [Leg(kind="walk", target=(4, 2))]
 
 
+def _milestone_beat_brock_legs(state: GameState) -> list[Leg]:
+    """Like `_beat_brock_legs`, but skips the route-finding once already inside the gym."""
+    if node(state) == "pewter_gym":
+        return [Leg(kind="walk", target=(4, 2))]
+    return legs_to(state, "pewter_gym") + [Leg(kind="walk", target=(4, 2))]
+
+
 def _nearest_center(state: GameState) -> str | None:
     best, best_len = None, None
     for center in CENTER_NODES:
@@ -149,15 +156,19 @@ def _heal_done(state: GameState) -> bool:
     return mon is None or mon.hp >= mon.max_hp
 
 
+GET_STARTER = Goal(
+    id="get_starter",
+    description="Get a starter Pokémon from Professor Oak",
+    available=lambda s: True,
+    done=lambda s: "got_starter" in s.flags,
+    legs=_get_starter_legs,
+    after="choose_charmander",
+)
+"""Milestone 1 of `MILESTONES`, and `GOALS`' first entry -- the same `Goal` object in both
+lists, since the two tables agree about what it takes and when it's done."""
+
 GOALS: list[Goal] = [
-    Goal(
-        id="get_starter",
-        description="Get a starter Pokémon from Professor Oak",
-        available=lambda s: True,
-        done=lambda s: "got_starter" in s.flags,
-        legs=_get_starter_legs,
-        after="choose_charmander",
-    ),
+    GET_STARTER,
     Goal(
         id="deliver_parcel",
         description="Deliver Oak's Parcel: fetch it from the Viridian Mart, then bring it to Oak",
@@ -287,3 +298,38 @@ def goal_by_id(goal_id: str) -> Goal:
         if g.id == goal_id:
             return g
     raise KeyError(goal_id)
+
+
+MILESTONES: list[Goal] = [
+    GET_STARTER,
+    Goal(
+        id="get_pokedex",
+        description="Deliver Oak's Parcel: fetch it from the Viridian Mart, then bring it to Oak",
+        available=lambda s: "got_starter" in s.flags and "got_pokedex" not in s.flags,
+        done=lambda s: "got_pokedex" in s.flags,
+        legs=_deliver_parcel_legs,
+        after="talk_oak",
+    ),
+    Goal(
+        id="beat_brock",
+        description="Challenge Brock at the Pewter Gym",
+        available=lambda s: "got_pokedex" in s.flags,
+        done=lambda s: "beat_brock" in s.flags,
+        legs=_milestone_beat_brock_legs,
+        after="talk_brock",
+    ),
+]
+"""Milestone 4b's spine: the three moments the run always passes through, in order. Where
+`GOALS` is everything Jev may pick from at a given moment, this is the handful of destinations
+that motivate `explore`'s generated options -- `get_pokedex` and `beat_brock` are their own
+`Goal`s (not the `GOALS` entries `deliver_parcel` and the old, gated `beat_brock`) because a
+milestone's gates and legs are simpler: it only cares whether the *next* milestone is reached,
+not the side quests along the way."""
+
+
+def active_milestone(state: GameState) -> Goal | None:
+    """The first of `MILESTONES` that's available and not yet done, or None once all three are."""
+    for goal in MILESTONES:
+        if goal.available(state) and not goal.done(state):
+            return goal
+    return None

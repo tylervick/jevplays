@@ -1,11 +1,13 @@
 from jevplays.executor.goals import (  # noqa: F401
     GOALS,
+    MILESTONES,
+    active_milestone,
     available_goals,
     battle_goal,
     goal_by_id,
     legs_to,
 )
-from jevplays.executor.maps import OAKS_LAB, PALLET_TOWN, ROUTE_1, VIRIDIAN_CITY
+from jevplays.executor.maps import OAKS_LAB, PALLET_TOWN, PEWTER_GYM, ROUTE_1, VIRIDIAN_CITY
 from jevplays.state.snapshot import BagItem, Mon, Sprite
 from tests.support import OVERWORLD_LEAD as CHAR
 from tests.support import overworld_state as state
@@ -115,3 +117,48 @@ def test_the_potion_goal_is_done_once_the_bag_has_them_or_the_money_is_gone():
     assert "buy_potions" not in [g.id for g in available_goals(stocked)]
     broke = state(map_id=PEWTER_CITY, x=16, y=17, flags={"got_starter", "got_pokedex"}, money=100)
     assert goal_by_id("buy_potions").done(broke)
+
+
+# --- Milestone 4b: the three-milestone spine beside the goal table ---
+
+
+def milestone(goal_id: str):
+    return next(m for m in MILESTONES if m.id == goal_id)
+
+
+def test_milestones_are_the_spine_in_order():
+    assert [m.id for m in MILESTONES] == ["get_starter", "get_pokedex", "beat_brock"]
+
+
+def test_active_milestone_progresses_through_the_spine():
+    assert active_milestone(state()).id == "get_starter"
+    assert active_milestone(state(flags={"got_starter"})).id == "get_pokedex"
+    assert active_milestone(state(flags={"got_starter", "got_pokedex"})).id == "beat_brock"
+    done = state(flags={"got_starter", "got_pokedex", "beat_brock"})
+    assert active_milestone(done) is None
+
+
+def test_get_pokedex_legs_go_to_the_mart_before_the_parcel_and_the_lab_after():
+    before = state(flags={"got_starter"})
+    legs = milestone("get_pokedex").legs(before)
+    assert legs[-1].kind == "warp" and legs[-1].dest_map == 42
+
+    after = state(
+        map_id=VIRIDIAN_CITY,
+        x=29,
+        y=20,
+        flags={"got_starter", "got_oaks_parcel"},
+        bag=(BagItem("OAKS PARCEL", 1),),
+    )
+    legs = milestone("get_pokedex").legs(after)
+    assert legs[-1].dest_map == OAKS_LAB
+
+
+def test_milestone_beat_brock_legs_end_at_the_gym_door():
+    from_viridian = state(map_id=VIRIDIAN_CITY, x=29, y=20, flags={"got_starter", "got_pokedex"})
+    legs = milestone("beat_brock").legs(from_viridian)
+    assert legs[-1].kind == "walk" and legs[-1].target == (4, 2)
+
+    in_gym = state(map_id=PEWTER_GYM, x=4, y=6, flags={"got_starter", "got_pokedex"})
+    legs = milestone("beat_brock").legs(in_gym)
+    assert len(legs) == 1 and legs[0].kind == "walk" and legs[0].target == (4, 2)
