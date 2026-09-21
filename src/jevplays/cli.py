@@ -46,6 +46,24 @@ async def _print_goals(loop, interval: float = 0.2) -> None:
         await asyncio.sleep(interval)
 
 
+def resolve_resume(run_dir) -> tuple[Path, int, int]:
+    """Work out where `--resume` picks the run up: the newest checkpoint, the decision count it
+    was written at, and how many later decisions had to be set aside.
+
+    The checkpoint is the game as it stood just after decision `n`, so anything the log holds
+    beyond `n` was written after it and rolled back with it: replaying those would show
+    decisions that never happened and misnumber the next checkpoint. They move to
+    `decisions.orphaned.jsonl` instead. Raises FileNotFoundError if there is no checkpoint.
+    Takes a RunDir (untyped here so importing cli never pulls the log module in)."""
+    path = run_dir.last_checkpoint()
+    if path is None:
+        raise FileNotFoundError(f"{run_dir.path} has no checkpoint to resume from")
+    n = run_dir.checkpoint_number(path)
+    orphaned = run_dir.truncate_to(n)
+    run_dir.mark_resumed(from_checkpoint=n, orphaned=orphaned)
+    return path, n, orphaned
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     rom = args.rom or _rom_from_env()
     if rom is None:
@@ -58,14 +76,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.resume is not None:
         try:
             run_dir = RunDir.open(args.resume)
+            start_state, checkpoint_n, orphaned = resolve_resume(run_dir)
         except FileNotFoundError as error:
             print(f"jevplays run: {error}", file=sys.stderr)
             return 2
-        start_state = run_dir.last_checkpoint()
-        if start_state is None:
-            print(f"jevplays run: {args.resume} has no checkpoint to resume from", file=sys.stderr)
-            return 2
-        run_dir.mark_resumed()
+        print(f"run: resuming {start_state} from checkpoint {checkpoint_n}", flush=True)
+        if orphaned:
+            print(
+                f"run: {orphaned} decision(s) after the checkpoint moved to decisions.orphaned.jsonl",
+                flush=True,
+            )
     elif not args.no_log:
         run_dir = RunDir.create(
             args.runs_dir,
@@ -127,7 +147,13 @@ def cmd_run(args: argparse.Namespace) -> int:
                     watcher.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await watcher
-                    await loop.checkpoint()
+                    try:
+                        await loop.checkpoint()
+                    except Exception as error:
+                        # A failed save (a full disk, a vanished run directory) must not take
+                        # the rest of the shutdown -- the stopped status, closing the brain --
+                        # down with it.
+                        print(f"jevplays run: the exit checkpoint failed: {error}", file=sys.stderr)
                     await broadcaster.publish(status_event("stopped"))
                     if brain is not None:
                         await brain.close()
@@ -176,7 +202,15 @@ def cmd_replay(args: argparse.Namespace) -> int:
                 server.result()
             print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
             print(f"replaying {run_dir.path} ({run_dir.count()} decisions)", flush=True)
-            await replay(run_dir, broadcaster, delay=args.delay, limit=args.limit)
+            if args.wait > 0:
+                print(f"waiting up to {args.wait:g}s for a browser to connect", flush=True)
+            await replay(
+                run_dir,
+                broadcaster,
+                delay=args.delay,
+                limit=args.limit,
+                wait_for_client=args.wait,
+            )
             print("replay finished; the dashboard stays up until Ctrl-C", flush=True)
             await server  # keep serving
         finally:
@@ -240,12 +274,25 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--port", type=int, default=8765)
     replay.add_argument("--delay", type=float, default=1.0, help="seconds between decisions")
     replay.add_argument("--limit", type=int, default=None, help="stop after this many decisions")
+    replay.add_argument(
+        "--wait",
+        type=float,
+        default=30.0,
+        metavar="SECONDS",
+        help="hold the first decision until a browser connects, at most this long (0: start at once)",
+    )
     replay.set_defaults(func=cmd_replay)
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    # --state with --no-log is legitimate (a throwaway run from a save state); --resume with it
+    # is not: resuming means writing to the run directory --no-log says to do without. argparse
+    # cannot express that with --state already in a mutually exclusive group, so check it here.
+    if getattr(args, "resume", None) is not None and getattr(args, "no_log", False):
+        parser.error("--no-log cannot be combined with --resume")
     return args.func(args)
 
 

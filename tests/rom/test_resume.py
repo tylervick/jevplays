@@ -28,6 +28,7 @@ def test_a_run_checkpoints_and_resumes_from_the_newest_one(rom, state_path, tmp_
         asyncio.run(loop.checkpoint())
         made = loop.decision_count
         map_at_exit = emu.mem[ram.wCurMap]
+        coords_at_exit = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
     assert made >= CHECKPOINT_EVERY, "1200 iterations from Route 1 decide at least 25 times"
     newest = run_dir.last_checkpoint()
     assert newest is not None and newest.name == f"checkpoint-{made}.state"
@@ -38,10 +39,13 @@ def test_a_run_checkpoints_and_resumes_from_the_newest_one(rom, state_path, tmp_
     with Emulator(rom) as emu:
         emu.load(resumed.last_checkpoint())
         assert emu.mem[ram.wCurMap] == map_at_exit
+        # The checkpoint is the game where it stood, not just the map: the player stands on
+        # the same tile, so the resumed loop plans from the position the last one left.
+        assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == coords_at_exit
         loop = Loop(
             emu, Quiet(), LoopConfig(paced=False, fps=0.001), brain=FirstChoiceBrain(), run_dir=resumed
         )
         assert loop.decision_count == made
-        asyncio.run(loop.run(max_iterations=50))
+        asyncio.run(loop.run(max_iterations=300))
     assert resumed.count() > made
     assert len(resumed.info()["resumed_at"]) == 1
