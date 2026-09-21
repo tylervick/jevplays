@@ -44,3 +44,6 @@ without an issue behind it.
   screenshots; buckets, arithmetic, and policy stay in code.
 - A change to a question's wording or a state field Jev sees re-records the fixtures
   (`Scripts/record-fixtures.py`) in the same PR.
+- Story facts (goals, flags, scripted macros) live in `src/jevplays/executor/goals.py`.
+- RAM facts (addresses, layouts) live in `src/jevplays/emulator/ram.py`.
+- Never hand-write map waypoints; read the map (`src/jevplays/executor/world.py`).

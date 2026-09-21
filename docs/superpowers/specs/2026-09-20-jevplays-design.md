@@ -146,8 +146,11 @@ GameState
   bag: BagSummary             has_balls, has_potions, has_repel, item names
   text: str                   decoded on-screen text, empty when none
   menu_items: [str]           decoded items when a menu is open
-  flags: EventFlags           the subset the goal table reads
+  flags: frozenset[str]       the subset of story event flags the goal table reads
+  sprites: [Sprite]           NPCs and other on-screen actors, for the executor only
+  map_size: (w, h)            the current map's size in grid cells, for the executor only
 Move: name, type, power, pp, max_pp
+Sprite: slot, picture, x, y
 ```
 
 `GameState` carries raw numbers (HP, PP, money) because it is the harness's record of the truth;
@@ -248,31 +251,46 @@ effectiveness hint as a named field.
 ### 8.2 Goal (overworld idle)
 
 The goal table in `executor/goals.py` lists goals for the early game through the first badge,
-each with an id, a one-sentence description Jev sees, the map and tile to reach, the event flags
-that make it available, and the flags or conditions that complete it. Examples: leave the house,
-talk to Oak, choose a starter, deliver the parcel, reach Viridian City, buy Poké Balls, catch a
-Pokémon on Route 1, train until the lead is level 12, cross Viridian Forest, beat Brock. Plus two
-always-available goals: heal at the nearest Pokémon Center, and train on the current route.
+each with an id, a one-sentence description Jev sees, a rule for when it is available and when it
+is done (read from `GameState.flags`, party, bag, money, and the map), the legs to walk to get
+there, and an optional scripted macro (`after`) that finishes it once the legs are done. Goals:
+get a starter from Oak, deliver Oak's Parcel, wake the old man blocking the road out of Viridian,
+buy Poké Balls, train the lead to level 12, cross Viridian Forest, and challenge Brock. Plus two
+always-available goals: heal at the nearest Pokémon Center, and train in the grass nearby.
 
 State sent: current map, party (names, levels, hp buckets), badges, money bucket, bag summary,
-and the list of available goals with descriptions.
+and the list of available goals with descriptions. Levels are the only raw numbers in this state;
+HP, badges, money, and item counts are bucket words, the same jaggedness rule as the battle
+builder (8.1).
 
 Questions: `goal` (Choice over available goal ids with descriptions as rubric) and `needs_heal`
-(Noul: does the party need healing before doing anything else?). Policy: if `needs_heal` above
-`HEAL_FIRST_THRESHOLD` (0.7) and a Pokémon Center is known, heal first; else pursue `goal`. A goal
-stays active until complete, and Jev is only asked again when it completes or the navigator
-gives up.
+(Noul: does the party need healing before doing anything else?). Policy: if `needs_heal` clears
+`HEAL_FIRST_THRESHOLD` (0.7) and `heal_at_center` is itself one of the available goals -- the lead
+is hurt and a Pokémon Center is reachable from here -- heal first, before Jev's `goal` choice is
+even consulted; otherwise pursue `goal`. This is the harness's only heal-first rule: code never
+overrides a chosen goal for any other reason. A goal stays active until complete, and Jev is only
+asked again when it completes, its scripted macro fails, or the navigator gives up.
 
 ### 8.3 Prompts and menus
 
 `PROMPT`: one Noul, "Should we answer YES to the question in `text` in order to make progress
-on `goal`?", with the goal description in state. Yes above 0.5 presses A on YES, else NO.
+on `goal`?", with the goal description in state. Yes above `PROMPT_YES_THRESHOLD` (0.5) presses A
+on YES, else NO.
 
 `MENU`: one Choice over `menu_items` with the same goal context, plus a Noul "Should we close
-this menu without choosing anything?". Close above 0.6 presses B, else select the choice.
+this menu without choosing anything?". Close above `MENU_CLOSE_THRESHOLD` (0.6) presses B; else
+the executor walks the cursor down to the chosen item and presses A -- unless that item is not
+actually one of `menu_items` as sent (a hallucinated label, or one that scrolled away before the
+response came back), in which case the menu decision falls back to closing it instead of pressing
+A on whatever the cursor happens to be sitting on. Selecting the wrong thing in a shop or a PC
+costs money or a Pokémon, so a menu never guesses.
 
-Shops and the PC are menus like any other in this version. Buying Poké Balls is a goal whose
-steps are menu decisions.
+The Pokémon Center nurse and the Mart clerk are not Jev-answered menus, even though their screens
+look like ones. Both are mechanical -- a HEAL confirmation, a BUY quantity box -- so
+`executor/talk.py` walks up to the sprite and presses A through its dialog, and `executor/shop.py`
+layers a scripted counter on top for each one, pressing every button of the HEAL or BUY sequence
+itself. Jev's only say is whether to go there at all, as the `heal_at_center` and `buy_pokeballs`
+goals in the goal table (8.2); once the legs get there, code runs the whole counter.
 
 ### 8.4 Decision record
 
@@ -297,18 +315,48 @@ It reads the cursor's label from the screen buffer before every A press, so a wr
 position is caught before it can select anything; the loop retries a failed macro once, then uses
 the first move, then pauses until the screen changes.
 
-`navigate.py` owns overworld movement. The collision window from PyBoy's Gen 1 wrapper covers the
-visible screen, so navigation is waypoint-based: `maps.py` lists, per map, the tiles that matter
-(doors, warps, exits, the Pokémon Center counter, the Mart counter) and the sequence of waypoints
-between them. The navigator runs A* within the visible window toward the next waypoint, takes one
-step, re-snapshots, and re-plans, so NPCs and ledges are handled by the map itself. Reaching a
-warp tile ends the current leg. If the player tile has not changed after `STUCK_STEPS` (6)
-attempts, the navigator re-plans with the blocked tile marked; after `STUCK_LEGS` (3) failed
-legs it gives up, marks the goal blocked for this run, and hands control back to the loop so Jev
-picks another goal.
+Milestone 3a replaced the collision-window waypoint design this section originally called for with
+navigation over the full current map, read from the running game rather than hand-written.
+`executor/world.py` builds a walkability grid from `wOverworldMap`, the map's block ids, together
+with the current tileset's block table and collision list, both read from ROM through
+`Emulator.rom`. One grid cell is one player step -- a block's own 2x2-tile quadrant -- and the
+quadrant's bottom-left tile decides whether the cell is walkable, the same rule PyBoy's own
+collision window applies to the visible screen. A cell whose tile matches the map's grass tile is
+marked as grass: still walkable, but where a wild battle can start, which is what the
+`train_to_level_12` and `train_nearby` goals use to wander toward and inside a patch. Sprites
+(NPCs, the rival, signposts) are read fresh from RAM every turn and treated as additional blocked
+cells; warps and the map's edge connections are read from RAM the same way, never hand-recorded.
 
-A wild battle interrupting a walk suspends the navigator. When the battle ends, the loop returns
-to `OVERWORLD`, sees the navigator is busy, and resumes.
+`maps.py` is the one hand-written piece, and it is deliberately small: a link table naming, per
+map node (`"route_1"`, `"viridian_pokecenter"`, ...), the compass-direction edges and the
+destination-map warps that lead out of it -- never a tile or a step. `route()` runs a
+breadth-first search over that table to turn "get to the Pewter Gym from here" into an ordered
+list of edges and warps.
+
+`Navigator` (`navigate.py`) turns a list of legs -- `walk` (a target tile), `edge` (walk to the
+map's edge in a direction), `warp` (walk to the nearest walkable warp toward a destination map),
+or `face` (turn without moving) -- into movement, one tile per call to `step()`. Each call
+re-reads the full-map grid, the current sprites, and the warp table before planning, so an NPC
+that wanders into the way is routed around by the next call rather than a stale plan; a sprite
+standing on the goal tile itself waits rather than failing the leg. `step()` runs A* on the grid,
+treating sprite positions and any cell marked blocked as obstacles, and takes the first step of
+the path. If the player's tile has not changed after `STUCK_STEPS` (6) attempts, the leg re-plans
+with the blocked tile marked; after `STUCK_LEGS` (3) failed legs the navigator gives up, clears
+its plan, and reports `"stuck"`.
+
+A battle or a dialog interrupting a walk makes `step()` return `"interrupted"` with the plan
+intact -- nothing is cleared. The loop hands control to the brain (or to whatever advances dialog
+and battle), then calls `step()` again once `OVERWORLD` is back, so the same legs resume where
+they left off.
+
+A goal that comes back `"stuck"`, or whose scripted macro (`after`, 8.3) fails or raises, is not
+dropped immediately: `GOAL_RETRIES` (3) failures for the same goal id retire it for the rest of
+the run, since a single failure is usually a wandering NPC or a mistimed script rather than a goal
+that cannot be done at all. When every currently available goal has used up its retries, the loop
+has nothing it can honestly offer Jev; it publishes status `paused` naming the blocked goal ids and
+idles rather than ask a question with no answer. Retired goals stay retired for the rest of the
+run, so the pause only lifts when a goal that has not used up its retries becomes available (a
+flag flips, money changes, the party heals on its own).
 
 ## 10. The dashboard
 
@@ -389,11 +437,15 @@ Each is a separate plan and pull request set.
    walks through the intro and stops at the first `OVERWORLD`. No TypeSafe calls.
 2. **Battles.** The battle builder, policy, macros, and the decision panel with bars, and the
    executor's window pathfinder (`executor/navigate.py`), delivered early because the save-state
-   script needs to reach a battle; milestone 3 adds the waypoint graph on top of it. Demo: start
-   from a save state on Route 1 and watch Jev fight; catching lands with the ITEM macros in
+   script needs to reach a battle; milestone 3a builds full-map navigation on top of it. Demo:
+   start from a save state on Route 1 and watch Jev fight; catching lands with the ITEM macros in
    milestone 4.
-3. **Goals and navigation.** Goal table through Brock, waypoint maps for Pallet, Route 1,
-   Viridian, Route 2, Viridian Forest, Pewter, the goal builder, prompts and menus, run logging
-   and resume, replay.
-4. **Long tail.** Shops, the PC, trainer battles with switching, the stream layout, the accuracy
-   script, and whatever the first full run to Brock exposes.
+3a. **Goals and navigation.** Goal table through Brock, the full-map grid and the `maps.py` link
+    table in place of hand-written waypoints (9), the goal builder, prompts and menus, the
+    scripted Pokémon Center and Mart counters (8.3), and goal retries with the `paused` status
+    when every goal is blocked (9).
+3b. **Run logging, resume, and replay.** `runs/<dir>/run.json` and `decisions.jsonl` (11),
+    checkpointing and `jevplays run --resume`, `jevplays replay`, and the dashboard's
+    `?layout=stream` arrangement (10) -- all still as designed, none yet built.
+4. **Long tail.** `heal`/`catch`/`switch` battle macros (shops and the PC counter are already
+   scripted as of 3a), the accuracy script, and whatever the first full run to Brock exposes.
