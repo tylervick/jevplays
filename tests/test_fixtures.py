@@ -139,6 +139,7 @@ def test_explore_fixture_picks_an_offered_option():
     )
     assert d.fallback is False
     assert d.action_value.option_id in f["state_json"]["options"]
+    assert d.action_value.option_id == "heal"  # what was recorded: a re-record that changes it says so
 
 
 def test_switch_fixture_agrees_with_the_switch_noul():

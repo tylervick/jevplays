@@ -35,7 +35,7 @@ def test_accuracy_counts_matches_against_the_best_typed_move():
         # Without STAB the two would tie and this row would wrongly read ok: this is the row that
         # proves the script passes the attacker's types through.
         decision("SCRATCH", ["Rock", "Ground"]),  # miss
-        {"kind": "goal", "id": "g", "state_summary": {}, "answers": {}},  # ignored
+        {"kind": "prompt", "id": "p", "state_summary": {}, "answers": {}},  # ignored
     ]
     judged, matched, rows = accuracy_mod.accuracy(log)
     assert (judged, matched) == (3, 1)
@@ -173,6 +173,31 @@ def test_main_prints_zero_exploration_summary_when_the_run_has_no_explore_decisi
     assert "explore picks: exit 0, door 0, npc 0, grass 0, milestone 0, heal 0" in out
     assert "milestone share: 0%" in out
     assert "maps seen: 0" in out
+
+
+def test_maps_seen_prefers_the_memorys_visited_maps_over_the_explore_decisions():
+    """`memory.json` counts every map the run stood on; the explore decisions only count the
+    maps it stopped to explore from, which misses everything it walked straight through."""
+    log = [
+        explore_decision(
+            "e-door",
+            "VIRIDIAN_CITY",
+            {"door_41": "enter the Center (new)"},
+            choice="door_41",
+            action="explore: enter the Center",
+        )
+    ]
+    assert accuracy_mod.exploration(log)["maps_seen"] == 1  # no memory: the decisions are all there is
+    assert accuracy_mod.exploration(log, 7)["maps_seen"] == 7
+
+
+def test_main_counts_maps_seen_from_the_runs_memory_when_it_has_one(tmp_path, capsys):
+    from jevplays.runlog import RunDir
+
+    run = RunDir.create(tmp_path / "runs", rom=None, flags={})
+    run.save_memory({"visited_maps": [0, 1, 12, 40], "talked": [], "tried": []})
+    assert accuracy_mod.main([str(run.path)]) == 0
+    assert "maps seen: 4" in capsys.readouterr().out
 
 
 def test_a_heal_first_override_counts_as_heal_not_as_what_jev_said():

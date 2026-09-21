@@ -15,7 +15,8 @@ accuracy alone cannot say that. With `--verbose`, one line per judged decision.
 
 `decisions.jsonl` also gives an exploration summary (spec 8 of the generated-options design):
 decisions by kind, explore picks by option kind, how often the milestone was picked, and how
-many distinct maps were seen.
+many distinct maps were seen -- that last from the run's `memory.json` when it has one, since
+the memory counts every map the run stood on, not only the ones it stopped to explore from.
 """
 
 import argparse
@@ -89,15 +90,20 @@ def _executed_option_id(d: dict) -> str | None:
     return None
 
 
-def exploration(decisions: Iterable[dict]) -> dict:
+def exploration(decisions: Iterable[dict], maps_seen: int | None = None) -> dict:
     """Summary of the overworld choices in `decisions`: `by_kind` (decision kind -> count over
     all decisions), `explore_by_option_kind` (explore decisions -> the kind of option that was
     actually run, exit/door/npc/grass/milestone/heal -> count), `milestone_share` (milestone
-    picks / explore decisions, 0.0 when there were none), `maps_seen` (distinct
-    `state_summary["map"]` over explore decisions), and `total` (all decisions)."""
+    picks / explore decisions, 0.0 when there were none), `maps_seen`, and `total` (all
+    decisions).
+
+    `maps_seen` is passed in when the run dir kept a `memory.json` -- `visited_maps` is every map
+    the run stood on, including the ones it walked straight through -- and otherwise falls back
+    to the distinct `state_summary["map"]` over the explore decisions, which is only the maps it
+    stopped to explore from."""
     by_kind: dict[str, int] = dict.fromkeys(DECISION_KINDS, 0)
     explore_by_option_kind: dict[str, int] = dict.fromkeys(EXPLORE_OPTION_KINDS, 0)
-    maps_seen: set[str] = set()
+    explored_maps: set[str] = set()
     total = 0
     explore_total = 0
     milestone_picks = 0
@@ -110,7 +116,7 @@ def exploration(decisions: Iterable[dict]) -> dict:
         explore_total += 1
         map_name = d.get("state_summary", {}).get("map")
         if map_name:
-            maps_seen.add(map_name)
+            explored_maps.add(map_name)
         option_id = _executed_option_id(d)
         option_kind = _option_kind(option_id) if option_id is not None else None
         if option_kind is not None:
@@ -122,7 +128,7 @@ def exploration(decisions: Iterable[dict]) -> dict:
         "by_kind": by_kind,
         "explore_by_option_kind": explore_by_option_kind,
         "milestone_share": milestone_share,
-        "maps_seen": len(maps_seen),
+        "maps_seen": len(explored_maps) if maps_seen is None else maps_seen,
         "total": total,
     }
 
@@ -179,7 +185,9 @@ def main(argv: list[str] | None = None) -> int:
                 f" predicted {row['predicted']:.2f}  happened {row['observed']:.2f}"
             )
 
-    exp = exploration(decisions)
+    memory = run.load_memory()
+    visited = len(memory["visited_maps"]) if memory and "visited_maps" in memory else None
+    exp = exploration(decisions, visited)
     bk = exp["by_kind"]
     print(
         f"decisions: {exp['total']} (battle {bk['battle']}, explore {bk['explore']}, "
