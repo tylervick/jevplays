@@ -53,6 +53,23 @@ def choose_goal(answers: dict[str, dict], available_ids: list[str]) -> tuple[str
     return (available_ids[0] if available_ids else ""), []
 
 
+def choose_explore(answers: dict[str, dict], option_ids: list[str]) -> tuple[str, list[str]]:
+    """The option to take next, and the answer ids used. Heals first when `needs_heal` clears
+    the threshold and a `heal` option is on offer; otherwise the `explore` choice, so long as it
+    names an option actually on the list. When it does not (or there is no usable `explore`
+    answer at all), falls back to `milestone` when that is on offer, else the first option --
+    code decided that, not Jev, so `used` comes back empty."""
+    if _noul(answers, "needs_heal") > HEAL_FIRST_THRESHOLD and "heal" in option_ids:
+        used = ["needs_heal"] if "needs_heal" in answers else []
+        return "heal", used
+    explore = answers.get("explore")
+    if explore and explore.get("type") == "choice" and explore["choice"] in option_ids:
+        return explore["choice"], ["explore"]
+    if "milestone" in option_ids:
+        return "milestone", []
+    return (option_ids[0] if option_ids else ""), []
+
+
 def choose_prompt(answers: dict[str, dict], text: str) -> tuple[bool, list[str]]:
     """Whether to answer YES, and the answer ids used. Never asks when the on-screen text is
     about nicknaming and the policy says never to nickname."""
