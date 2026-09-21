@@ -132,12 +132,13 @@ def test_switch_fixture_agrees_with_the_switch_noul():
     the turn is a move. A switch names a bench label and never an index -- the loop resolves it
     with brain.battle.bench_slots -- so the label is what a fixture can check."""
     f, d = battle("battle_switch")
-    assert [m["label"] for m in f["state_json"]["bench"]] == ["PIDGEY"]
+    labels = [m["label"] for m in f["state_json"]["bench"]]
+    assert len(labels) == 1 and labels[0]  # whichever species Route 1 rolled when the state was made
     assert f["state_json"]["party"] == "two" and "switch" in f["questions"]
     switch = f["response"]["answers"]["switch"]["noul"]
     assert (d.action_value.kind == "switch") == (switch > SWITCH_THRESHOLD)
     assert d.fallback is False
     if d.action_value.kind == "switch":
-        assert d.action_value.target == "PIDGEY" and d.action_value.slot is None
+        assert d.action_value.target == labels[0] and d.action_value.slot is None
     else:
         assert d.action_value.kind == "move"
