@@ -67,13 +67,21 @@ before giving up on the retry. The macros back out themselves, so this only cove
 could not close."""
 
 OPTION_BUDGET_S = 90.0
-"""How long one option may hold the loop before Jev is asked again. Some options never complete
-on their own -- the grass is done only when a battle interrupts it -- so without a budget the
-first absorbing option picked would be the last decision Jev ever made. An option dropped this
-way is marked `tried`, which is what Jev is shown the next time it is offered."""
+"""How long one option's macro may hold the loop before Jev is asked again. Some options never
+complete on their own -- the grass is done only when a battle interrupts it -- so without a
+budget the first absorbing option picked would be the last decision Jev ever made. An option
+dropped this way is marked `tried`, which is what Jev is shown the next time it is offered.
+
+The clock restarts when the legs finish, so this governs the macro phase only: a long walk is
+bounded by the navigator's own stuck detector instead. Paced, Route 1 to the Viridian Mart takes
+151 s, and a budget spanning the walk would cancel that option on the turn it arrived -- before
+its macro ever ran, and writing a `tried` that says nothing true about the option."""
 GRASS_CANDIDATES = 40
 """How many of the nearest grass cells `wander` runs a path search to. Bounded so the search
 cannot grow with the map."""
+
+REPEATABLE_COUNTERS = frozenset(("heal", "buy_pokeballs"))
+"""NPC macros worth running again: healing and buying are not things one does once."""
 
 MAX_POKEBALLS = 5
 """How many balls one `buy_pokeballs` trip buys at most, money permitting."""
@@ -480,8 +488,10 @@ class Loop:
             await self.broadcaster.publish(status_event("running", self.navigator.describe()))
         elif result == "done":
             # The macro waits for the next turn: a warp can land us mid-cutscene, and the turn
-            # after this one re-reads the mode before pressing anything.
+            # after this one re-reads the mode before pressing anything. The budget starts here,
+            # not where the legs did: see OPTION_BUDGET_S.
             self._arrived = True
+            self.option_started_at = self.clock()
             await self.broadcaster.publish(status_event("running", f"arrived: {self.option.text}"))
         return NAV_STEP_FRAMES
 
@@ -531,7 +541,9 @@ class Loop:
             return await self._option_tried(f"{macro} raised {type(error).__name__}: {error}")
         if not worked:
             return await self._option_tried(f"{macro} did not work")
-        if option.kind == "npc":
+        if option.kind == "npc" and macro not in REPEATABLE_COUNTERS:
+            # A nurse and a shop clerk are worth going back to; "talked already" would read as a
+            # reason not to. Only an NPC with something to say once is remembered as talked to.
             self.memory.note_talked(self._option_map, int(option.id.split("_", 1)[1]))
             self._save_memory()
         if macro == "wander":
@@ -571,8 +583,8 @@ class Loop:
             return self._wander(state)
         if macro.startswith("talk_") and macro[len("talk_") :].isdigit():
             # An NPC option: the walk leg has already put us on the tile the option was planned
-            # from, so this only turns to face the sprite and reads what it says.
-            emu.press(self.option.face, hold=4, settle=12)
+            # from, and `talk_to` faces the sprite itself once its own walk is done, so there is
+            # nothing to do here but hand it the tile and the facing the option carries.
             return talk_to(emu, *self.option.target, self.option.face)
         raise ValueError(f"unknown option macro {macro!r}")
 

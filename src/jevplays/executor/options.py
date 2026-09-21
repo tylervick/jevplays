@@ -131,10 +131,25 @@ def _place_name(map_id: int) -> str:
     return map_name(map_id) if map_id in MAP_NAMES else "somewhere new"
 
 
-def _exit_options(connections: dict[str, int]) -> list[Option]:
+def _exit_options(
+    connections: dict[str, int],
+    grid: world.MapGrid,
+    here: tuple[int, int],
+    blocked: frozenset,
+) -> list[Option]:
+    """One option per map connection the player can actually walk to.
+
+    A connection the RAM lists is not always a way out from where we stand: Route 2's north edge
+    is behind Viridian Forest, so "go north to Pewter City" would be offered from the south half
+    of the route and the navigator would give up on it (and Jev would be told it was `tried`).
+    `reachable_edge` is the same search the edge leg itself runs, so what is offered is what the
+    walk would find.
+    """
     options = []
     for direction in ("north", "south", "west", "east"):
         if direction not in connections:
+            continue
+        if world.reachable_edge(grid, here, direction, blocked) is None:
             continue
         dest = connections[direction]
         text = f"go {direction} to {_place_name(dest)}"
@@ -302,7 +317,8 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
     heal_option = _heal_option(state, node)
     if heal_option is not None:
         drafts.append(heal_option)
-    drafts.extend(_exit_options(world.read_connections(mem)))
+    blocked = frozenset(world.blocked_by_sprites(state.sprites))
+    drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
     drafts.extend(_door_options(world.read_warps(mem)))
     drafts.extend(_npc_options(grid, state))
     if grid.grass():

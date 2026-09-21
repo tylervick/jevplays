@@ -120,6 +120,18 @@ def test_a_counter_npc_is_offered_two_tiles_away_facing_across_it():
     assert nurse.target == (2, 1) and nurse.face == "left" and nurse.after == "heal"
 
 
+def test_an_exit_whose_edge_cannot_be_reached_is_not_offered():
+    """Route 2's north edge is behind Viridian Forest: the connection is in RAM either way, but
+    offering it from the wrong side of a wall only gets the navigator stuck and the option marked
+    `tried` for something it never had a chance at."""
+    emu = FakeEmulator()
+    install_map(emu, ["####", "####", "....", "...."], connections={"north": 13, "south": 12})
+    emu.mem[0xD362], emu.mem[0xD361] = 1, 3  # the player in the open southern half
+    state = snapshot(emu)
+    ids = [o.id for o in generate(emu, state, Memory.empty(), None)]
+    assert "exit_south" in ids and "exit_north" not in ids
+
+
 def test_an_unmapped_destination_reads_somewhere_new():
     emu, state, memory = town(connections={"north": 199}, warps=[(0, 7, 0, 199)])
     texts = {o.id: o.text for o in generate(emu, state, memory, None)}

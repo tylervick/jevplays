@@ -744,6 +744,63 @@ def test_an_option_that_outstays_its_budget_is_dropped_and_marked_tried():
     assert any(m.startswith("tried: train in the tall grass here;") for m in messages)
 
 
+def test_the_budget_starts_when_the_legs_finish_so_a_long_walk_is_never_cancelled():
+    """The budget is for the macro phase, not the walk. Paced, Route 1 to the Viridian Mart takes
+    151 s, so a budget that spanned the legs would cancel that option on the turn it arrived --
+    before its macro ran, and writing a `tried` that says nothing true about the option. (The
+    firing half is `test_an_option_that_outstays_its_budget_is_dropped_and_marked_tried`: the
+    grass has no legs, so its budget is the macro phase from the start.)"""
+    emu, bc = talking_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(explore="npc_4", needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    now = [1000.0]
+    loop.clock = lambda: now[0]
+    run(loop, 1)  # asks, and plans the walk to the sprite's neighbour
+    assert loop.navigator.busy
+    now[0] += OPTION_BUDGET_S * 10  # a very long walk indeed
+    run(loop, 20)
+    assert (UNMAPPED_MAP, 4) in loop.memory.talked  # the macro ran on arrival
+    assert loop.memory.tried == set()  # and nothing was blamed for the walk taking a while
+
+
+def test_a_counter_npc_is_not_remembered_as_talked_to(monkeypatch):
+    """A nurse and a shop clerk are worth going back to, so neither is marked `talked already`:
+    that word tells Jev there is no point doing it again."""
+    from jevplays.executor import shop as shop_module
+
+    monkeypatch.setattr(shop_module, "heal_at_nurse", lambda emu: True)
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    start_option(
+        loop,
+        Option(
+            id="npc_3",
+            kind="npc",
+            text="talk to the nurse behind the counter",
+            memory="new",
+            legs=(),
+            after="heal",
+            target=(2, 1),
+            face="left",
+        ),
+        UNMAPPED_MAP,
+    )
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.memory.talked == set() and loop.memory.tried == set()
+    assert loop.option is None  # it worked; the option is simply let go of
+
+
+def test_a_map_with_nothing_to_do_says_so_once_rather_than_every_iteration():
+    emu, bc = FakeEmulator(), RecordingBroadcaster()
+    install_map(emu, ["##", "##"])  # one block of wall: no exits, no doors, no grass, no sprites
+    emu.mem[ram.wCurMap] = UNMAPPED_MAP  # and no milestone option, since no route starts here
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 3)
+    paused = [e for e in bc.events if e["type"] == "status" and e["status"] == "paused"]
+    assert len(paused) == 1 and paused[0]["message"] == "nothing to do from here"
+    assert loop.decisions == [] and emu.presses == []
+
+
 def test_the_last_milestone_being_done_finishes_the_run():
     emu, bc = explore_emu(map_id=maps.PALLET_TOWN), RecordingBroadcaster()
     for flag in ("got_starter", "got_pokedex", "beat_brock"):
