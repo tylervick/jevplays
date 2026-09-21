@@ -35,11 +35,14 @@ from jevplays.brain.goal import goal_questions, goal_state
 from jevplays.brain.prompt import menu_questions, menu_state, prompt_questions, prompt_state
 from jevplays.emulator import ram
 from jevplays.emulator.pyboy import Emulator
-from jevplays.executor.goals import available_goals, goal_by_id
+from jevplays.executor.goals import available_goals, battle_goal, goal_by_id
 from jevplays.state.snapshot import GameState, snapshot
 
 OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "responses"
-GOAL = "Win the first battle"
+GOAL = battle_goal(goal_by_id("train_nearby"), fallback="Win every battle and explore")
+"""The objective recorded with the battle fixtures. Composed the way the loop composes it (an
+active goal plus the standing clause) rather than written out here, so a change to either one
+shows up in the fixtures instead of drifting away from what a run actually sends."""
 
 HURT_HP = 3
 """What the lead's HP is set to for `goal_hurt`. No saved state has a lead below half health --

@@ -77,8 +77,10 @@ The quickest way to watch a run: `mise exec -- uv run jevplays run --state state
 loads from `mise.local.toml`). Add `--no-brain` to skip calling TypeSafe: battle decisions idle
 (no move is chosen) since there is no policy to run without answers, while the overworld, prompts,
 and menus still make progress using code's own fallbacks (the first available goal, YES, closing
-the menu). `--battle-goal` (aliased as the older `--goal`) overrides the free-text objective sent
-with battle questions; the overworld's real goal, picked from `executor/goals.py`, is Jev's alone.
+the menu). The objective sent with a battle question is the overworld goal Jev is pursuing plus a
+standing clause ("Build a party of three and keep them healthy"), so what a fight is for changes
+as the goal does; `--battle-goal` (aliased as the older `--goal`) is the fallback used before a
+goal has been picked, not an override.
 
 Recording API fixtures: TypeSafe responses used by the unit tests are recorded, not called live
 in CI. After changing a question's wording or the state fields Jev sees, re-record them with

@@ -225,6 +225,20 @@ GOALS: list[Goal] = [
     ),
 ]
 
+STANDING_CLAUSE = "Build a party of three and keep them healthy."
+"""Appended to the active goal when a battle question asks what the fight is for. The goal table
+says where we are going; this says what we are keeping true along the way, which is what makes
+catching and healing read as part of the plan rather than a distraction from it."""
+
+
+def battle_goal(goal: "Goal | None", *, fallback: str) -> str:
+    """The objective sent with a battle question: the goal Jev is pursuing, plus the standing
+    clause. `fallback` (the `--battle-goal` flag) covers the gap before a goal is picked."""
+    if goal is None:
+        return fallback
+    return f"{goal.description}. {STANDING_CLAUSE}"
+
+
 ALWAYS = ("heal_at_center", "train_nearby")
 
 

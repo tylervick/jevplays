@@ -221,7 +221,7 @@ State sent (only what the questions need):
   "bench": [{"name": "PIDGEY", "level": 4, "types": ["Normal", "Flying"], "hp": "full", "label": "PIDGEY"}],
   "party": "two",
   "bag": {"poke_balls": true, "potions": true},
-  "goal": "Reach Viridian City"
+  "goal": "Train on Route 2 until CHARMANDER reaches level 12. Build a party of three and keep them healthy."
 }
 ```
 
@@ -232,6 +232,12 @@ slot has the same nickname, so two same-species Pokémon never share a label. Th
 handle Jev gets on a bench member -- `brain/battle.py`'s `bench_slots(state)` is the sole place a
 label's party index lives; `state_json` never carries one, matching the "no raw numbers besides
 levels" rule.
+
+`goal` is the overworld goal Jev picked, plus the standing clause in `executor/goals.py`
+(`battle_goal`). It moves with the goal rather than being fixed for the run: `catch`'s criteria
+already speak of wanting a party of three, and against a goal string that said nothing about a
+party they read as a distraction from it. `--battle-goal` is the fallback before any goal is
+active.
 
 Questions, all in one request, each included only when it can apply:
 

@@ -881,3 +881,30 @@ def test_without_a_run_dir_nothing_is_written_but_the_loop_still_runs(tmp_path):
     loop.run_dir = None
     run(loop, 2)
     assert loop.decisions
+
+
+def test_the_battle_question_carries_the_goal_jev_is_actually_pursuing():
+    emu = battle_emu()
+    loop = Loop(
+        emu,
+        RecordingBroadcaster(),
+        LoopConfig(paced=False, goal="Win every battle and explore"),
+        brain=QuestionBrain(move={"SCRATCH": 1.0}),
+    )
+    loop.goal = goal_by_id("train_to_level_12")
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.decisions[0].state_summary["goal"] == (
+        "Train on Route 2 until CHARMANDER reaches level 12. Build a party of three and keep them healthy."
+    )
+
+
+def test_with_no_goal_picked_the_battle_question_carries_the_flag():
+    emu = battle_emu()
+    loop = Loop(
+        emu,
+        RecordingBroadcaster(),
+        LoopConfig(paced=False, goal="Win every battle and explore"),
+        brain=QuestionBrain(move={"SCRATCH": 1.0}),
+    )
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.decisions[0].state_summary["goal"] == "Win every battle and explore"

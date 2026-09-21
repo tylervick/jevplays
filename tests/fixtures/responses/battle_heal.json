@@ -179,7 +179,7 @@
       "poke_balls": true,
       "potions": true
     },
-    "goal": "Win the first battle"
+    "goal": "Train in the grass nearby. Build a party of three and keep them healthy."
   },
   "questions": {
     "move": {
@@ -218,36 +218,36 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 806,
+      "input_tokens": 818,
       "output_tokens": 103
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.95,
+        "confidence": 0.96,
         "probabilities": {
-          "SCRATCH": 0.97,
-          "GROWL": 0.03
+          "GROWL": 0.02,
+          "SCRATCH": 0.98
         }
       },
       "heal": {
         "type": "noul",
-        "noul": 0.19
+        "noul": 0.24
       },
       "run": {
         "type": "noul",
-        "noul": 0.16
+        "noul": 0.17
       },
       "catch": {
         "type": "noul",
-        "noul": 0.05
+        "noul": 0.07
       },
       "faint": {
         "type": "noul",
-        "noul": 0.19
+        "noul": 0.18
       }
     }
   },
-  "latency_ms": 183
+  "latency_ms": 157
 }
