@@ -205,37 +205,49 @@
         "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough (asleep or paralyzed helps) for a ball to work",
         "false": "Its hp is still high, or it is not worth a ball"
       }
+    },
+    "faint": {
+      "type": "noul",
+      "instructions": "Will `our_pokemon` faint before we get to choose again?",
+      "criteria": {
+        "true": "`enemy_pokemon` is likely to knock it out before our next turn",
+        "false": "It should still be standing when we choose again"
+      }
     }
   },
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 742,
-      "output_tokens": 86
+      "input_tokens": 806,
+      "output_tokens": 103
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.96,
+        "confidence": 0.95,
         "probabilities": {
-          "SCRATCH": 0.98,
-          "GROWL": 0.02
+          "SCRATCH": 0.97,
+          "GROWL": 0.03
         }
       },
       "heal": {
         "type": "noul",
-        "noul": 0.21
+        "noul": 0.19
       },
       "run": {
         "type": "noul",
-        "noul": 0.14
+        "noul": 0.16
       },
       "catch": {
         "type": "noul",
         "noul": 0.05
+      },
+      "faint": {
+        "type": "noul",
+        "noul": 0.19
       }
     }
   },
-  "latency_ms": 124
+  "latency_ms": 183
 }

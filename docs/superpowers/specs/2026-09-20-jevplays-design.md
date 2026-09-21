@@ -243,6 +243,7 @@ Questions, all in one request, each included only when it can apply:
 | `heal` | Noul | Should we use a Potion on `our_pokemon` this turn instead of attacking? | |
 | `run` | Noul | Should we run from this wild battle rather than fight it? | wild only |
 | `catch` | Noul | Should we throw a Poké Ball at `enemy_pokemon` this turn? | wild only, balls in bag; criteria mention that we want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough for a ball to work -- asleep or paralyzed status helps |
+| `faint` | Noul | Will `our_pokemon` faint before we get to choose again? | always asked, never acted on: the scored prediction (13) |
 
 Policy, in `policy.py`, evaluated in this order with named thresholds. The first rule that fires
 wins:
@@ -254,6 +255,13 @@ wins:
 5. Otherwise use `move`.
 
 As of milestone 4a all five actions execute; the macros are in 9.
+
+`faint` is not part of the policy and no rule reads it. It is there to be checked: it is the one
+question whose answer the game itself settles a turn later, which is what makes a calibration
+number possible at all. Code resolves it (`calibration.py`) by reading the party at the next
+decision point -- the battle menu is back, or the battle ended -- and appends the outcome to the
+run's `outcomes.jsonl` (11). The cost is one more judgment in a request that was being sent
+anyway.
 
 Code does not compute type effectiveness in this version. Judging Fire against Grass from the
 type names is the kind of common sense the demo is meant to show, and the decision log makes it
@@ -420,7 +428,8 @@ The page, plain ES modules with no build step:
   winner highlighted, the probability as a label. Each Noul as a single yes/no split bar. A
   confidence badge on each Choice. Questions whose `applied` is false are dimmed and labelled
   "not used". Latency and token count small at the bottom. Below the panel: the current
-  goal, and a scrolling log of the last 50 decisions with kind, action, and confidence.
+  goal, and a scrolling log of the last 50 decisions with kind, action, and confidence. The
+  `faint` prediction is never applied, so its badge reads "prediction" rather than "not used".
 - A `?layout=stream` query switches to a fixed 1920x1080 arrangement for OBS.
 
 `jevplays replay runs/<dir>` reads `decisions.jsonl` and pushes each logged `decision` event with
@@ -449,6 +458,13 @@ undid and the next checkpoint is numbered from what actually happened; `resumed_
 checkpoint resumed from and how many lines moved. A torn last line in `decisions.jsonl` (a crash
 mid-write) is skipped when the log is read and closed off by the next append, so one lost
 decision never makes the log unreadable.
+
+A run also holds `outcomes.jsonl`, one resolved `faint` prediction per line (`decision_id`,
+`question`, `predicted`, `observed`, `ts`). It is a second stream rather than a field on the
+decision line because the decision it scores was written turns earlier and `decisions.jsonl` is
+append-only: the torn-line repair and the checkpoint numbering both depend on that. Nothing
+prunes it on resume; `Scripts/accuracy.py` joins on `decision_id`, so an outcome whose decision
+was rolled back into `decisions.orphaned.jsonl` drops out of the score on its own.
 
 ## 12. Error handling
 
@@ -489,6 +505,12 @@ matched the best-typed attack -- the damaging move with the highest effectivenes
 enemy's types, STAB (same-type attack bonus) included, computed by `state/types.py`'s
 `best_moves`. It is the number to watch before adding a computed effectiveness hint to the battle
 state Jev sees.
+
+The same script reports calibration from `outcomes.jsonl`: the Brier score over every resolved
+`faint` prediction, plus a reliability table by probability band. Accuracy says whether the
+choice was right; calibration says whether the confidence meant anything, which is the claim a
+System One model actually makes. Both numbers come from one run directory and one command, and
+both are measured before a change to the questions, not reconstructed after it.
 
 ## 14. Milestones
 

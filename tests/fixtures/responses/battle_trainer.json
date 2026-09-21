@@ -164,7 +164,7 @@
         "slot": 9,
         "picture": 13,
         "x": 1,
-        "y": 9
+        "y": 8
       },
       {
         "slot": 10,
@@ -238,25 +238,37 @@
         "SCRATCH": "Normal-type attack, weak power",
         "GROWL": "Normal-type status, none power"
       }
+    },
+    "faint": {
+      "type": "noul",
+      "instructions": "Will `our_pokemon` faint before we get to choose again?",
+      "criteria": {
+        "true": "`enemy_pokemon` is likely to knock it out before our next turn",
+        "false": "It should still be standing when we choose again"
+      }
     }
   },
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 603,
-      "output_tokens": 37
+      "input_tokens": 667,
+      "output_tokens": 55
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.87,
+        "confidence": 0.84,
         "probabilities": {
-          "SCRATCH": 0.94,
-          "GROWL": 0.06
+          "SCRATCH": 0.92,
+          "GROWL": 0.08
         }
+      },
+      "faint": {
+        "type": "noul",
+        "noul": 0.35
       }
     }
   },
-  "latency_ms": 106
+  "latency_ms": 391
 }

@@ -813,3 +813,71 @@ def test_checkpoint_on_demand_names_the_current_count_and_says_so(tmp_path):
 def test_without_a_run_dir_nothing_is_written_and_checkpoint_is_a_no_op():
     loop = Loop(FakeEmulator(), RecordingBroadcaster(), LoopConfig(paced=False))
     assert asyncio.run(loop.checkpoint()) is None
+
+
+# --- the scored faint prediction ---------------------------------------------------------------
+
+FAINT_RESPONSE = {
+    **RESPONSE,
+    "answers": {**RESPONSE["answers"], "faint": {"type": "noul", "noul": 0.8}},
+}
+
+
+def faint_loop(tmp_path):
+    """A battle at the menu, a brain that predicts a faint, and a run dir to resolve it into."""
+    from jevplays.runlog import RunDir
+
+    emu = battle_emu()
+    presses = []
+    original = emu.press
+
+    def press(button, **kw):
+        presses.append(button)
+        r = original(button, **kw)
+        if presses == ["a"]:
+            emu.set_rows(MOVES)
+        return r
+
+    emu.press = press
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    loop = Loop(
+        emu,
+        RecordingBroadcaster(),
+        LoopConfig(paced=False),
+        brain=FakeBrain(response=FAINT_RESPONSE),
+        run_dir=run_dir,
+    )
+    return emu, loop, run_dir
+
+
+def test_a_faint_prediction_waits_for_the_game_to_answer_it(tmp_path):
+    emu, loop, run_dir = faint_loop(tmp_path)
+    run(loop, 1)
+    assert run_dir.count() == 1
+    assert list(run_dir.outcomes()) == []
+
+
+def test_a_faint_prediction_is_resolved_against_the_party_at_the_next_menu(tmp_path):
+    emu, loop, run_dir = faint_loop(tmp_path)
+    run(loop, 1)
+    configure_battle_memory(emu, hp=0)  # RATTATA knocked it out while the animation played
+    emu.set_rows(BATTLE_MENU)
+    run(loop, 1)
+    resolved = list(run_dir.outcomes())
+    assert [(o["decision_id"], o["predicted"], o["observed"]) for o in resolved] == [
+        (loop.decisions[0].id, 0.8, True)
+    ]
+
+
+def test_a_prediction_is_resolved_once_and_not_again(tmp_path):
+    emu, loop, run_dir = faint_loop(tmp_path)
+    run(loop, 3)
+    ids = [o["decision_id"] for o in run_dir.outcomes()]
+    assert len(ids) == len(set(ids))
+
+
+def test_without_a_run_dir_nothing_is_written_but_the_loop_still_runs(tmp_path):
+    emu, loop, _ = faint_loop(tmp_path)
+    loop.run_dir = None
+    run(loop, 2)
+    assert loop.decisions

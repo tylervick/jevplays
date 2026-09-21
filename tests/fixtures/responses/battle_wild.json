@@ -184,29 +184,41 @@
     "run": {
       "type": "noul",
       "instructions": "Should we run from this wild battle rather than fight it?"
+    },
+    "faint": {
+      "type": "noul",
+      "instructions": "Will `our_pokemon` faint before we get to choose again?",
+      "criteria": {
+        "true": "`enemy_pokemon` is likely to knock it out before our next turn",
+        "false": "It should still be standing when we choose again"
+      }
     }
   },
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 625,
-      "output_tokens": 54
+      "input_tokens": 689,
+      "output_tokens": 71
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.98,
+        "confidence": 0.97,
         "probabilities": {
-          "GROWL": 0.01,
-          "SCRATCH": 0.99
+          "SCRATCH": 0.99,
+          "GROWL": 0.01
         }
       },
       "run": {
         "type": "noul",
-        "noul": 0.1
+        "noul": 0.12
+      },
+      "faint": {
+        "type": "noul",
+        "noul": 0.08
       }
     }
   },
-  "latency_ms": 150
+  "latency_ms": 188
 }
