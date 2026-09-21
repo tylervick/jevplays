@@ -175,7 +175,9 @@ class Navigator:
             step(emu, direction, hold=24, settle=40)
             emu.tick(60)
             if mem[ram.wCurMap] != self.start_map:
-                return self._advance(emu)
+                landed = self._after_map_change(emu, leg, mem[ram.wCurMap])
+                if landed is not None:
+                    return landed
             return self._fail_step(emu, state, None)
         path = world.astar(grid, here, target, blocked)
         if not path:
