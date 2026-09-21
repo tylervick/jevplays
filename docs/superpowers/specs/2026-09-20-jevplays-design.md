@@ -394,15 +394,23 @@ The page, plain ES modules with no build step:
   goal, and a scrolling log of the last 50 decisions with kind, action, and confidence.
 - A `?layout=stream` query switches to a fixed 1920x1080 arrangement for OBS.
 
-`jevplays replay runs/<dir>` reads `decisions.jsonl` and pushes the same events with a delay, so
-the page can be developed and demonstrated without an API key or a running emulator.
+`jevplays replay runs/<dir>` reads `decisions.jsonl` and pushes each logged `decision` event with
+a delay between them, plus a `status` naming its progress before each one and a final `stopped`
+when it finishes, so the page can be developed and demonstrated without an API key or a running
+emulator. `frame` and `state` are never replayed, since the log never held them, so the screen
+stays blank throughout.
 
 ## 11. Runs, logs, and resume
 
-Each `jevplays run` creates `runs/<YYYYMMDD-HHMMSS>/` holding `run.json` (ROM hash, model id
-from the first response, start time, CLI flags), `decisions.jsonl` (one Decision per line), and
-`checkpoint-<n>.state` every `CHECKPOINT_EVERY` (25) decisions plus one at exit. `jevplays run
---resume runs/<dir>` loads the last checkpoint and appends to the same log.
+Each `jevplays run` creates `runs/<YYYYMMDD-HHMMSS>/` by default (`--runs-dir` points it at a
+different root; `--no-log` skips the directory, and its checkpoints, entirely for a throwaway
+run) holding `run.json` (`rom_sha256`, `started_at`, the flags it was started with, `model` --
+the id from the first response, `models` -- every distinct model id seen since, `resumed_at` --
+a timestamp appended on each `--resume`, and `checkpoint_every`), `decisions.jsonl` (one Decision
+per line), and `checkpoint-<n>.state` every `checkpoint_every` (25) decisions plus one at exit,
+whether that exit is a normal stop, Ctrl-C, or a `kill` (SIGTERM) -- both signals take the same
+shutdown path, so the exit checkpoint is never skipped. `jevplays run --resume runs/<dir>` loads
+the newest checkpoint and appends to the same log.
 
 ## 12. Error handling
 

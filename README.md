@@ -4,16 +4,18 @@ Jev, TypeSafe's System One model, plays Pokémon Red on a headless emulator whil
 dashboard shows the game next to live probability bars for every decision. Code reads the game's
 memory, asks Jev narrow typed questions, and presses the buttons; Jev supplies the judgment.
 
-Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`. Status: milestone 3a, navigation
-and goals. The emulator boots, walks the intro or loads a save state, parses game state including
-the party, an active battle, story flags, and nearby sprites, and streams it all to the dashboard.
-At the battle menu, the loop asks Jev, publishes the decision, and the executor presses the
-buttons; `move` and `run` are executed, `heal`, `catch`, and `switch` are asked and recorded but
-fall back to `move` until milestone 4. In the overworld, Jev picks a goal from the table in
-`executor/goals.py` (through Brock's badge), code walks there using a walkability grid read live
-from the map in RAM rather than a hand-written route, and the Pokémon Center nurse and the Mart
-clerk are scripted counters that Jev only decides whether to visit, never what to press once
-there. Prompts and menus along the way are Jev's to answer.
+Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`. Status: milestone 3b, run
+logging, resume, and replay. The emulator boots, walks the intro or loads a save state, parses
+game state including the party, an active battle, story flags, and nearby sprites, and streams it
+all to the dashboard. At the battle menu, the loop asks Jev, publishes the decision, and the
+executor presses the buttons; `move` and `run` are executed, `heal`, `catch`, and `switch` are
+asked and recorded but fall back to `move` until milestone 4. In the overworld, Jev picks a goal
+from the table in `executor/goals.py` (through Brock's badge), code walks there using a
+walkability grid read live from the map in RAM rather than a hand-written route, and the Pokémon
+Center nurse and the Mart clerk are scripted counters that Jev only decides whether to visit,
+never what to press once there. Prompts and menus along the way are Jev's to answer. Every run
+writes its decisions and periodic checkpoints to `runs/`, `--resume` continues one, and
+`jevplays replay` plays a logged run back through the dashboard for demos.
 
 ## Quick start
 
@@ -54,6 +56,38 @@ Recording API fixtures: TypeSafe responses used by the unit tests are recorded, 
 in CI. After changing a question's wording or the state fields Jev sees, re-record them with
 `mise exec -- uv run Scripts/record-fixtures.py` and commit the updated files under
 `tests/fixtures/responses/` in the same PR.
+
+## Runs
+
+Every `jevplays run` (unless started with `--no-log`) creates `runs/<YYYYMMDD-HHMMSS>/` and keeps
+writing to it for the life of the process. `runs/` is gitignored; nothing under it is ever
+committed. Each run directory holds:
+
+- `run.json`: `rom_sha256` (the ROM this run loaded), `started_at`, `flags` (the CLI flags it was
+  started with), `model` (the id from the first decision's response), `models` (every distinct
+  model id seen since, in case Jev is upgraded mid-run), `resumed_at` (a timestamp appended each
+  time `--resume` continues this run), and `checkpoint_every` (25).
+- `decisions.jsonl`: one `Decision` per line, appended as the loop makes them.
+- `checkpoint-<n>.state`: a PyBoy save state, written every 25 decisions and once more at exit,
+  whether that exit is a normal stop, Ctrl-C, or a plain `kill` (SIGTERM) from a supervisor -- both
+  signals run the same shutdown path, so the checkpoint is never skipped.
+
+`--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
+directory entirely -- no log, no checkpoints -- for a throwaway run you don't want to keep.
+
+`jevplays run --resume runs/<stamp>` loads that run's newest checkpoint and appends to the same
+`decisions.jsonl` rather than starting a new directory; `--state` and `--resume` are mutually
+exclusive.
+
+`jevplays replay runs/<stamp> --delay 1` reads `decisions.jsonl` back and pushes the same
+`decision` events to the dashboard at `http://127.0.0.1:8765` with a pause between them (`--delay`,
+seconds; `--limit`, stop after N decisions), plus a `status` update naming its progress. It needs
+no ROM and no `TYPESAFE_API_KEY` -- the game screen stays blank, since frames were never logged,
+only decisions.
+
+For streaming or recording, add `http://127.0.0.1:8765/?layout=stream` as an OBS browser source at
+1920x1080; it lays the game, the decision panel, and the log out to fill that fixed canvas instead
+of the responsive page layout.
 
 ## Layout
 

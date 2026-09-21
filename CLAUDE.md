@@ -18,6 +18,7 @@ Jev is asked anything.
 - `import typesafe_sdk` lives in `src/jevplays/brain/client.py` (and the fixture script) and
   nowhere else; unit tests replay `tests/fixtures/responses/`, never the API.
 - Never commit a ROM, a save state, a `.ram` file, or `mise.local.toml`.
+- `runs/` is per-run output (logs and checkpoints), gitignored; tests write runs under `tmp_path`.
 
 ## Backlog
 
