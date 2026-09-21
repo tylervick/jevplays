@@ -7,7 +7,7 @@ party the loop already has, and the score is read back off disk afterwards by
 `Scripts/accuracy.py`.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import GameState
@@ -23,6 +23,26 @@ class Pending:
     slot: int
     """The party index the prediction was about -- the active Pokémon when it was made."""
     predicted: float
+    seen_faint: bool = False
+    """Set once the slot has been seen at zero HP. Latched rather than read at resolution time
+    because the game undoes the evidence: see `observe`."""
+
+
+def observe(pending: Pending, state: GameState) -> Pending:
+    """Latch a faint the moment it is visible, and return the pending prediction to carry on with.
+
+    A Gen 1 blackout heals the whole party before the loop is back at a decision point, so HP read
+    at resolution time says the Pokémon is fine (#36). With a party of one -- which is every run
+    so far, since `catch` never clears its threshold -- every faint ends the battle, so every
+    faint was being scored as no faint. The loop snapshots each iteration, and a faint is on
+    screen for several of them ("... fainted!", the white-out), so the evidence is caught here
+    while it still exists.
+    """
+    if pending.seen_faint or not 0 <= pending.slot < len(state.party):
+        return pending
+    if state.party[pending.slot].hp == 0:
+        return replace(pending, seen_faint=True)
+    return pending
 
 
 def resolve_prediction(pending: Pending, state: GameState, *, ts: float) -> dict | None:
@@ -40,7 +60,7 @@ def resolve_prediction(pending: Pending, state: GameState, *, ts: float) -> dict
         "decision_id": pending.decision_id,
         "question": QUESTION,
         "predicted": pending.predicted,
-        "observed": state.party[pending.slot].hp == 0,
+        "observed": pending.seen_faint or state.party[pending.slot].hp == 0,
         "ts": ts,
     }
 

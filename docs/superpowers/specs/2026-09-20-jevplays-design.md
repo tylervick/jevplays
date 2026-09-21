@@ -266,7 +266,7 @@ As of milestone 4a all five actions execute; the macros are in 9.
 question whose answer the game itself settles a turn later, which is what makes a calibration
 number possible at all. Code resolves it (`calibration.py`) by reading the party at the next
 decision point -- the battle menu is back, or the battle ended -- and appends the outcome to the
-run's `outcomes.jsonl` (11). The cost is one more judgment in a request that was being sent
+run's `outcomes.jsonl` (11). The observation is latched the moment the slot reads zero HP, not read at resolution time: a blackout heals the party before the loop is back at a decision point, so the evidence is gone by then (#36). The cost is one more judgment in a request that was being sent
 anyway.
 
 Code does not compute type effectiveness in this version. Judging Fire against Grass from the

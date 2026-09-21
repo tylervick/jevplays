@@ -34,7 +34,7 @@ from jevplays.brain.prompt import (
     prompt_state,
 )
 from jevplays.calibration import QUESTION as FAINT
-from jevplays.calibration import Pending, resolve_prediction
+from jevplays.calibration import Pending, observe, resolve_prediction
 from jevplays.dashboard.events import decision_event, frame_event, state_event, status_event
 from jevplays.emulator import ram
 from jevplays.executor import battle as battle_macros
@@ -280,6 +280,16 @@ class Loop:
         if answer is None or self.run_dir is None:
             return
         self._pending = Pending(decision.id, state.active_slot or 0, answer["noul"])
+
+    async def _watch_prediction(self, state: GameState) -> None:
+        """Catch a faint while it is still on screen. The blackout that follows heals the party,
+        so by the next decision point there is nothing left to read (#36)."""
+        if self._pending is None:
+            return
+        latched = observe(self._pending, state)
+        if latched is not self._pending and latched.seen_faint:
+            await self.broadcaster.publish(status_event("running", "our Pokémon fainted"))
+        self._pending = latched
 
     def _resolve_prediction(self, state: GameState) -> None:
         """Write the pending prediction's outcome once the game has answered it."""
@@ -706,6 +716,7 @@ class Loop:
             state = snapshot(self.emu)
             if self._hold is not None and state.mode != self._hold[0]:
                 self._hold = None
+            await self._watch_prediction(state)
             self._resolve_prediction(state)
             if state != last_state:
                 await self.broadcaster.publish(state_event(state))
