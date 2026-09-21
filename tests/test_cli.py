@@ -116,3 +116,30 @@ def test_resolve_resume_without_a_checkpoint_raises(tmp_path):
     run = RunDir.create(tmp_path / "runs", rom=None, flags={})
     with pytest.raises(FileNotFoundError, match="checkpoint"):
         resolve_resume(run)
+
+
+def test_run_and_replay_take_a_host_so_another_device_can_watch(capsys):
+    import pytest
+
+    for command in ("run", "replay"):
+        with pytest.raises(SystemExit):
+            main([command, "--help"])
+        assert "--host" in capsys.readouterr().out
+
+
+def test_the_dashboard_stays_on_localhost_unless_asked(monkeypatch):
+    from jevplays.cli import build_parser
+
+    args = build_parser().parse_args(["run"])
+    assert args.host == "127.0.0.1"
+    assert build_parser().parse_args(["run", "--host", "0.0.0.0"]).host == "0.0.0.0"
+
+
+def test_the_printed_dashboard_url_names_an_address_a_browser_can_open():
+    """0.0.0.0 is every interface, not somewhere to point a browser -- least of all a browser on
+    the other device the flag exists for."""
+    from jevplays.cli import dashboard_url
+
+    assert dashboard_url("127.0.0.1", 8765) == "http://127.0.0.1:8765"
+    wide = dashboard_url("0.0.0.0", 8765)
+    assert not wide.startswith("http://0.0.0.0") and wide.endswith(":8765")

@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import signal
+import socket
 import sys
 from pathlib import Path
 
@@ -110,7 +111,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     async def main_async() -> None:
         broadcaster = Broadcaster()
-        server = asyncio.create_task(serve(create_app(broadcaster), port=args.port))
+        server = asyncio.create_task(serve(create_app(broadcaster), host=args.host, port=args.port))
         try:
             with Emulator(rom) as emu:
                 if start_state:
@@ -129,7 +130,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 # error instead of us printing a dashboard URL that is never going to answer.
                 if server.done():
                     server.result()
-                print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
+                print(f"dashboard: {dashboard_url(args.host, args.port)}", flush=True)
                 print(f"run: {run_dir.path}" if run_dir else "run: not logged (--no-log)", flush=True)
                 await broadcaster.publish(status_event("running", "idle at the first decision point"))
                 brain = None
@@ -198,12 +199,12 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
     async def main_async() -> None:
         broadcaster = Broadcaster()
-        server = asyncio.create_task(serve(create_app(broadcaster), port=args.port))
+        server = asyncio.create_task(serve(create_app(broadcaster), host=args.host, port=args.port))
         try:
             await asyncio.sleep(0.2)
             if server.done():
                 server.result()
-            print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
+            print(f"dashboard: {dashboard_url(args.host, args.port)}", flush=True)
             print(f"replaying {run_dir.path} ({run_dir.count()} decisions)", flush=True)
             if args.wait > 0:
                 print(f"waiting up to {args.wait:g}s for a browser to connect", flush=True)
@@ -234,6 +235,27 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _lan_address() -> str:
+    """This machine's address on the network it routes through, or loopback if it has none. The
+    UDP socket is never sent on: connect() only picks the interface the route would use."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 1))  # TEST-NET-1, routed nowhere
+        return probe.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        probe.close()
+
+
+def dashboard_url(host: str, port: int) -> str:
+    """The URL to print. `0.0.0.0` means every interface, which is not an address a browser can
+    open, so name the address other devices would reach this machine by instead."""
+    if host in ("0.0.0.0", "::", ""):
+        host = _lan_address()
+    return f"http://{host}:{port}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     # Imported here, not at module scope, so `import jevplays.cli` alone never touches the
     # brain/executor/pyboy stack (see test_imports.py); build_parser() only runs from main().
@@ -252,6 +274,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--runs-dir", type=Path, default=Path("runs"), help="where new run directories go")
     run.add_argument("--no-log", action="store_true", help="keep no run directory (no log, no checkpoints)")
     run.add_argument("--port", type=int, default=8765)
+    run.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="interface the dashboard listens on; 0.0.0.0 serves it to the local network",
+    )
     run.add_argument("--unpaced", action="store_true", help="run the emulator as fast as it can")
     run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; let code decide instead")
     # --goal is the old spelling, kept working: it is the battle brain's free-text objective,
@@ -275,6 +302,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     replay.add_argument("run_dir", type=Path)
     replay.add_argument("--port", type=int, default=8765)
+    replay.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="interface the dashboard listens on; 0.0.0.0 serves it to the local network",
+    )
     replay.add_argument("--delay", type=float, default=1.0, help="seconds between decisions")
     replay.add_argument("--limit", type=int, default=None, help="stop after this many decisions")
     replay.add_argument(

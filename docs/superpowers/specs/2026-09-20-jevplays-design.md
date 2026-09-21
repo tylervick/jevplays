@@ -425,6 +425,8 @@ flag flips, money changes, the party heals on its own).
 ## 10. The dashboard
 
 `server.py` is a Starlette app on `127.0.0.1:8765` serving `static/` and a websocket at `/ws`.
+`--host` moves it off loopback (`0.0.0.0` for watching from another device on the network);
+the page is unauthenticated and read-only, and stays on loopback by default.
 The loop pushes four event types, each a JSON object with a `type` field:
 
 - `frame`: JPEG bytes base64, at most 15 per second.
