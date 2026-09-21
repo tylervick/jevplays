@@ -99,6 +99,31 @@ def test_edge_leg_walks_to_the_north_edge_and_crosses():
     assert r == "done" and emu.mem[ram.wCurMap] == 7
 
 
+def test_an_edge_leg_that_comes_out_on_the_wrong_map_is_lost():
+    """An exit option's edge leg knows the map the connection leads to, so a blackout in the
+    middle of the walk is an arrival on the wrong map, not the crossing the leg was waiting for
+    -- the rest of the plan is for a map we are not on any more."""
+    emu = walker()
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="edge", direction="north", dest_map=7, label="north")])
+    emu.mem[ram.wCurMap] = 41  # blacked out into the Viridian Pokémon Center, not Route 7
+    assert nav.step(emu, snapshot(emu)) == "lost"
+    assert nav.busy  # the plan is left alone; the caller decides what to do with it
+
+
+def test_an_edge_leg_that_crosses_where_it_aimed_finishes_and_starts_the_next_leg():
+    emu = walker()
+    nav = Navigator()
+    nav.plan(
+        emu,
+        snapshot(emu),
+        [Leg(kind="edge", direction="north", dest_map=7, label="north"), Leg(kind="walk", target=(1, 1))],
+    )
+    emu.mem[ram.wCurMap] = 7
+    assert nav.step(emu, snapshot(emu)) == "leg_done"
+    assert nav.current.kind == "walk"
+
+
 def test_a_walk_leg_whose_map_changes_under_it_is_lost():
     emu = walker()
     nav = Navigator()

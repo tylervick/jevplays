@@ -35,16 +35,29 @@ def cmd_state(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _print_goals(loop, interval: float = 0.2) -> None:
-    """Print the overworld goal on the terminal whenever it changes, so a run is followable
-    without the dashboard open. The loop owns `goal`; this only reads it."""
+async def _print_progress(loop, interval: float = 0.2) -> None:
+    """Print the milestone and the option Jev is on whenever either changes, so a run is
+    followable without the dashboard open. The loop owns both; this only reads them."""
     last = object()
     while True:
-        current = loop.goal.id if loop.goal is not None else None
+        current = (
+            loop.milestone.id if loop.milestone is not None else None,
+            loop.option.id if loop.option is not None else None,
+        )
         if current != last:
-            print(f"goal: {current or 'none'}", flush=True)
+            milestone, option = current
+            print(f"goal: {milestone or 'none'} · option: {option or 'none'}", flush=True)
             last = current
         await asyncio.sleep(interval)
+
+
+def resume_memory(run_dir):
+    """The `executor.options.Memory` a `--resume` carries over: what the run already knew, or an
+    empty one for a run that stopped before it wrote any. Takes a RunDir (untyped here so
+    importing cli never pulls the log module in)."""
+    from jevplays.executor.options import Memory
+
+    return Memory.from_dict(run_dir.load_memory() or {})
 
 
 def resolve_resume(run_dir) -> tuple[Path, int, int]:
@@ -73,6 +86,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from jevplays.runlog import RunDir
 
     run_dir = None
+    memory = None
     start_state = args.state
     if args.resume is not None:
         try:
@@ -81,6 +95,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         except FileNotFoundError as error:
             print(f"jevplays run: {error}", file=sys.stderr)
             return 2
+        memory = resume_memory(run_dir)
         print(f"run: resuming {start_state} from checkpoint {checkpoint_n}", flush=True)
         if orphaned:
             print(
@@ -111,7 +126,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     async def main_async() -> None:
         broadcaster = Broadcaster()
-        server = asyncio.create_task(serve(create_app(broadcaster), host=args.host, port=args.port))
+        stop_serving = asyncio.Event()
+        server = asyncio.create_task(
+            serve(create_app(broadcaster), host=args.host, port=args.port, stop=stop_serving)
+        )
         try:
             with Emulator(rom) as emu:
                 if start_state:
@@ -142,8 +160,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 else:
                     print("brain: off" + ("" if args.no_brain else " (no TYPESAFE_API_KEY)"), flush=True)
                 config = LoopConfig(paced=not args.unpaced, goal=args.battle_goal)
-                loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir)
-                watcher = asyncio.create_task(_print_goals(loop))
+                loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir, memory=memory)
+                watcher = asyncio.create_task(_print_progress(loop))
                 try:
                     await loop.run()
                 finally:
@@ -161,12 +179,25 @@ def cmd_run(args: argparse.Namespace) -> int:
                     await broadcaster.publish(status_event("stopped"))
                     if brain is not None:
                         await brain.close()
+                if loop.finished:
+                    # The last milestone is done, so the run ended of its own accord rather
+                    # than being interrupted: say so on the terminal, after the exit checkpoint.
+                    print(
+                        f"finished: Boulder Badge after {loop.decision_count} decisions",
+                        flush=True,
+                    )
         finally:
-            server.cancel()
-            # uvicorn re-raises the signal it captured once it has shut down; by then we are
-            # already on our way out, so that second KeyboardInterrupt is nothing but noise.
-            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
-                await server  # let uvicorn shut down before the process exits
+            # Ask uvicorn to stop and give it a moment; cancel only if it does not. A cancelled
+            # lifespan prints a traceback on the way out, a stopped one does not. uvicorn also
+            # re-raises the signal it captured once it has shut down; by then we are already on
+            # our way out, so that second KeyboardInterrupt is nothing but noise.
+            stop_serving.set()
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt, TimeoutError):
+                await asyncio.wait_for(asyncio.shield(server), 3)
+            if not server.done():
+                server.cancel()
+                with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
+                    await server
 
     # A plain `kill` (SIGTERM) is how a supervisor stops a run. Point it at the SIGINT handler so
     # it becomes the KeyboardInterrupt below and the exit checkpoint in the finally still runs.
@@ -199,7 +230,10 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
     async def main_async() -> None:
         broadcaster = Broadcaster()
-        server = asyncio.create_task(serve(create_app(broadcaster), host=args.host, port=args.port))
+        stop_serving = asyncio.Event()
+        server = asyncio.create_task(
+            serve(create_app(broadcaster), host=args.host, port=args.port, stop=stop_serving)
+        )
         try:
             await asyncio.sleep(0.2)
             if server.done():
@@ -218,11 +252,17 @@ def cmd_replay(args: argparse.Namespace) -> int:
             print("replay finished; the dashboard stays up until Ctrl-C", flush=True)
             await server  # keep serving
         finally:
-            server.cancel()
-            # uvicorn re-raises the signal it captured once it has shut down; by then we are
-            # already on our way out, so that second KeyboardInterrupt is nothing but noise.
-            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
-                await server  # let uvicorn shut down before the process exits
+            # Ask uvicorn to stop and give it a moment; cancel only if it does not. A cancelled
+            # lifespan prints a traceback on the way out, a stopped one does not. uvicorn also
+            # re-raises the signal it captured once it has shut down; by then we are already on
+            # our way out, so that second KeyboardInterrupt is nothing but noise.
+            stop_serving.set()
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt, TimeoutError):
+                await asyncio.wait_for(asyncio.shield(server), 3)
+            if not server.done():
+                server.cancel()
+                with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
+                    await server
 
     # A plain `kill` (SIGTERM) is how a supervisor stops a replay. Point it at the SIGINT handler
     # so it becomes the KeyboardInterrupt below and shutdown still runs cleanly.
@@ -282,7 +322,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--unpaced", action="store_true", help="run the emulator as fast as it can")
     run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; let code decide instead")
     # --goal is the old spelling, kept working: it is the battle brain's free-text objective,
-    # not the overworld goal (those come from executor/goals.py and are Jev's to pick).
+    # not the overworld one (that is the active milestone, from executor/goals.py).
     run.add_argument(
         "--battle-goal",
         "--goal",

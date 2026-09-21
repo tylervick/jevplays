@@ -107,6 +107,29 @@ def test_resolve_resume_picks_the_newest_checkpoint_and_sets_later_decisions_asi
     assert run.info()["resumed_at"][0]["orphaned"] == 3
 
 
+def test_resume_hands_the_loop_the_memory_the_run_kept(tmp_path):
+    """The run dir carries `memory.json` across a restart, so a resumed run is not amnesiac:
+    it still knows which maps it has seen and which options came to nothing."""
+    from jevplays.cli import resume_memory
+    from jevplays.runlog import RunDir
+
+    run = RunDir.create(tmp_path / "runs", rom=None, flags={})
+    run.save_memory({"visited_maps": [0, 41], "talked": [[41, 3]], "tried": [[0, "grass"]]})
+
+    memory = resume_memory(RunDir.open(run.path))
+    assert memory.visited_maps == {0, 41}
+    assert memory.talked == {(41, 3)} and memory.tried == {(0, "grass")}
+
+
+def test_resume_without_a_memory_file_starts_from_an_empty_one(tmp_path):
+    from jevplays.cli import resume_memory
+    from jevplays.runlog import RunDir
+
+    run = RunDir.create(tmp_path / "runs", rom=None, flags={})
+    memory = resume_memory(run)
+    assert memory.visited_maps == set() and memory.talked == set() and memory.tried == set()
+
+
 def test_resolve_resume_without_a_checkpoint_raises(tmp_path):
     import pytest
 

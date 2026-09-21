@@ -1,0 +1,219 @@
+{
+  "state": {
+    "mode": "overworld",
+    "map_id": 1,
+    "map": "Viridian City",
+    "tile": [
+      20,
+      35
+    ],
+    "player_name": "RED",
+    "party_count": 1,
+    "badges": 0,
+    "money": 3175,
+    "bag_count": 0,
+    "bag": [],
+    "in_battle": false,
+    "text": "",
+    "menu_items": [],
+    "cursor": null,
+    "party": [
+      {
+        "name": "CHARMANDER",
+        "nickname": "CHARMANDER",
+        "level": 8,
+        "types": [
+          "Fire"
+        ],
+        "hp": 7,
+        "max_hp": 26,
+        "status": "none",
+        "moves": [
+          {
+            "name": "SCRATCH",
+            "type": "Normal",
+            "power": 40,
+            "pp": 19,
+            "max_pp": 35
+          },
+          {
+            "name": "GROWL",
+            "type": "Normal",
+            "power": 0,
+            "pp": 40,
+            "max_pp": 40
+          }
+        ]
+      }
+    ],
+    "active": null,
+    "active_slot": null,
+    "enemy": null,
+    "battle": null,
+    "flags": [
+      "battled_rival_in_oaks_lab",
+      "followed_oak_into_lab",
+      "got_oaks_parcel",
+      "got_pokedex",
+      "got_starter",
+      "oak_appeared_in_pallet",
+      "oak_asked_to_choose_mon",
+      "oak_got_parcel"
+    ],
+    "sprites": [
+      {
+        "slot": 1,
+        "picture": 4,
+        "x": 13,
+        "y": 20
+      },
+      {
+        "slot": 2,
+        "picture": 11,
+        "x": 30,
+        "y": 8
+      },
+      {
+        "slot": 3,
+        "picture": 4,
+        "x": 30,
+        "y": 25
+      },
+      {
+        "slot": 4,
+        "picture": 13,
+        "x": 17,
+        "y": 9
+      },
+      {
+        "slot": 5,
+        "picture": 72,
+        "x": 18,
+        "y": 9
+      },
+      {
+        "slot": 6,
+        "picture": 47,
+        "x": 6,
+        "y": 23
+      },
+      {
+        "slot": 7,
+        "picture": 11,
+        "x": 17,
+        "y": 5
+      }
+    ],
+    "map_size": [
+      40,
+      36
+    ]
+  },
+  "state_json": {
+    "map": "Viridian City",
+    "progress": [
+      "got a starter",
+      "beat the rival in the lab",
+      "picked up Oak's parcel",
+      "delivered Oak's parcel",
+      "got the Pokédex"
+    ],
+    "party": [
+      {
+        "name": "CHARMANDER",
+        "level": 8,
+        "hp": "low"
+      }
+    ],
+    "money": "comfortable",
+    "bag": {},
+    "milestone": "Challenge Brock at the Pewter Gym",
+    "options": {
+      "milestone": "work on the milestone: Challenge Brock at the Pewter Gym (new)",
+      "heal": "go heal at Viridian Pokémon Center (new)",
+      "exit_north": "go north to Route 2 (new)",
+      "exit_south": "go south to Route 1 (new)",
+      "exit_west": "go west to Route 22 (new)",
+      "door_41": "enter Viridian Pokémon Center (new)",
+      "door_42": "enter Viridian Mart (new)",
+      "door_43": "enter Viridian School (new)",
+      "door_44": "enter Viridian Nickname House (new)",
+      "door_45": "enter Viridian Gym (new)",
+      "npc_1": "talk to a youngster to the north-west (new)",
+      "npc_3": "talk to a youngster to the north-east (new)",
+      "npc_5": "talk to an old man to the north-west (new)",
+      "npc_4": "talk to a girl to the north-west (new)",
+      "npc_7": "talk to a gambler to the north-west (new)",
+      "npc_2": "talk to a gambler to the north-east (new)"
+    }
+  },
+  "questions": {
+    "explore": {
+      "type": "choice",
+      "instructions": "Which of \"options\" should we do next to make progress in the game, given \"progress\" and the \"milestone\"? Each option ends with a word in parentheses: \"new\" means we have never done it from here; \"visited\" or \"talked already\" means we have done it before and may not need to again; \"tried\" means we chose it before from here and nothing came of it, so repeat it only if nothing else is worth doing.",
+      "criteria": {
+        "milestone": "work on the milestone: Challenge Brock at the Pewter Gym (new)",
+        "heal": "go heal at Viridian Pokémon Center (new)",
+        "exit_north": "go north to Route 2 (new)",
+        "exit_south": "go south to Route 1 (new)",
+        "exit_west": "go west to Route 22 (new)",
+        "door_41": "enter Viridian Pokémon Center (new)",
+        "door_42": "enter Viridian Mart (new)",
+        "door_43": "enter Viridian School (new)",
+        "door_44": "enter Viridian Nickname House (new)",
+        "door_45": "enter Viridian Gym (new)",
+        "npc_1": "talk to a youngster to the north-west (new)",
+        "npc_3": "talk to a youngster to the north-east (new)",
+        "npc_5": "talk to an old man to the north-west (new)",
+        "npc_4": "talk to a girl to the north-west (new)",
+        "npc_7": "talk to a gambler to the north-west (new)",
+        "npc_2": "talk to a gambler to the north-east (new)"
+      }
+    },
+    "needs_heal": {
+      "type": "noul",
+      "instructions": "Should the party heal before doing anything else?",
+      "criteria": {
+        "true": "the party is hurt enough that the next battle could be lost",
+        "false": "the party can keep going"
+      }
+    }
+  },
+  "response": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 1226,
+      "output_tokens": 184
+    },
+    "answers": {
+      "explore": {
+        "type": "choice",
+        "choice": "heal",
+        "confidence": 0.47,
+        "probabilities": {
+          "npc_1": 0.0,
+          "npc_3": 0.0,
+          "npc_7": 0.0,
+          "door_45": 0.0,
+          "door_43": 0.0,
+          "door_41": 0.2,
+          "heal": 0.51,
+          "exit_north": 0.13,
+          "door_42": 0.0,
+          "door_44": 0.0,
+          "milestone": 0.12,
+          "exit_south": 0.01,
+          "npc_2": 0.0,
+          "npc_5": 0.0,
+          "npc_4": 0.0,
+          "exit_west": 0.03
+        }
+      },
+      "needs_heal": {
+        "type": "noul",
+        "noul": 0.65
+      }
+    }
+  },
+  "latency_ms": 91
+}

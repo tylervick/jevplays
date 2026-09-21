@@ -16,7 +16,10 @@ def state_event(state: GameState) -> dict:
 
 
 def status_event(status: str, message: str = "") -> dict:
-    """status is one of running, waiting_for_api, paused, stopped."""
+    """status is one of running, waiting_for_api, paused, stopped, finished.
+
+    `finished` is the run reaching its last milestone, as opposed to `stopped`, which is the
+    process going away for any reason at all."""
     return {"type": "status", "status": status, "message": message}
 
 

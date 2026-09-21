@@ -179,7 +179,7 @@
       "poke_balls": true,
       "potions": true
     },
-    "goal": "Train in the grass nearby. Build a party of three and keep them healthy."
+    "goal": "Deliver Oak's parcel and get the Pokédex. Build a party of three and keep them healthy."
   },
   "questions": {
     "move": {
@@ -218,7 +218,7 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 818,
+      "input_tokens": 824,
       "output_tokens": 103
     },
     "answers": {
@@ -227,21 +227,21 @@
         "choice": "SCRATCH",
         "confidence": 0.98,
         "probabilities": {
-          "SCRATCH": 0.99,
-          "GROWL": 0.01
+          "GROWL": 0.01,
+          "SCRATCH": 0.99
         }
       },
       "heal": {
         "type": "noul",
-        "noul": 0.05
+        "noul": 0.04
       },
       "run": {
         "type": "noul",
-        "noul": 0.1
+        "noul": 0.13
       },
       "catch": {
         "type": "noul",
-        "noul": 0.49
+        "noul": 0.56
       },
       "faint": {
         "type": "noul",
@@ -249,5 +249,5 @@
       }
     }
   },
-  "latency_ms": 171
+  "latency_ms": 126
 }

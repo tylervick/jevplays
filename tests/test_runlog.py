@@ -178,6 +178,26 @@ def test_set_model_does_not_rewrite_run_json_when_nothing_changes(tmp_path, monk
     assert len(writes) == 1
 
 
+def test_memory_round_trips_through_the_run_dir(tmp_path):
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    assert run.load_memory() is None  # nothing written yet
+    memory = {"visited_maps": [0, 41], "talked": [[41, 3]], "tried": [[0, "grass"]]}
+    run.save_memory(memory)
+    assert run.load_memory() == memory
+    assert RunDir.open(run.path).load_memory() == memory
+    run.save_memory({"visited_maps": [0, 41, 12], "talked": [], "tried": []})
+    assert run.load_memory()["visited_maps"] == [0, 41, 12]  # overwritten whole, not appended to
+
+
+def test_saving_memory_leaves_no_temp_file_behind(tmp_path):
+    """It is written through a temp file and a rename, so a crash mid-write leaves the last good
+    memory rather than half of the new one."""
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    run.save_memory({"visited_maps": [1], "talked": [], "tried": []})
+    assert [p.name for p in run.path.iterdir() if p.suffix == ".tmp"] == []
+    assert run.memory_path.name == "memory.json"
+
+
 def test_outcomes_are_a_second_stream_beside_the_decisions(tmp_path):
     """A resolved prediction is appended on its own, keyed by the decision it scores: the
     decision line was written turns earlier and is never rewritten."""

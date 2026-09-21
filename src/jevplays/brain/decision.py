@@ -22,11 +22,13 @@ class BattleAction:
 
 
 @dataclass(frozen=True)
-class GoalAction:
-    goal_id: str
+class ExploreAction:
+    option_id: str
+    kind: str  # exit | door | npc | grass | milestone | heal
+    text: str
 
     def describe(self) -> str:
-        return f"pursue {self.goal_id}"
+        return f"explore: {self.text}"
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,7 @@ class MenuAction:
         return f"select {self.item}" if self.item is not None else "close the menu"
 
 
-Action = BattleAction | GoalAction | PromptAction | MenuAction
+Action = BattleAction | ExploreAction | PromptAction | MenuAction
 
 
 @dataclass

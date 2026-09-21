@@ -71,7 +71,7 @@ jevplays/
       __init__.py
       client.py       one thin wrapper over AsyncTypeSafeClient with logging and timing
       battle.py       questions + decode for the battle decision point
-      goal.py         questions + decode for the overworld idle decision point
+      explore.py      questions + decode for the overworld explore decision point
       prompt.py       questions + decode for yes/no prompts and menus
       policy.py       thresholds and priorities, named constants, nothing else
       decision.py     the Decision record (section 8)
@@ -80,7 +80,8 @@ jevplays/
       macros.py       button sequences for battle menus, prompts, menus
       navigate.py     A* over the collision window, waypoint following, warps
       maps.py         hand-written waypoint graph for the early game
-      goals.py        the goal table: availability and completion from event flags
+      options.py      the options a map affords, generated fresh every decision
+      goals.py        the three milestones: where each happens and when it is done
     dashboard/
       __init__.py
       server.py       Starlette app: static page + websocket event stream
@@ -150,7 +151,7 @@ GameState
   bag: BagSummary             has_balls, has_potions, has_repel, item names
   text: str                   decoded on-screen text, empty when none
   menu_items: [str]           decoded items when a menu is open
-  flags: frozenset[str]       the subset of story event flags the goal table reads
+  flags: frozenset[str]       the subset of story event flags the milestones read
   sprites: [Sprite]           NPCs and other on-screen actors, for the executor only
   map_size: (w, h)            the current map's size in grid cells, for the executor only
 Move: name, type, power, pp, max_pp
@@ -201,6 +202,20 @@ consumes only the ones that apply.
 Frame publishing and the websocket server run on the same asyncio loop. Emulator ticks are
 synchronous and short, so nothing is offloaded to threads in this version.
 
+Milestone 4b replaced the `OVERWORLD` branch's `brain.goal(state)` with the explore decision
+point (8.2), and changed what runs before it. `_overworld_turn`, every call, in order: refresh
+the active milestone (`executor.goals.active_milestone`) -- when the one just worked on is done,
+advance to the next and publish `status_event("running", "milestone done: <id>")`; when none
+remain, publish `status_event("finished", "Boulder Badge")`, a status the pseudocode above did
+not have, and stop the run. Then, if the navigator has a plan running, step it, same as before.
+Otherwise, with an option already in hand: drop it and mark it `tried` once its budget
+(`OPTION_BUDGET_S`, 90 s) is spent, or run its `after` macro once its legs have arrived. Only
+with no option in hand does the loop generate what the map affords
+(`executor.options.generate`), ask Jev, and start what it picked. The budget governs the macro
+phase only -- a walk to the option is bounded by the navigator's own stuck detector (9), not the
+clock, so a long walk never gets an option marked `tried` before its macro has had a turn to
+run.
+
 ## 8. The brain
 
 Every decision kind has a `questions(state) -> dict[str, Question]` builder and a
@@ -221,7 +236,7 @@ State sent (only what the questions need):
   "bench": [{"name": "PIDGEY", "level": 4, "types": ["Normal", "Flying"], "hp": "full", "label": "PIDGEY"}],
   "party": "two",
   "bag": {"poke_balls": true, "potions": true},
-  "goal": "Train on Route 2 until CHARMANDER reaches level 12. Build a party of three and keep them healthy."
+  "goal": "Deliver Oak's parcel and get the Pokédex. Build a party of three and keep them healthy."
 }
 ```
 
@@ -233,11 +248,12 @@ handle Jev gets on a bench member -- `brain/battle.py`'s `bench_slots(state)` is
 label's party index lives; `state_json` never carries one, matching the "no raw numbers besides
 levels" rule.
 
-`goal` is the overworld goal Jev picked, plus the standing clause in `executor/goals.py`
-(`battle_goal`). It moves with the goal rather than being fixed for the run: `catch`'s criteria
-already speak of wanting a party of three, and against a goal string that said nothing about a
-party they read as a distraction from it. `--battle-goal` is the fallback before any goal is
-active.
+`goal` is the active milestone's description (`executor/goals.py`, `active_milestone`), plus
+the standing clause in the same module (`battle_goal`). It moves with the milestone rather than
+being fixed for the run: `catch`'s criteria already speak of wanting a party of three, and
+against a goal string that said nothing about a party they read as a distraction from it.
+`--battle-goal` is the fallback before any milestone is active -- a battle fought before the loop
+has ever stood in the overworld.
 
 Questions, all in one request, each included only when it can apply:
 
@@ -274,28 +290,40 @@ type names is the kind of common sense the demo is meant to show, and the decisi
 measurable. If the measured move choice is poor, a later version can pass a computed
 effectiveness hint as a named field.
 
-### 8.2 Goal (overworld idle)
+### 8.2 Explore (overworld idle)
 
-The goal table in `executor/goals.py` lists goals for the early game through the first badge,
-each with an id, a one-sentence description Jev sees, a rule for when it is available and when it
-is done (read from `GameState.flags`, party, bag, money, and the map), the legs to walk to get
-there, and an optional scripted macro (`after`) that finishes it once the legs are done. Goals:
-get a starter from Oak, deliver Oak's Parcel, wake the old man blocking the road out of Viridian,
-buy Poké Balls, train the lead to level 12, cross Viridian Forest, and challenge Brock. Plus two
-always-available goals: heal at the nearest Pokémon Center, and train in the grass nearby.
+Milestone 4b retired the goal table and `brain/goal.py`: the goal decision point above became
+the **explore** decision point below. What the loop can do at any moment is generated from the
+map it is standing on rather than looked up in a hand-written table; the design is
+`docs/superpowers/specs/2026-09-21-generated-options-design.md`, and what follows is the explore
+decision point as built.
 
-State sent: current map, party (names, levels, hp buckets), badges, money bucket, bag summary,
-and the list of available goals with descriptions. Levels are the only raw numbers in this state;
-HP, badges, money, and item counts are bucket words, the same jaggedness rule as the battle
-builder (8.1).
+State sent: current map, `progress` (a short list of story flags in words, from
+`TRACKED_FLAGS`), party (names, levels, hp buckets), money bucket, bag summary, the active
+milestone's description, and `options` -- one text per generated option
+(`executor/options.py`), each carrying a memory word in parentheses (`new`, `visited`, `talked
+already`, `tried`) because Jev has no memory between calls. Levels are the only raw numbers in
+this state; a route number inside a map name ("Route 2") is a proper name, not a quantity, and
+is allowed the same way a level is.
 
-Questions: `goal` (Choice over available goal ids with descriptions as rubric) and `needs_heal`
-(Noul: does the party need healing before doing anything else?). Policy: if `needs_heal` clears
-`HEAL_FIRST_THRESHOLD` (0.7) and `heal_at_center` is itself one of the available goals -- the lead
-is hurt and a Pokémon Center is reachable from here -- heal first, before Jev's `goal` choice is
-even consulted; otherwise pursue `goal`. This is the harness's only heal-first rule: code never
-overrides a chosen goal for any other reason. A goal stays active until complete, and Jev is only
-asked again when it completes, its scripted macro fails, or the navigator gives up.
+Questions, one request:
+
+| id | primitive | instructions | criteria |
+| --- | --- | --- | --- |
+| `explore` | Choice | Which of `options` should we do next to make progress in the game, given `progress` and the `milestone`? | the options' texts, keyed by option id, each ending in its memory word |
+| `needs_heal` | Noul | Should the party heal before doing anything else? | true when the party is hurt enough that the next battle could be lost |
+
+Policy (`policy.py`, `choose_explore`): `needs_heal` above `HEAL_FIRST_THRESHOLD` (0.7) with a
+`heal` option on offer that this map has not already marked `tried` wins, before Jev's
+`explore` choice is even consulted (a heal that already failed from here would otherwise fire
+every turn while the lead is still hurt, and the run would loop); otherwise the
+`explore` choice, so long as it names an option actually on the list; a choice naming anything
+else, or no usable `explore` answer at all, falls back to `milestone` when that option is on
+offer, else the first option -- code decided that, not Jev, so it is marked `fallback`. This is
+the harness's only heal-first rule: code never overrides Jev's choice for any other reason. There
+is no "stays active until complete": Jev is asked fresh every idle overworld turn, because it has
+no memory between calls, and the memory word on each option is how it is told what this run has
+already done.
 
 ### 8.3 Prompts and menus
 
@@ -320,22 +348,22 @@ The Pokémon Center nurse and the Mart clerk are not Jev-answered menus, even th
 look like ones. Both are mechanical -- a HEAL confirmation, a BUY quantity box -- so
 `executor/talk.py` walks up to the sprite and presses A through its dialog, and `executor/shop.py`
 layers a scripted counter on top for each one, pressing every button of the HEAL or BUY sequence
-itself. Jev's only say is whether to go there at all, as the `heal_at_center` and `buy_pokeballs`
-goals in the goal table (8.2); once the legs get there, code runs the whole counter.
+itself. Jev's only say is whether to go there at all -- the `heal` option, or the option for the clerk
+standing behind the counter (8.2); once the legs get there, code runs the whole counter.
 
-The BUY sequence takes the item's shelf label, so one counter serves both purchases:
-`buy_pokeballs` at the Viridian Mart and `buy_potions` at the Pewter one. Potions are a Pewter
-errand because the Viridian shelf has none -- read off the ROM, it stocks Poké Ball, Antidote,
-Parlyz Heal and Burn Heal -- and Pewter is the last counter before Brock, the first fight where a
-Potion decides anything. What Pewter stocks is not verified here, so a shelf without the item is
-an ordinary outcome: the scan runs out, the counter backs out to the overworld, the bag count
-does not move, and the goal blocks itself rather than a guessed inventory being written down.
+The BUY sequence takes the item's shelf label, so one counter could serve both purchases;
+as built, a clerk option only buys Poké Balls. Potions would be a Pewter errand, because the
+Viridian shelf has none -- read off the ROM, it stocks Poké Ball, Antidote, Parlyz Heal and Burn
+Heal -- and Pewter is the last counter before Brock, the first fight where a Potion decides
+anything. Buying them is #33, still open. A shelf without the item is an ordinary outcome
+either way: the scan runs out, the counter backs out to the overworld, the bag count does not
+move, and the option is marked `tried` rather than a guessed inventory being written down.
 
 ### 8.4 Decision record
 
 ```
 Decision
-  id, ts, kind (battle | goal | prompt | menu)
+  id, ts, kind (battle | explore | prompt | menu)
   state_summary: the JSON that was sent as state
   questions: {id: {primitive, instructions, options}}
   answers: {id: {choice | noul | score, probabilities, confidence, applied: bool}}
@@ -378,8 +406,8 @@ with the current tileset's block table and collision list, both read from ROM th
 `Emulator.rom`. One grid cell is one player step -- a block's own 2x2-tile quadrant -- and the
 quadrant's bottom-left tile decides whether the cell is walkable, the same rule PyBoy's own
 collision window applies to the visible screen. A cell whose tile matches the map's grass tile is
-marked as grass: still walkable, but where a wild battle can start, which is what the
-`train_to_level_12` and `train_nearby` goals use to wander toward and inside a patch. Sprites
+marked as grass: still walkable, but where a wild battle can start, which is what the `grass`
+option's `wander` macro uses to move around inside a patch until a battle interrupts it. Sprites
 (NPCs, the rival, signposts) are read fresh from RAM every turn and treated as additional blocked
 cells; warps and the map's edge connections are read from RAM the same way, never hand-recorded.
 
@@ -402,25 +430,38 @@ again from scratch, which clears those marks (whatever was in the way has usuall
 and after `STUCK_LEGS` (3) failed legs the navigator gives up, clears its plan, and reports
 `"stuck"`.
 
-A plan is only good for the map it was built on. If the map id changes under a `walk` leg, or a
-`warp` leg comes out somewhere other than its `dest_map` -- a blackout teleports the player to a
-Pokémon Center from anywhere -- `step()` returns `"lost"` without pressing anything. The loop
-throws the plan away and plans the same goal again from where the player actually is; nothing
-went wrong with the goal, so it is not charged a retry.
+A plan is only good for the map it was built on. If the map id changes under a `walk` leg, or
+an `edge` or `warp` leg comes out somewhere other than its `dest_map` -- a blackout teleports the
+player to a Pokémon Center from anywhere -- `step()` returns `"lost"` without pressing anything.
+The loop throws the plan away and the option with it: the option list was generated for a map the
+run is not on any more, so the next turn generates a fresh one and asks Jev again from where the
+player actually is. Nothing is charged against the option that was running. A leg that cannot
+name the map it lands on -- a `WARP_LAST_MAP` warp, whose destination is only in `wLastMap` --
+cannot be checked this way, and finishes on any change (#8).
 
 A battle or a dialog interrupting a walk makes `step()` return `"interrupted"` with the plan
 intact -- nothing is cleared. The loop hands control to the brain (or to whatever advances dialog
 and battle), then calls `step()` again once `OVERWORLD` is back, so the same legs resume where
 they left off.
 
-A goal that comes back `"stuck"`, or whose scripted macro (`after`, 8.3) fails or raises, is not
-dropped immediately: `GOAL_RETRIES` (3) failures for the same goal id retire it for the rest of
-the run, since a single failure is usually a wandering NPC or a mistimed script rather than a goal
-that cannot be done at all. When every currently available goal has used up its retries, the loop
-has nothing it can honestly offer Jev; it publishes status `paused` naming the blocked goal ids and
-idles rather than ask a question with no answer. Retired goals stay retired for the rest of the
-run, so the pause only lifts when a goal that has not used up its retries becomes available (a
-flag flips, money changes, the party heals on its own).
+Milestone 4b replaced the goal table this paragraph described with three milestones
+(`executor/goals.py`: `get_starter`, `get_pokedex`, `beat_brock`, in order, the active one always
+the first not yet done) as the only hand-written story left. Everything else Jev may do at a
+given moment -- talk to someone, walk out an exit, go through a door, train in the grass, go
+heal -- is an option `executor/options.py` generates fresh from the map (section 2 of the
+generated-options design). An NPC standing behind a counter, like the Pokémon Center nurse or a
+Mart clerk, is still offered: the option is talked to across the counter, from the near side,
+rather than left out for having no adjacent walkable tile. An exit is offered only when the
+navigator could actually walk to that edge from here (`world.reachable_edge`) -- Route 2's north
+connection is behind Viridian Forest, so it is not offered from the route's south half, where the
+walk would only fail.
+
+There is also no `GOAL_RETRIES` counter any more: an option that comes back `"stuck"`, whose
+macro (`after`, 8.3) fails or raises, or whose budget runs out (7) is marked `tried` for that map
+and dropped, once, with no retry -- the memory word is the record, and Jev sees "tried" the next
+time the option is offered and decides for itself whether to try again. `paused` is now
+published only when a map affords no options at all to generate; `finished` (10), a separate
+status, is what the run publishes once the last milestone is done.
 
 ## 10. The dashboard
 
@@ -438,7 +479,11 @@ The loop pushes four event types, each a JSON object with a `type` field:
 - `state`: the `GameState`, including `tile` for the dashboard's debugging readout (`tile` is
   never part of what the brain sends to Jev), on every loop iteration where it changed.
 - `decision`: the full `Decision` record.
-- `status`: `running | waiting_for_api | paused | stopped` with a message.
+- `status`: `running | waiting_for_api | paused | stopped | finished` with a message. Milestone
+  4b added `finished`: the run reaching its last milestone (`beat_brock` done), as opposed to
+  `stopped`, which is the process going away for any reason at all (#29 -- a finished run no
+  longer ends the page on "paused"). The page gives `finished` its own pill colour rather than
+  reusing `stopped`'s, so the two are told apart at a glance.
 
 The page, plain ES modules with no build step:
 
@@ -452,6 +497,13 @@ The page, plain ES modules with no build step:
   goal, and a scrolling log of the last 50 decisions with kind, action, and confidence. The
   `faint` prediction is never applied, so its badge reads "prediction" rather than "not used".
 - A `?layout=stream` query switches to a fixed 1920x1080 arrangement for OBS.
+
+Milestone 4b needed no new event type for exploration: the explore Choice renders as bars like
+any other, the goal line under the panel shows the active milestone's description (read from the
+decision's `state_summary.milestone`, not the option just picked, which is already in the log
+line below), and a log entry for an explore decision already reads as its action text, "explore:
+go north to Route 2", so the log never doubles the "explore" kind onto it the way it prefixes
+other kinds.
 
 `jevplays replay runs/<dir>` reads `decisions.jsonl` and pushes each logged `decision` event with
 a delay between them, plus a `status` naming its progress before each one and a final `stopped`
@@ -485,6 +537,12 @@ checkpoint resumed from and how many lines moved. A torn last line in `decisions
 mid-write) is skipped when the log is read and closed off by the next append, so one lost
 decision never makes the log unreadable.
 
+Milestone 4b added `memory.json`: the run's `Memory` (section 3 of the generated-options design --
+visited maps, NPCs talked to, options `tried`), written after every change and read back by
+`--resume`, so a resumed run reloads what it already knows instead of asking Jev to rediscover
+it. Nothing about `decisions.jsonl` or the checkpoint rule above changed to make room for it; it
+is its own small file, replaced wholesale on every write rather than appended to.
+
 A run also holds `outcomes.jsonl`, one resolved `faint` prediction per line (`decision_id`,
 `question`, `predicted`, `observed`, `ts`). It is a second stream rather than a field on the
 decision line because the decision it scores was written turns earlier and `decisions.jsonl` is
@@ -515,8 +573,9 @@ Unit tests need no ROM and no API key. CI runs these.
   what is omitted (no `run` in a trainer battle, no `catch` without balls). Decoders and policy are
   tested against recorded TypeSafe responses in `tests/fixtures/responses/`, one per scenario,
   captured once with the real API and checked in.
-- `executor`: A* on synthetic collision grids, stuck detection, macro cursor math, goal
-  availability and completion from synthetic flags.
+- `executor`: A* on synthetic collision grids, stuck detection, macro cursor math, option
+  generation and memory words on a synthetic map, milestone availability and completion from
+  synthetic flags.
 - `dashboard`: event schemas serialize and deserialize; `replay` feeds a fixture log end to end
   through the websocket.
 
@@ -537,6 +596,17 @@ The same script reports calibration from `outcomes.jsonl`: the Brier score over 
 choice was right; calibration says whether the confidence meant anything, which is the claim a
 System One model actually makes. Both numbers come from one run directory and one command, and
 both are measured before a change to the questions, not reconstructed after it.
+
+Milestone 4b added an exploration block to the same script, after the battle numbers: decisions
+by kind (battle, explore, prompt, menu); explore decisions broken down by the kind of option
+that was actually run (exit, door, npc, grass, milestone, heal); the share of explore decisions
+that were the milestone option versus everything else Jev could have chosen instead; how many
+distinct maps the run saw; and the total decision count. It is read off a run recorded, unpaced,
+from `states/route1.state` to the Boulder Badge, and reported next to move accuracy so the two
+questions -- did exploring get somewhere, did the battle judgment stay good while doing it -- are
+answered from the same run. That run's decision count is also the milestone's measure against
+the #17 baseline, the nine-goal table's 84 decisions to the badge: the numbers themselves are
+reported in the pull request and in a comment on #17, not repeated here.
 
 ## 14. Milestones
 
@@ -560,5 +630,12 @@ Each is a separate plan and pull request set.
 4a. **Battle macros and the accuracy script.** `heal`, `catch`, and `switch` execute (shops and
     the PC counter are already scripted as of 3a); `Scripts/accuracy.py` measures how often Jev's
     move choice matches the best-typed attack.
-4b. **The real run.** Route 22 or generated options, the party-reorder macro, and the first full
-    run to Brock.
+4b. **The real run, as built.** Generated options (`executor/options.py`) replaced the goal
+    table: exits, doors, reachable NPCs, the grass, and a heal trip, each with a memory word,
+    hybridized with three hand-written milestones (`get_starter`, `get_pokedex`, `beat_brock`)
+    that stay the spine guaranteeing progress; the explore decision point (8.2) and its policy;
+    `memory.json` (11); the `finished` status (10); and the exploration block in
+    `Scripts/accuracy.py` (13), run to the Boulder Badge and compared against the #17 baseline.
+    The party-reorder macro and adding Route 22 to `maps.py`'s link table (9) were left for a
+    later milestone -- exits are read from RAM regardless, so Jev can already walk there; only
+    milestone routing needs the table.

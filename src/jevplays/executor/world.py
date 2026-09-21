@@ -18,8 +18,7 @@ EDGE_DIRECTION = {"north": "up", "south": "down", "west": "left", "east": "right
 
 BLOCKED, WALKABLE, GRASS = 0, 1, 2
 """What a grid cell holds. Grass is walkable like any other cell -- the distinction is only that
-stepping onto it can start a wild battle, which is what `train_nearby` and `train_to_level_12`
-are after."""
+stepping onto it can start a wild battle, which is what the `grass` option is after."""
 
 
 @dataclass(frozen=True)

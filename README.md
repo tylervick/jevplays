@@ -4,19 +4,21 @@ Jev, TypeSafe's System One model, plays Pokémon Red on a headless emulator whil
 dashboard shows the game next to live probability bars for every decision. Code reads the game's
 memory, asks Jev narrow typed questions, and presses the buttons; Jev supplies the judgment.
 
-Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`. Status: milestone 4a, battle
-macros and the accuracy script. The emulator boots, walks the intro or loads a save state, parses
-game state including the party, an active battle, story flags, and nearby sprites, and streams it
-all to the dashboard. At the battle menu, the loop asks Jev, publishes the decision, and the
-executor presses the buttons; all five actions execute now, so battles can heal with a Potion,
-catch a wild Pokémon, and switch in a bench member, not just attack or run. In the overworld,
-Jev picks a goal from the table in `executor/goals.py` (through Brock's badge), code walks
-there using a walkability grid read live from the map in RAM rather than a hand-written route,
-and the Pokémon Center nurse and the Mart clerk are scripted counters that Jev only decides
-whether to visit, never what to press once there -- Poké Balls at the Viridian Mart, Potions at
-the Pewter one. Prompts and menus along the way are Jev's to
-answer. Every run writes its decisions and periodic checkpoints to `runs/`, `--resume`
-continues one, and `jevplays replay` plays a logged run back through the dashboard for demos.
+Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`, amended by
+`docs/superpowers/specs/2026-09-21-generated-options-design.md`. Status: milestone 4b, generated
+options and the first full run to Brock. The emulator boots, walks the intro or loads a save
+state, parses game state including the party, an active battle, story flags, and nearby sprites,
+and streams it all to the dashboard. At the battle menu, the loop asks Jev, publishes the
+decision, and the executor presses the buttons; all five actions execute, so battles can heal
+with a Potion, catch a wild Pokémon, and switch in a bench member, not just attack or run. In the
+overworld, code reads the map Jev is standing on and generates a list of things it could do next
+-- an exit, a door, someone to talk to, the grass, a milestone, a heal trip -- and Jev picks one;
+see "How Jev explores" below. Code walks there using a walkability grid read live from the map in
+RAM rather than a hand-written route, and the Pokémon Center nurse and the Mart clerk are
+scripted counters that Jev only decides whether to visit, never what to press once there. Prompts
+and menus along the way are Jev's to answer. Every run writes its decisions, its memory of what
+it has already done, and periodic checkpoints to `runs/`, `--resume` continues one, and `jevplays
+replay` plays a logged run back through the dashboard for demos.
 
 ## What Jev sees
 
@@ -34,17 +36,59 @@ where to stand in it. Jev is never asked which way to step. Code owns the counte
 Center nurse and the Mart clerk are scripted button sequences, and Jev decides only whether going
 there is the right goal, never what to press once it is inside. Code owns the arithmetic: HP
 becomes "low", move power becomes a bucket, PP becomes "out" or not. What is left for Jev is the
-judgment -- which move, whether to run, which goal to pursue, yes or no -- and every answer
+judgment -- which move, whether to run, which option to try next, yes or no -- and every answer
 arrives with a probability the dashboard draws as a bar.
 
 The cost is that code has to be right about more things. A walkability grid, a macro per menu,
-and the goal table in `executor/goals.py` are all ours to write and keep correct, and each one is
-a question Jev is never asked and therefore can never get right for us. What it buys is that
-every failure has an address. A wrong turn is a bug in the pathfinder, not a model that misread a
-map; a lost battle is a judgment, and `decisions.jsonl` says exactly what Jev was asked and how
-sure it was. Hand the model the tilemap instead and it will often do fine, but the run stops
-being evidence about the model and becomes evidence about the harness -- and this is meant to be
-a demonstration of what a System One model is for.
+and the options generated in `executor/options.py` are all ours to write and keep correct, and
+each one is a question Jev is never asked and therefore can never get right for us. What it buys
+is that every failure has an address. A wrong turn is a bug in the pathfinder, not a model that
+misread a map; a lost battle is a judgment, and `decisions.jsonl` says exactly what Jev was asked
+and how sure it was. Hand the model the tilemap instead and it will often do fine, but the run
+stops being evidence about the model and becomes evidence about the harness -- and this is meant
+to be a demonstration of what a System One model is for.
+
+## How Jev explores
+
+At every idle overworld turn, code reads the map Jev is standing on -- the same RAM the
+navigator already reads -- and builds a list of options: one per reachable exit, one per door
+(grouped by destination, so both doors of a building are one option, "enter Viridian School"),
+one per NPC it can reach (capped at the six nearest, described by sprite type and where they are
+standing), the grass if there is any, a trip to heal if the lead needs it and a Pokémon Center is
+reachable, and the active milestone. Jev picks one by id; the navigator walks its legs and a
+scripted macro finishes it off (talking, healing, buying, wandering the grass until a battle
+starts).
+
+Jev has no memory between calls, so every option's text ends with a word saying whether this run
+has done it before: `new`, `visited` (an exit or door whose destination has been entered this
+run), `talked already` (an NPC whose macro only has something to say once -- the nurse and the
+Mart clerk are never "talked already", since going back is the point), or `tried` (chosen before
+from here and nothing came of it -- its budget ran out, its macro failed, or the navigator gave
+up). This is a real list, recorded standing in Viridian City partway through a run:
+
+```
+milestone   work on the milestone: Challenge Brock at the Pewter Gym and earn the Boulder Badge (new)
+heal        go heal at Viridian Pokémon Center (new)
+exit_north  go north to Route 2 (new)
+exit_south  go south to Route 1 (new)
+exit_west   go west to Route 22 (new)
+door_41     enter Viridian Pokémon Center (new)
+door_42     enter Viridian Mart (new)
+door_43     enter Viridian School (new)
+door_44     enter Viridian Nickname House (new)
+door_45     enter Viridian Gym (new)
+npc_1       talk to a youngster to the north-west (new)
+npc_2       talk to a gambler to the north-east (new)
+npc_3       talk to a youngster to the north-east (new)
+npc_4       talk to a girl to the north-west (new)
+npc_5       talk to an old man to the north-west (new)
+npc_7       talk to a gambler to the north-west (new)
+```
+
+`executor/goals.py` keeps three hand-written milestones as the spine that guarantees the run
+keeps moving: `get_starter`, `get_pokedex` (deliver Oak's parcel and get the Pokédex), and
+`beat_brock`. The active one -- the first not yet done -- is always offered as an option, never
+forced; everything else Jev might do to get there is generated, not written down.
 
 ## Quick start
 
@@ -77,11 +121,12 @@ The quickest way to watch a run: `mise exec -- uv run jevplays run --state state
 (starts on Route 1 with a starter already in hand; needs `TYPESAFE_API_KEY`, which `mise exec`
 loads from `mise.local.toml`). Add `--no-brain` to skip calling TypeSafe: battle decisions idle
 (no move is chosen) since there is no policy to run without answers, while the overworld, prompts,
-and menus still make progress using code's own fallbacks (the first available goal, YES, closing
-the menu). The objective sent with a battle question is the overworld goal Jev is pursuing plus a
-standing clause ("Build a party of three and keep them healthy"), so what a fight is for changes
-as the goal does; `--battle-goal` (aliased as the older `--goal`) is the fallback used before a
-goal has been picked, not an override.
+and menus still make progress using code's own fallbacks (the first untried option, milestone
+first when it is offered, so the story still moves; YES; closing the menu). The objective sent
+with a battle question is the active milestone plus a standing clause ("Build a party of three
+and keep them healthy"), so what a fight is for changes as the run's progress does;
+`--battle-goal` (aliased as the older `--goal`) is the fallback used before a milestone has been
+picked, not an override.
 
 Recording API fixtures: TypeSafe responses used by the unit tests are recorded, not called live
 in CI. After changing a question's wording or the state fields Jev sees, re-record them with
@@ -106,6 +151,12 @@ committed. Each run directory holds:
 - `decisions.orphaned.jsonl`: only if a resume had to set decisions aside (see below).
 - `outcomes.jsonl`: one line per faint prediction the game went on to answer -- the decision it
   came from, what Jev said, and what happened. Written as they resolve; absent if none did.
+- `memory.json`: what the run already knows in the words Jev is shown -- maps visited, NPCs
+  talked to, options tried and dropped (`executor/options.py`'s `Memory`). Rewritten after every
+  change and reloaded on `--resume`. It is the *last* thing the run did, not the last thing it
+  logged: after a resume rolls decisions back to the newest checkpoint, the memory can be a step
+  or two ahead of `decisions.jsonl`, which only means Jev is told about something the log no
+  longer shows.
 
 `uv run Scripts/accuracy.py runs/<stamp> [--verbose]` reports two numbers over that run. From
 `decisions.jsonl`, accuracy: how often Jev's `move` matched the best-typed attack (STAB
@@ -113,7 +164,12 @@ included), the number to watch before adding a computed effectiveness hint. From
 `outcomes.jsonl`, calibration: a Brier score over every resolved faint prediction and a
 reliability table by probability band, which says whether things Jev called 80% likely happened
 about 80% of the time. Every battle bundle carries that prediction; no policy reads it, and code
-settles it by reading the party at the next decision point.
+settles it by reading the party at the next decision point. It also prints an exploration block
+off `decisions.jsonl`: the count of decisions by kind, explore decisions broken down by the kind
+of option that ran (exit, door, npc, grass, milestone, heal), the share of explore decisions that
+were the milestone versus everything else, and how many maps the run saw -- that last from
+`memory.json` when the run kept one, since it counts the maps walked through as well as the ones
+stopped on.
 
 `--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
 directory entirely -- no log, no checkpoints -- for a throwaway run you don't want to keep.
@@ -124,8 +180,8 @@ and appends to the same `decisions.jsonl` rather than starting a new directory; 
 checkpoint is the game just after decision `n`, so any decision the log holds past `n` -- written
 between the last checkpoint and the crash -- was rolled back with it; those lines move to
 `decisions.orphaned.jsonl` so replay and the checkpoint numbering stay honest, and the run says how
-many moved. A resumed run reloads the game but not the loop's memory, so goals it had given up on
-are offered again and the goal choice starts fresh.
+many moved. A resumed run reloads its memory (`memory.json`) along with the game, so it does not
+ask Jev to rediscover what this run already tried.
 
 `jevplays replay runs/<stamp> --delay 1` reads `decisions.jsonl` back and pushes the same
 `decision` events to the dashboard at `http://127.0.0.1:8765` with a pause between them (`--delay`,

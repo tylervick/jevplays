@@ -2,10 +2,12 @@
 
 Milestone 1 advanced the game without deciding anything: dialog and battle text got an A,
 transitions got a wait, and every decision point (overworld, menu, prompt, battle menu) idled.
-Milestone 2 replaced the battle menu's idle branch with a request to Jev. Milestone 3 does the
-same for the overworld: Jev picks a goal from `executor.goals`, the navigator walks its legs, a
-scripted macro finishes it off, and the prompt and menu branches ask Jev how to answer. Jev
-judges (which goal, yes or no, which item); code executes (routes, button presses, counters).
+Milestone 2 replaced the battle menu's idle branch with a request to Jev. Milestone 3 did the
+same for the overworld, and milestone 4b turned that into exploration: code generates the
+options the map affords (`executor.options`), Jev picks one, the navigator walks its legs, and a
+scripted macro finishes it off. `executor.goals`' milestones are the spine that keeps the run
+moving, and the last one being done ends it. Jev judges (which option, yes or no, which item);
+code executes (routes, button presses, counters, memory).
 
 Pacing: the emulator runs as fast as it can, so the loop sleeps to keep emulated frames in step
 with wall-clock time at 60 frames per second. That is what makes the dashboard watchable.
@@ -21,9 +23,9 @@ from itertools import count
 from time import monotonic
 
 from jevplays.brain.battle import ALL_ACTIONS, battle_questions, battle_state, bench_slots, decide_battle
-from jevplays.brain.decision import Action, BattleAction, Decision, GoalAction, MenuAction, PromptAction
+from jevplays.brain.decision import Action, BattleAction, Decision, ExploreAction, MenuAction, PromptAction
 from jevplays.brain.errors import BrainUnavailable
-from jevplays.brain.goal import decide_goal, goal_questions, goal_state
+from jevplays.brain.explore import decide_explore, explore_questions, explore_state
 from jevplays.brain.policy import NEVER_NICKNAME
 from jevplays.brain.prompt import (
     decide_menu,
@@ -43,8 +45,9 @@ from jevplays.executor import navigate, shop, world
 from jevplays.executor.battle import MacroError
 from jevplays.executor.dialog import answer_prompt, cursor_label, skip_dialog
 from jevplays.executor.goals import Goal
-from jevplays.executor.maps import VIRIDIAN_MART, node_of
-from jevplays.executor.navigate import Leg, Navigator, goto_far
+from jevplays.executor.maps import VIRIDIAN_MART
+from jevplays.executor.navigate import Navigator, goto_far
+from jevplays.executor.options import Memory, Option, generate
 from jevplays.executor.talk import talk_to
 from jevplays.runlog import CHECKPOINT_EVERY, RunDir
 from jevplays.state.modes import Mode
@@ -63,16 +66,22 @@ MACRO_BACKOUT_PRESSES = 3
 before giving up on the retry. The macros back out themselves, so this only covers a screen they
 could not close."""
 
-GOAL_BUDGET_S = 180.0
-"""How long one goal may hold the loop before Jev is asked again. Some goals never complete on
-their own -- `train_nearby` is done only when something else interrupts it -- so without a budget
-the first absorbing goal picked would be the last decision Jev ever made."""
-GOAL_RETRIES = 3
-"""How many times a goal may fail -- a stuck navigator, a macro that does not work -- before it
-is dropped for the rest of the run. One failure is often a wandering NPC or a mistimed script."""
+OPTION_BUDGET_S = 90.0
+"""How long one option's macro may hold the loop before Jev is asked again. Some options never
+complete on their own -- the grass is done only when a battle interrupts it -- so without a
+budget the first absorbing option picked would be the last decision Jev ever made. An option
+dropped this way is marked `tried`, which is what Jev is shown the next time it is offered.
+
+The clock restarts when the legs finish, so this governs the macro phase only: a long walk is
+bounded by the navigator's own stuck detector instead. Paced, Route 1 to the Viridian Mart takes
+151 s, and a budget spanning the walk would cancel that option on the turn it arrived -- before
+its macro ever ran, and writing a `tried` that says nothing true about the option."""
 GRASS_CANDIDATES = 40
 """How many of the nearest grass cells `wander` runs a path search to. Bounded so the search
 cannot grow with the map."""
+
+REPEATABLE_COUNTERS = frozenset(("heal", "buy_pokeballs"))
+"""NPC macros worth running again: healing and buying are not things one does once."""
 
 MAX_POKEBALLS = 5
 """How many balls one `buy_pokeballs` trip buys at most, money permitting."""
@@ -89,7 +98,8 @@ class LoopConfig:
     """Sleep so emulated time matches wall time. Off in tests."""
     goal: str = "Win every battle and explore"
     """Told to Jev with every battle question so its judgments serve the same objective. The
-    overworld has the real goal table (`executor.goals`); this is the battle's free-text one."""
+    overworld has the milestones (`executor.goals`); this is the battle's free-text fallback,
+    used until one is active."""
     backoff_max: float = 30.0
     """Cap, in seconds, on the doubling sleep after a BrainUnavailable."""
 
@@ -120,29 +130,38 @@ class Loop:
         config: LoopConfig | None = None,
         brain=None,
         run_dir: RunDir | None = None,
+        memory: Memory | None = None,
     ) -> None:
         self.emu = emu
         self.broadcaster = broadcaster
         self.config = config or LoopConfig()
         self.brain = brain
         self.run_dir = run_dir
+        self.memory = memory if memory is not None else Memory.empty()
+        """What this run has already done, in the words Jev is shown (`executor.options`). A
+        `--resume` hands the memory the run dir kept; a fresh run starts empty."""
         self._logged_before = run_dir.count() if run_dir is not None else 0
         self.decisions: list[Decision] = []
         self.navigator = Navigator()
-        self.goal: Goal | None = None
-        self.goal_started_at: float = 0.0
+        self.milestone: Goal | None = None
+        """The milestone the run is working towards, refreshed every overworld turn. None once
+        the last one is done, which is what finishes the run."""
+        self.option: Option | None = None
+        """The option Jev picked and the loop is carrying out, or None between decisions."""
+        self.option_started_at: float = 0.0
+        self.finished = False
+        """The last milestone is done. `run()` returns on the turn this is set."""
         self.clock = monotonic
-        """Wall clock for the goal budget. A test swaps it for one it controls."""
-        self._goal_failures: dict[str, int] = {}
-        """How many times each goal has failed. At GOAL_RETRIES it is out for the rest of the run."""
-        self._announced_dead_end = False
-        """Whether the "all goals blocked" pause has already been published for this dead end."""
-        self._goal_map: int | None = None
-        """The map the active goal's legs were planned on (or arrived at). A different map with
-        the navigator idle means the game moved us -- the starter cutscene walks the player into
-        Oak's lab -- so the legs are planned again from where we actually are."""
+        """Wall clock for the option budget. A test swaps it for one it controls."""
+        self._announced_no_options = False
+        """Whether the "nothing to do here" pause has already been published for this map."""
+        self._option_map: int | None = None
+        """The map the option was generated on: where `tried` and `talked already` are keyed,
+        even when the option's own legs have since carried us onto another map."""
+        self._seen_map: int | None = None
+        """The map the last overworld turn ran on, so a change is noticed exactly once."""
         self._arrived = False
-        """The legs are finished: the next overworld turn runs the goal's `after` macro."""
+        """The legs are finished: the next overworld turn runs the option's `after` macro."""
         self._wander_up = True
         self._backoff = min(1.0, self.config.backoff_max)
         self._hold: tuple[Mode, str] | None = None
@@ -158,11 +177,6 @@ class Loop:
         """Set after a macro fails twice and the safe default fails too: (mode, decision id) to
         wait out until the screen changes, so the loop stops asking the brain about a decision
         it cannot carry out."""
-
-    @property
-    def blocked_goals(self) -> set[str]:
-        """The goals that have used up their retries and are no longer offered to Jev."""
-        return {goal_id for goal_id, n in self._goal_failures.items() if n >= GOAL_RETRIES}
 
     @property
     def decision_count(self) -> int:
@@ -252,7 +266,7 @@ class Loop:
     async def _battle_turn(self, state: GameState) -> int:
         if self._hold is not None and state.mode == self._hold[0]:
             return self.emu.tick(self.config.idle_frames)
-        sj = battle_state(state, goal=goal_table.battle_goal(self.goal, fallback=self.config.goal))
+        sj = battle_state(state, goal=goal_table.battle_goal(self.milestone, fallback=self.config.goal))
         questions = battle_questions(sj)
         decision = await self._decide("battle", sj, questions, partial(decide_battle, supported=ALL_ACTIONS))
         if decision is None:
@@ -356,162 +370,212 @@ class Loop:
     # -- the overworld ------------------------------------------------------------------
 
     async def _overworld_turn(self, state: GameState) -> int:
-        """One goal at a time: finish it, walk it, pick one, re-plan it, or run its macro."""
-        if self.goal is not None and self.goal.done(state):
-            return await self._finish_goal()
-        if self.goal is not None and self.clock() - self.goal_started_at > GOAL_BUDGET_S:
-            return await self._goal_budget_spent()
+        """One option at a time: walk it, finish it, drop it, or ask Jev for the next one.
+
+        The milestone is refreshed first, because it is what ends the run and what the option
+        list is generated against. Then, in order: the navigator walks a plan that is still
+        running; an option whose budget is gone is dropped and marked `tried`; an option that
+        has arrived runs its `after` macro; and with no option at all, code generates what this
+        map affords and Jev picks one.
+
+        The budget is checked before the macro rather than after it (the brief's order) because
+        `wander` keeps the option "arrived" turn after turn on purpose: checked the other way
+        round, a grass option would never give the decision back.
+        """
+        if self._note_map(state.map_id):
+            self._save_memory()
+        ended = await self._refresh_milestone(state)
+        if ended is not None:
+            return ended
         if self.navigator.busy:
             return await self._walk(state)
-        if self.goal is None:
-            return await self._pick_goal(state)
-        if self._arrived and state.map_id == self._goal_map:
-            return await self._run_macro()
-        return await self._plan(state)
+        if self.option is not None:
+            if self.clock() - self.option_started_at > OPTION_BUDGET_S:
+                return await self._option_budget_spent()
+            if self._arrived:
+                return await self._run_macro(state)
+            # The plan ended without arriving (a leg gave up quietly). Nothing is charged
+            # against the option; the next turn generates the list again from where we stand.
+            self._clear_option()
+        return await self._choose_option(state)
 
-    async def _pick_goal(self, state: GameState) -> int:
-        blocked = self.blocked_goals
-        options = [g for g in goal_table.available_goals(state) if g.id not in blocked]
-        if not options:
-            if not self._announced_dead_end:
-                self._announced_dead_end = True
-                message = (
-                    f"all goals blocked: {', '.join(sorted(blocked))}"
-                    if blocked
-                    else "no goal is available right now"
-                )
-                await self.broadcaster.publish(status_event("paused", message))
+    def _note_map(self, map_id: int) -> bool:
+        """Remember the map we are standing on, once per arrival. True when that was new to this
+        turn, so the caller knows the memory is worth writing out."""
+        if map_id == self._seen_map:
+            return False
+        self._seen_map = map_id
+        known = map_id in self.memory.visited_maps
+        self.memory.note_map(map_id)
+        return not known
+
+    async def _refresh_milestone(self, state: GameState) -> int | None:
+        """The milestone for this turn. Returns the frames to spend when the run is over, and
+        None when there is still a milestone to work towards."""
+        previous = self.milestone
+        self.milestone = goal_table.active_milestone(state)
+        if previous is not None and (self.milestone is None or self.milestone.id != previous.id):
+            await self.broadcaster.publish(status_event("running", f"milestone done: {previous.id}"))
+        if self.milestone is None:
+            if not self.finished:
+                self.finished = True
+                await self.broadcaster.publish(status_event("finished", "Boulder Badge"))
             return self.emu.tick(self.config.idle_frames)
-        self._announced_dead_end = False
-        sj = goal_state(state, options)
-        questions = goal_questions(sj)
-        ids = [g.id for g in options]
+        return None
+
+    async def _choose_option(self, state: GameState) -> int:
+        """Generate what this map affords, ask Jev which one to do, and start it."""
+        options = generate(self.emu, state, self.memory, self.milestone)
+        if not options:
+            if not self._announced_no_options:
+                self._announced_no_options = True
+                await self.broadcaster.publish(status_event("paused", "nothing to do from here"))
+            return self.emu.tick(self.config.idle_frames)
+        self._announced_no_options = False
+        sj = explore_state(state, options, self.milestone)
+        questions = explore_questions(sj)
+        offline = self._offline_option(options)
         decision = await self._decide(
-            "goal",
+            "explore",
             sj,
             questions,
-            partial(decide_goal, available_ids=ids),
-            offline=(GoalAction(goal_id=ids[0]), "no brain: the first available goal"),
+            partial(decide_explore, options=options),
+            offline=(
+                ExploreAction(option_id=offline.id, kind=offline.kind, text=offline.text),
+                f"no brain: {offline.text}",
+            ),
         )
         if decision is None:
             return 0
-        self.goal = goal_table.goal_by_id(decision.action_value.goal_id)
-        self.goal_started_at = self.clock()
-        await self.broadcaster.publish(status_event("running", f"goal: {self.goal.id}"))
-        return await self._plan(state)
+        chosen = next(
+            (o for o in options if o.id == decision.action_value.option_id),
+            options[0],
+        )
+        return await self._start_option(chosen, state)
 
-    async def _plan(self, state: GameState) -> int:
-        """Build the active goal's legs from where we are standing now. No legs means we are
-        already there, so the macro runs this turn -- unless the map is not in the map graph at
-        all (a house, the Viridian Gym), in which case there is no route from here and the only
-        move that helps is walking back out of the door we came in by."""
-        self._goal_map, self._arrived = state.map_id, False
-        legs = self.goal.legs(state)
-        if not legs:
-            if node_of(state.map_id, *state.tile).startswith("map_"):
-                legs = [Leg(kind="warp", dest_map=ram.WARP_LAST_MAP, label="back outside")]
-                self.navigator.plan(self.emu, state, legs)
-                await self.broadcaster.publish(status_event("running", self.navigator.describe()))
-                return self.emu.tick(self.config.idle_frames)
-            self._arrived = True
-            return await self._run_macro()
-        self.navigator.plan(self.emu, state, legs)
-        await self.broadcaster.publish(status_event("running", self.navigator.describe()))
+    @staticmethod
+    def _offline_option(options: list[Option]) -> Option:
+        """What a brainless run does: the first option this map has not been tried on, with the
+        milestone first when it is offered, so an offline run still walks the story."""
+        fresh = [o for o in options if o.memory != "tried"] or options
+        return next((o for o in fresh if o.kind == "milestone"), fresh[0])
+
+    async def _start_option(self, option: Option, state: GameState) -> int:
+        """Take the option on: plan its legs, or count it arrived when it has none (the grass
+        is `wander` from where we stand, so there is nowhere to walk to first)."""
+        self.option = option
+        self.option_started_at = self.clock()
+        self._option_map = state.map_id
+        self._arrived = not option.legs
+        await self.broadcaster.publish(status_event("running", f"option: {option.text}"))
+        if option.legs:
+            self.navigator.plan(self.emu, state, list(option.legs))
+            await self.broadcaster.publish(status_event("running", self.navigator.describe()))
         return self.emu.tick(self.config.idle_frames)
 
     async def _walk(self, state: GameState) -> int:
         result = self.navigator.step(self.emu, state)
         if result == "stuck":
-            return await self._block_goal("the navigator gave up")
+            return await self._option_tried("the navigator gave up")
         if result == "lost":
             # The map changed under the plan (a blackout, a scripted teleport). The route is for
-            # a map we are not on any more, but the goal itself is untouched, so no retry.
-            self.navigator.clear()
+            # a map we are not on any more, and so is the option list it came from: drop both and
+            # let the next turn generate fresh options from wherever we actually are.
+            self._clear_option()
             await self.broadcaster.publish(status_event("running", "re-planning after a map change"))
-            fresh = snapshot(self.emu)
-            if fresh.mode is not Mode.OVERWORLD:
-                return NAV_STEP_FRAMES  # mid-teleport; the next overworld turn re-plans
-            return await self._plan(fresh)
+            return NAV_STEP_FRAMES
         if result == "leg_done":
             await self.broadcaster.publish(status_event("running", self.navigator.describe()))
         elif result == "done":
             # The macro waits for the next turn: a warp can land us mid-cutscene, and the turn
-            # after this one re-reads the mode (and the goal's `done`) before pressing anything.
+            # after this one re-reads the mode before pressing anything. The budget starts here,
+            # not where the legs did: see OPTION_BUDGET_S.
             self._arrived = True
-            self._goal_map = self.emu.mem[ram.wCurMap]
-            await self.broadcaster.publish(status_event("running", f"arrived: {self.goal.id}"))
+            self.option_started_at = self.clock()
+            await self.broadcaster.publish(status_event("running", f"arrived: {self.option.text}"))
         return NAV_STEP_FRAMES
 
-    async def _goal_budget_spent(self) -> int:
-        """The goal has had its turn. It is not a failure -- nothing went wrong and no retry is
-        charged -- so it stays on offer; the next iteration simply asks Jev again, which is how
-        a goal that never completes on its own gives the decision back."""
-        spent = self.goal.id
-        self._clear_goal()
-        await self.broadcaster.publish(status_event("running", f"goal budget spent: {spent}"))
-        return self.emu.tick(self.config.idle_frames)
+    async def _option_budget_spent(self) -> int:
+        """The option has had its turn. It is marked `tried` -- nothing came of it in the time it
+        was given -- and Jev is asked again, which is how an option that never completes on its
+        own (the grass) gives the decision back."""
+        return await self._option_tried("its budget ran out", why_in_message=False)
 
-    async def _finish_goal(self) -> int:
-        finished = self.goal.id
-        self._clear_goal()
-        await self.broadcaster.publish(status_event("running", f"goal done: {finished}"))
-        return self.emu.tick(self.config.idle_frames)
+    async def _option_tried(self, why: str, *, why_in_message: bool = True) -> int:
+        """Mark the option `tried` for this map and let go of it. There is no retry counter: the
+        memory word is the record, and Jev sees it in the option list next time.
 
-    async def _block_goal(self, why: str) -> int:
-        """A goal that did not work. It gets GOAL_RETRIES tries before it is dropped, because one
-        failure is usually an NPC in a doorway rather than a goal that cannot be done at all."""
-        goal_id = self.goal.id
-        failures = self._goal_failures.get(goal_id, 0) + 1
-        self._goal_failures[goal_id] = failures
-        self._clear_goal()
-        if failures >= GOAL_RETRIES:
-            message = f"goal blocked: {goal_id} ({why})"
-        else:
-            message = f"goal failed {failures}/{GOAL_RETRIES}: {goal_id} ({why})"
+        Only an option that changed nothing is marked (spec section 3). An option whose legs
+        carried the run onto another map before whatever went wrong changed something: marking
+        it against the map it was generated on would tell Jev that leaving Pallet Town, or
+        working on the milestone from there, led nowhere -- when what it actually did was arrive
+        somewhere and then fail there. The failure is still published either way."""
+        option = self.option
+        if self.emu.mem[ram.wCurMap] == self._option_map:
+            self.memory.note_tried(self._option_map, option.id)
+            self._save_memory()
+        self._clear_option()
+        message = f"tried: {option.text}" + (f" ({why})" if why_in_message else f"; {why}")
         await self.broadcaster.publish(status_event("running", message))
         return self.emu.tick(self.config.idle_frames)
 
-    def _clear_goal(self) -> None:
-        self.goal = None
-        self.goal_started_at = 0.0
+    def _clear_option(self) -> None:
+        self.option = None
+        self.option_started_at = 0.0
         self.navigator.clear()
-        self._goal_map, self._arrived = None, False
+        self._option_map, self._arrived = None, False
 
-    async def _run_macro(self) -> int:
-        """Run the scripted tail of the goal -- talking, choosing, healing, buying, wandering.
-        A macro that fails blocks the goal, the same as a navigator that gives up. One that
-        works clears `_arrived`, so the next turn plans the goal's legs again: for `wander`
-        that is another step in the grass, and for a goal whose next phase starts somewhere
-        else (the parcel, once the clerk has handed it over) it is the route there."""
-        macro = self.goal.after
+    def _save_memory(self) -> None:
+        if self.run_dir is not None:
+            self.run_dir.save_memory(self.memory.to_dict())
+
+    async def _run_macro(self, state: GameState) -> int:
+        """Run the scripted tail of the option -- talking, healing, buying, wandering. A macro
+        that fails marks the option `tried`, the same as a navigator that gives up. One that
+        works finishes the option, except `wander`: the grass is one step per turn, so it keeps
+        the option until a battle interrupts it or its budget runs out."""
+        option = self.option
+        macro = option.after
         if macro is None:
-            return await self._block_goal("arrived, but the goal has no macro to finish it")
-        await self.broadcaster.publish(status_event("running", f"{self.goal.id}: {macro}"))
+            # An exit or a door: arriving is the whole of it.
+            await self.broadcaster.publish(status_event("running", f"done: {option.text}"))
+            self._clear_option()
+            return self.emu.tick(self.config.idle_frames)
+        await self.broadcaster.publish(status_event("running", f"{option.id}: {macro}"))
         try:
             worked = self._apply_macro(macro, snapshot(self.emu))
         except Exception as error:  # a macro is a script over a live game: never kill the run
-            return await self._block_goal(f"{macro} raised {type(error).__name__}: {error}")
+            return await self._option_tried(f"{macro} raised {type(error).__name__}: {error}")
         if not worked:
-            return await self._block_goal(f"{macro} did not work")
-        self._arrived = False
+            return await self._option_tried(f"{macro} did not work")
+        if option.kind == "npc" and macro not in REPEATABLE_COUNTERS:
+            # A nurse and a shop clerk are worth going back to; "talked already" would read as a
+            # reason not to. Only an NPC with something to say once is remembered as talked to.
+            self.memory.note_talked(self._option_map, int(option.id.split("_", 1)[1]))
+            self._save_memory()
+        if macro == "wander":
+            return MACRO_FRAMES  # still in the grass; the option runs again next turn
+        await self.broadcaster.publish(status_event("running", f"done: {option.text}"))
+        self._clear_option()
         return MACRO_FRAMES
 
     def _apply_macro(self, macro: str, state: GameState) -> bool:
+        """Carry out one option's `after` macro. `talk_<slot>` is the generated NPC one, which
+        reads the option itself for the tile to talk from and the way to face; the rest are
+        scripted counters and cutscenes that know where they are going."""
         emu = self.emu
         if macro == "talk_oak":
             if state.map_id == VIRIDIAN_MART:
-                # `deliver_parcel` runs this macro twice: once at the Mart, where the clerk hands
-                # the parcel over, and once in the lab, where Oak takes it. (5, 3) is Oak's tile;
-                # in the Mart it is behind the counter, so the walk there fails outright.
+                # The `get_pokedex` milestone runs this macro twice: once at the Mart, where the
+                # clerk hands the parcel over, and once in the lab, where Oak takes it. (5, 3) is
+                # Oak's tile; in the Mart it is behind the counter, so the walk fails outright.
                 if "got_oaks_parcel" in state.flags:
                     # Walking in already fired the clerk's trigger. Pressing A at him now would
                     # only open BUY/SELL/QUIT, so leave the Mart alone: the next plan routes to
-                    # the lab, because the goal's legs read the same flag.
+                    # the lab, because the milestone's legs read the same flag.
                     return True
                 return talk_to(emu, *shop.CLERK_TILE, shop.CLERK_FACE)
             return talk_to(emu, 5, 3, "up")
-        if macro == "talk_old_man":
-            return talk_to(emu, 18, 10, "up", answer=lambda text: True)
         if macro == "talk_brock":
             return talk_to(emu, 4, 2, "up")
         if macro == "heal":
@@ -520,15 +584,16 @@ class Loop:
             before = goal_table.balls(state)
             count = min(MAX_POKEBALLS, state.money // POKEBALL_PRICE)
             return shop.buy_pokeballs(emu, count) > before
-        if macro == "buy_potions":
-            before = goal_table.potions(state)
-            want = goal_table.POTIONS_WANTED - before
-            return shop.buy_potions(self.emu, want) > before
         if macro == "choose_charmander":
             return self._choose_charmander()
         if macro == "wander":
             return self._wander(state)
-        raise ValueError(f"unknown goal macro {macro!r}")
+        if macro.startswith("talk_") and macro[len("talk_") :].isdigit():
+            # An NPC option: the walk leg has already put us on the tile the option was planned
+            # from, and `talk_to` faces the sprite itself once its own walk is done, so there is
+            # nothing to do here but hand it the tile and the facing the option carries.
+            return talk_to(emu, *self.option.target, self.option.face)
+        raise ValueError(f"unknown option macro {macro!r}")
 
     def _choose_charmander(self) -> bool:
         """The ball on Oak's table is not a sprite, so this is a walk-face-A, not a `talk_to`.
@@ -604,7 +669,7 @@ class Loop:
     # -- prompts and menus --------------------------------------------------------------
 
     def _goal_description(self) -> str:
-        return self.goal.description if self.goal is not None else self.config.goal
+        return self.milestone.description if self.milestone is not None else self.config.goal
 
     async def _prompt_turn(self, state: GameState) -> int:
         sj = prompt_state(state, self._goal_description())
@@ -691,6 +756,7 @@ class Loop:
         return counter() if counter is not None else None
 
     async def run(self, max_iterations: int | None = None) -> None:
+        """Play until `max_iterations` turns have passed or the last milestone is done (`finished`)."""
         started = monotonic()
         emulated = 0
         # What `advance` returns is an estimate -- `_walk` reports NAV_STEP_FRAMES whatever the
@@ -716,6 +782,8 @@ class Loop:
                 await self.broadcaster.publish(frame_event(self.emu.frame_jpeg()))
                 last_frame_at = now
             spent = await self.advance(state)
+            if self.finished:
+                return
             counted = self._frame_count()
             if counted is not None and first_count is not None:
                 self.game_frames = counted - first_count

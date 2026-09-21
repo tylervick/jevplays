@@ -12,8 +12,7 @@ Jev sees changes; commit the result. One fixture per decision point:
     battle_catch    a wild battle with balls in the bag and the enemy nearly down
     battle_heal     the same battle with the lead hurt and Potions in the bag
     battle_switch   a wild battle with a hurt lead and a second Pokémon on the bench
-    goal_route1     which goal to pursue, standing on Route 1 with the parcel undelivered
-    goal_hurt       the same, with the lead below half HP so healing is on the table
+    explore_viridian  which generated option to pick, standing near the old man in Viridian City
     prompt_starter  the "Do you want CHARMANDER?" YES/NO box
     menu_start      the START menu in Red's bedroom
 
@@ -23,6 +22,7 @@ never an API key, and never anything the state summaries do not already carry.
 
 import argparse
 import asyncio
+import inspect
 import json
 import os
 import sys
@@ -31,21 +31,24 @@ from pathlib import Path
 
 from jevplays.brain.battle import battle_questions, battle_state
 from jevplays.brain.client import Brain
-from jevplays.brain.goal import goal_questions, goal_state
+from jevplays.brain.explore import explore_questions, explore_state
 from jevplays.brain.prompt import menu_questions, menu_state, prompt_questions, prompt_state
 from jevplays.emulator import ram
 from jevplays.emulator.pyboy import Emulator
-from jevplays.executor.goals import available_goals, battle_goal, goal_by_id
+from jevplays.executor.goals import MILESTONES, active_milestone, battle_goal
+from jevplays.executor.options import Memory, generate
 from jevplays.state.snapshot import GameState, snapshot
 
 OUT = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "responses"
-GOAL = battle_goal(goal_by_id("train_nearby"), fallback="Win every battle and explore")
-"""The objective recorded with the battle fixtures. Composed the way the loop composes it (an
-active goal plus the standing clause) rather than written out here, so a change to either one
-shows up in the fixtures instead of drifting away from what a run actually sends."""
+GOAL = battle_goal(MILESTONES[1], fallback="Win every battle and explore")
+"""The objective recorded with the battle fixtures: the loop's own fallback, composed the way
+the loop composes it, so a change to either one shows up in the fixtures instead of drifting
+away from what a run actually sends. MILESTONES[1] (get_pokedex) because a real run almost
+always has a milestone by the time it reaches a battle; the fallback stays here for the gap
+before the loop has ever stood in the overworld."""
 
 HURT_HP = 3
-"""What the lead's HP is set to for `goal_hurt`. No saved state has a lead below half health --
+"""What the lead's HP is set to for the hurt fixtures. No state has a lead below half health --
 the walk that makes them heals or ends before it gets that far -- so the one decision point that
 only exists when the party is hurt is built by writing the HP into the party record directly.
 That is the same memory `snapshot` reads, so what Jev sees is a state the game could be in."""
@@ -87,22 +90,27 @@ def battle_ask(state: GameState) -> tuple[dict, dict]:
     return sj, battle_questions(sj)
 
 
-def goal_ask(state: GameState) -> tuple[dict, dict]:
-    sj = goal_state(state, available_goals(state))
-    return sj, goal_questions(sj)
+def explore_ask(emu, state: GameState) -> tuple[dict, dict]:
+    milestone = active_milestone(state)
+    options = generate(emu, state, Memory.empty(), milestone)
+    sj = explore_state(state, options, milestone)
+    return sj, explore_questions(sj)
 
 
 def starter_prompt_ask(state: GameState) -> tuple[dict, dict]:
-    sj = prompt_state(state, goal_by_id("get_starter").description)
+    sj = prompt_state(state, MILESTONES[0].description)
     return sj, prompt_questions(sj)
 
 
 def start_menu_ask(state: GameState) -> tuple[dict, dict]:
-    sj = menu_state(state, goal_by_id("get_starter").description)
+    sj = menu_state(state, MILESTONES[0].description)
     return sj, menu_questions(sj)
 
 
-Ask = Callable[[GameState], tuple[dict, dict]]
+Ask = Callable[..., tuple[dict, dict]]
+"""`ask(state)` for most decision points; `ask(emu, state)` for one that needs live RAM
+(`explore_ask`, which calls `executor.options.generate`) -- `record` tells them apart by how
+many parameters `ask` takes."""
 Tweak = Callable[[Emulator], None] | None
 
 FIXTURES: dict[str, tuple[str, Ask, Tweak]] = {
@@ -111,8 +119,7 @@ FIXTURES: dict[str, tuple[str, Ask, Tweak]] = {
     "battle_catch": ("battle_items", battle_ask, weaken_the_enemy),
     "battle_heal": ("battle_items", battle_ask, hurt_the_active),
     "battle_switch": ("battle_two", battle_ask, hurt_the_active),
-    "goal_route1": ("route1", goal_ask, None),
-    "goal_hurt": ("route1", goal_ask, hurt_the_lead),
+    "explore_viridian": ("viridian_oldman", explore_ask, None),
     "prompt_starter": ("prompt_starter", starter_prompt_ask, None),
     "menu_start": ("menu", start_menu_ask, None),
 }
@@ -140,7 +147,8 @@ async def record(rom: Path, states: Path, names: list[str]) -> None:
                 if tweak is not None:
                     tweak(emu)
                 state = snapshot(emu)
-            sj, qs = ask(state)
+                needs_emu = len(inspect.signature(ask).parameters) == 2
+                sj, qs = ask(emu, state) if needs_emu else ask(state)
             response, ms = await brain.ask(sj, qs)
             OUT.mkdir(parents=True, exist_ok=True)
             (OUT / f"{name}.json").write_text(
