@@ -221,7 +221,7 @@ State sent (only what the questions need):
   "bench": [{"name": "PIDGEY", "level": 4, "types": ["Normal", "Flying"], "hp": "full", "label": "PIDGEY"}],
   "party": "two",
   "bag": {"poke_balls": true, "potions": true},
-  "goal": "Reach Viridian City"
+  "goal": "Train on Route 2 until CHARMANDER reaches level 12. Build a party of three and keep them healthy."
 }
 ```
 
@@ -232,6 +232,12 @@ slot has the same nickname, so two same-species Pokémon never share a label. Th
 handle Jev gets on a bench member -- `brain/battle.py`'s `bench_slots(state)` is the sole place a
 label's party index lives; `state_json` never carries one, matching the "no raw numbers besides
 levels" rule.
+
+`goal` is the overworld goal Jev picked, plus the standing clause in `executor/goals.py`
+(`battle_goal`). It moves with the goal rather than being fixed for the run: `catch`'s criteria
+already speak of wanting a party of three, and against a goal string that said nothing about a
+party they read as a distraction from it. `--battle-goal` is the fallback before any goal is
+active.
 
 Questions, all in one request, each included only when it can apply:
 
@@ -316,6 +322,14 @@ look like ones. Both are mechanical -- a HEAL confirmation, a BUY quantity box -
 layers a scripted counter on top for each one, pressing every button of the HEAL or BUY sequence
 itself. Jev's only say is whether to go there at all, as the `heal_at_center` and `buy_pokeballs`
 goals in the goal table (8.2); once the legs get there, code runs the whole counter.
+
+The BUY sequence takes the item's shelf label, so one counter serves both purchases:
+`buy_pokeballs` at the Viridian Mart and `buy_potions` at the Pewter one. Potions are a Pewter
+errand because the Viridian shelf has none -- read off the ROM, it stocks Poké Ball, Antidote,
+Parlyz Heal and Burn Heal -- and Pewter is the last counter before Brock, the first fight where a
+Potion decides anything. What Pewter stocks is not verified here, so a shelf without the item is
+an ordinary outcome: the scan runs out, the counter backs out to the overworld, the bag count
+does not move, and the goal blocks itself rather than a guessed inventory being written down.
 
 ### 8.4 Decision record
 

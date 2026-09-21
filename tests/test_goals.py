@@ -1,4 +1,10 @@
-from jevplays.executor.goals import GOALS, available_goals, goal_by_id, legs_to  # noqa: F401
+from jevplays.executor.goals import (  # noqa: F401
+    GOALS,
+    available_goals,
+    battle_goal,
+    goal_by_id,
+    legs_to,
+)
 from jevplays.executor.maps import OAKS_LAB, PALLET_TOWN, ROUTE_1, VIRIDIAN_CITY
 from jevplays.state.snapshot import BagItem, Mon, Sprite
 from tests.support import OVERWORLD_LEAD as CHAR
@@ -72,3 +78,40 @@ def test_the_old_man_is_only_done_while_standing_in_viridian_city():
     """His sprite is simply not loaded anywhere else, which would otherwise read as "done"."""
     away = state(map_id=ROUTE_1, flags={"oak_got_parcel"}, sprites=())
     assert not goal_by_id("wake_old_man").done(away)
+
+
+def test_battle_goal_is_the_active_goal_plus_the_standing_clause():
+    """What Jev is told a battle is for. The overworld goal it picked changes under it, so the
+    battle question follows that goal rather than a string fixed for the whole run."""
+    goal = goal_by_id("train_to_level_12")
+    assert battle_goal(goal, fallback="Win every battle and explore") == (
+        "Train on Route 2 until CHARMANDER reaches level 12. Build a party of three and keep them healthy."
+    )
+
+
+def test_battle_goal_falls_back_to_the_flag_when_no_goal_is_active():
+    assert battle_goal(None, fallback="Win every battle and explore") == "Win every battle and explore"
+
+
+def test_potions_are_bought_in_pewter_and_only_there():
+    """The Viridian Mart's stock, read off the ROM, is Poké Balls, Antidote, Parlyz Heal and Burn
+    Heal -- no Potion (#27). Pewter is where the goal goes, and it is not offered from the far
+    side of the forest: nobody should walk back for it."""
+    from jevplays.executor.maps import PEWTER_CITY, ROUTE_1
+
+    in_pewter = state(map_id=PEWTER_CITY, x=16, y=17, flags={"got_starter", "got_pokedex"}, money=3000)
+    assert "buy_potions" in [g.id for g in available_goals(in_pewter)]
+    on_route_1 = state(map_id=ROUTE_1, flags={"got_starter", "got_pokedex"}, money=3000)
+    assert "buy_potions" not in [g.id for g in available_goals(on_route_1)]
+
+
+def test_the_potion_goal_is_done_once_the_bag_has_them_or_the_money_is_gone():
+    from jevplays.executor.maps import PEWTER_CITY
+
+    stocked = state(
+        map_id=PEWTER_CITY, x=16, y=17, flags={"got_starter", "got_pokedex"}, bag=(BagItem("POTION", 2),)
+    )
+    assert goal_by_id("buy_potions").done(stocked)
+    assert "buy_potions" not in [g.id for g in available_goals(stocked)]
+    broke = state(map_id=PEWTER_CITY, x=16, y=17, flags={"got_starter", "got_pokedex"}, money=100)
+    assert goal_by_id("buy_potions").done(broke)

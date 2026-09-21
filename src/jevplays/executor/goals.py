@@ -36,6 +36,12 @@ def balls(state: GameState) -> int:
     return sum(item.quantity for item in state.bag if item.name == "POKE BALL")
 
 
+def potions(state: GameState) -> int:
+    """How many Potions are in the bag. The `heal` battle action needs one, and until #27 nothing
+    ever put one there: the Viridian Mart does not stock them."""
+    return sum(item.quantity for item in state.bag if item.name == "POTION")
+
+
 def node(state: GameState) -> str:
     """The map graph node the player is standing on."""
     return maps.node_of(state.map_id, *state.tile)
@@ -54,6 +60,14 @@ def legs_to(state: GameState, dest_node: str) -> list[Leg]:
             legs.append(Leg(kind="warp", dest_map=link.dest_map, label=f"to {link.dest_node}"))
     return legs
 
+
+POTIONS_WANTED = 2
+"""Potions worth having before Brock. Two is one per gym Pokémon and a party of one's whole
+margin for error."""
+
+POTION_BUDGET = 600
+"""Money to keep back for the trip. Deliberately a budget and not a price: what a Potion costs is
+read off the shop screen, never assumed here (#27)."""
 
 OLD_MAN_PICTURE = 72
 """The sprite picture id of the old man asleep across the road north out of Viridian City."""
@@ -87,6 +101,10 @@ def _wake_old_man_legs(state: GameState) -> list[Leg]:
 
 def _buy_pokeballs_legs(state: GameState) -> list[Leg]:
     return legs_to(state, "viridian_mart")
+
+
+def _buy_potions_legs(state: GameState) -> list[Leg]:
+    return legs_to(state, "pewter_mart")
 
 
 def _train_to_level_12_legs(state: GameState) -> list[Leg]:
@@ -174,6 +192,23 @@ GOALS: list[Goal] = [
         after="buy_pokeballs",
     ),
     Goal(
+        id="buy_potions",
+        # Pewter only: the Viridian Mart sells no Potions, and this is the last counter before
+        # Brock, which is the first fight where one decides anything. Availability is pinned to
+        # standing in Pewter so a run never walks back through the forest for a Potion.
+        description="Buy Potions at the Pewter Mart",
+        available=lambda s: (
+            "got_pokedex" in s.flags
+            and node(s) in PEWTER_NODES
+            and s.money >= POTION_BUDGET
+            and potions(s) < POTIONS_WANTED
+            and "beat_brock" not in s.flags
+        ),
+        done=lambda s: potions(s) >= POTIONS_WANTED or s.money < POTION_BUDGET,
+        legs=_buy_potions_legs,
+        after="buy_potions",
+    ),
+    Goal(
         id="train_to_level_12",
         description="Train on Route 2 until CHARMANDER reaches level 12",
         available=lambda s: "got_pokedex" in s.flags and lead(s) is not None and lead(s).level < 12,
@@ -224,6 +259,20 @@ GOALS: list[Goal] = [
         after="wander",
     ),
 ]
+
+STANDING_CLAUSE = "Build a party of three and keep them healthy."
+"""Appended to the active goal when a battle question asks what the fight is for. The goal table
+says where we are going; this says what we are keeping true along the way, which is what makes
+catching and healing read as part of the plan rather than a distraction from it."""
+
+
+def battle_goal(goal: "Goal | None", *, fallback: str) -> str:
+    """The objective sent with a battle question: the goal Jev is pursuing, plus the standing
+    clause. `fallback` (the `--battle-goal` flag) covers the gap before a goal is picked."""
+    if goal is None:
+        return fallback
+    return f"{goal.description}. {STANDING_CLAUSE}"
+
 
 ALWAYS = ("heal_at_center", "train_nearby")
 

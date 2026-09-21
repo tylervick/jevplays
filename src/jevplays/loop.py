@@ -245,7 +245,7 @@ class Loop:
     async def _battle_turn(self, state: GameState) -> int:
         if self._hold is not None and state.mode == self._hold[0]:
             return self.emu.tick(self.config.idle_frames)
-        sj = battle_state(state, goal=self.config.goal)
+        sj = battle_state(state, goal=goal_table.battle_goal(self.goal, fallback=self.config.goal))
         questions = battle_questions(sj)
         decision = await self._decide("battle", sj, questions, partial(decide_battle, supported=ALL_ACTIONS))
         if decision is None:
@@ -513,6 +513,10 @@ class Loop:
             before = goal_table.balls(state)
             count = min(MAX_POKEBALLS, state.money // POKEBALL_PRICE)
             return shop.buy_pokeballs(emu, count) > before
+        if macro == "buy_potions":
+            before = goal_table.potions(state)
+            want = goal_table.POTIONS_WANTED - before
+            return shop.buy_potions(self.emu, want) > before
         if macro == "choose_charmander":
             return self._choose_charmander()
         if macro == "wander":

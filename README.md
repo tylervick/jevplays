@@ -13,7 +13,8 @@ catch a wild Pokémon, and switch in a bench member, not just attack or run. In 
 Jev picks a goal from the table in `executor/goals.py` (through Brock's badge), code walks
 there using a walkability grid read live from the map in RAM rather than a hand-written route,
 and the Pokémon Center nurse and the Mart clerk are scripted counters that Jev only decides
-whether to visit, never what to press once there. Prompts and menus along the way are Jev's to
+whether to visit, never what to press once there -- Poké Balls at the Viridian Mart, Potions at
+the Pewter one. Prompts and menus along the way are Jev's to
 answer. Every run writes its decisions and periodic checkpoints to `runs/`, `--resume`
 continues one, and `jevplays replay` plays a logged run back through the dashboard for demos.
 
@@ -77,8 +78,10 @@ The quickest way to watch a run: `mise exec -- uv run jevplays run --state state
 loads from `mise.local.toml`). Add `--no-brain` to skip calling TypeSafe: battle decisions idle
 (no move is chosen) since there is no policy to run without answers, while the overworld, prompts,
 and menus still make progress using code's own fallbacks (the first available goal, YES, closing
-the menu). `--battle-goal` (aliased as the older `--goal`) overrides the free-text objective sent
-with battle questions; the overworld's real goal, picked from `executor/goals.py`, is Jev's alone.
+the menu). The objective sent with a battle question is the overworld goal Jev is pursuing plus a
+standing clause ("Build a party of three and keep them healthy"), so what a fight is for changes
+as the goal does; `--battle-goal` (aliased as the older `--goal`) is the fallback used before a
+goal has been picked, not an override.
 
 Recording API fixtures: TypeSafe responses used by the unit tests are recorded, not called live
 in CI. After changing a question's wording or the state fields Jev sees, re-record them with

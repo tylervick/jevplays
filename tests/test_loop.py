@@ -881,3 +881,57 @@ def test_without_a_run_dir_nothing_is_written_but_the_loop_still_runs(tmp_path):
     loop.run_dir = None
     run(loop, 2)
     assert loop.decisions
+
+
+def test_the_battle_question_carries_the_goal_jev_is_actually_pursuing():
+    emu = battle_emu()
+    loop = Loop(
+        emu,
+        RecordingBroadcaster(),
+        LoopConfig(paced=False, goal="Win every battle and explore"),
+        brain=QuestionBrain(move={"SCRATCH": 1.0}),
+    )
+    loop.goal = goal_by_id("train_to_level_12")
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.decisions[0].state_summary["goal"] == (
+        "Train on Route 2 until CHARMANDER reaches level 12. Build a party of three and keep them healthy."
+    )
+
+
+def test_with_no_goal_picked_the_battle_question_carries_the_flag():
+    emu = battle_emu()
+    loop = Loop(
+        emu,
+        RecordingBroadcaster(),
+        LoopConfig(paced=False, goal="Win every battle and explore"),
+        brain=QuestionBrain(move={"SCRATCH": 1.0}),
+    )
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert loop.decisions[0].state_summary["goal"] == "Win every battle and explore"
+
+
+def test_the_potion_macro_buys_what_the_bag_still_wants(monkeypatch):
+    from jevplays.executor import shop as shop_module
+
+    asked = []
+
+    def fake_buy(emu, count):
+        asked.append(count)
+        return count
+
+    monkeypatch.setattr(shop_module, "buy_potions", fake_buy)
+    loop = Loop(FakeEmulator(), RecordingBroadcaster(), LoopConfig(paced=False))
+    state = overworld_state(map_id=maps.PEWTER_CITY, x=16, y=17, money=3000)
+    assert loop._apply_macro("buy_potions", state) is True
+    assert asked == [2]
+
+
+def test_the_potion_macro_reports_failure_when_the_shop_sold_none(monkeypatch):
+    """Pewter's stock is unverified: if there are no Potions on the shelf the macro backs out and
+    the count does not move, and the goal must hear about that rather than count itself done."""
+    from jevplays.executor import shop as shop_module
+
+    monkeypatch.setattr(shop_module, "buy_potions", lambda emu, count: 0)
+    loop = Loop(FakeEmulator(), RecordingBroadcaster(), LoopConfig(paced=False))
+    state = overworld_state(map_id=maps.PEWTER_CITY, x=16, y=17, money=3000)
+    assert loop._apply_macro("buy_potions", state) is False
