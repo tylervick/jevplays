@@ -17,7 +17,7 @@ from jevplays.executor import maps, world
 from jevplays.executor.goals import Goal, legs_to
 from jevplays.executor.navigate import Leg
 from jevplays.executor.talk import FACING_OFFSET, adjacent_tile
-from jevplays.state.names import map_name
+from jevplays.state.names import MAP_NAMES, map_name
 from jevplays.state.snapshot import GameState, Sprite
 
 NPC_CAP = 6
@@ -123,8 +123,12 @@ def place_words(player: tuple[int, int], sprite: Sprite, picture: int) -> str:
     ns = "north" if dy < 0 else "south" if dy > 0 else ""
     ew = "east" if dx > 0 else "west" if dx < 0 else ""
     compass = f"{ns}-{ew}" if ns and ew else ns or ew
-    near = "near " if abs(dx) + abs(dy) <= NEAR_TILES else ""
+    near = "just " if abs(dx) + abs(dy) <= NEAR_TILES else ""
     return f"{near}to the {compass}"
+
+
+def _place_name(map_id: int) -> str:
+    return map_name(map_id) if map_id in MAP_NAMES else "somewhere new"
 
 
 def _exit_options(connections: dict[str, int]) -> list[Option]:
@@ -133,7 +137,7 @@ def _exit_options(connections: dict[str, int]) -> list[Option]:
         if direction not in connections:
             continue
         dest = connections[direction]
-        text = f"go {direction} to {map_name(dest)}"
+        text = f"go {direction} to {_place_name(dest)}"
         options.append(
             Option(
                 id=f"exit_{direction}",
@@ -151,7 +155,7 @@ def _exit_options(connections: dict[str, int]) -> list[Option]:
 def _door_options(warps: tuple[world.Warp, ...]) -> list[Option]:
     options = []
     for dest in sorted({w.dest for w in warps}):
-        text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {map_name(dest)}"
+        text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
         options.append(
             Option(
                 id=f"door_{dest}",
@@ -166,22 +170,60 @@ def _door_options(warps: tuple[world.Warp, ...]) -> list[Option]:
     return options
 
 
+_FACE_ORDER = ("left", "right", "up", "down")
+"""The order `_npc_target` tries facings in. Horizontal before vertical: a counter's open front
+is normally to one side, not past a wall corner underneath or above it, so on a tie (both the
+Mart's clerk and, on a different map, a similarly-cornered sprite) this is what picks the tile
+that is actually in front of the counter over one that merely happens to be the same distance
+away around a corner."""
+
+
+def _npc_target(
+    grid: world.MapGrid, blocked: frozenset, start: tuple[int, int], sprite: Sprite
+) -> tuple[int, tuple[int, int], str] | None:
+    """The nearest reachable tile to talk to `sprite` from, and the face to talk with.
+
+    Tries the four adjacent tiles first. When none of those is both walkable and reachable
+    (a sprite standing behind a counter or table, like the nurse and the Mart clerk), tries the
+    tile two steps away in each direction instead, accepting one only when the tile between is
+    NOT walkable -- that's what makes it a counter to talk across rather than just a longer walk
+    to an ordinary neighbour, which the first pass would already have found.
+    """
+    best: tuple[int, tuple[int, int], str] | None = None
+    for face in _FACE_ORDER:
+        near = adjacent_tile(sprite, face)
+        if not grid.walkable(*near) or near in blocked:
+            continue
+        path = world.astar(grid, start, near, blocked=blocked)
+        if path is None:
+            continue
+        if best is None or len(path) < best[0]:
+            best = (len(path), near, face)
+    if best is not None:
+        return best
+    for face in _FACE_ORDER:
+        near = adjacent_tile(sprite, face)
+        if grid.walkable(*near):
+            continue  # not a counter -- an ordinary neighbour, already tried above
+        dx, dy = FACING_OFFSET[face]
+        far = (near[0] + dx, near[1] + dy)
+        if not grid.walkable(*far) or far in blocked:
+            continue
+        path = world.astar(grid, start, far, blocked=blocked)
+        if path is None:
+            continue
+        if best is None or len(path) < best[0]:
+            best = (len(path), far, face)
+    return best
+
+
 def _npc_options(grid: world.MapGrid, state: GameState) -> list[Option]:
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
     candidates: list[tuple[int, Sprite, tuple[int, int], str]] = []
     for sprite in state.sprites:
-        if sprite.picture == 0 or sprite.slot == 0:
+        if sprite.picture == 0:
             continue
-        best: tuple[int, tuple[int, int], str] | None = None
-        for face in FACING_OFFSET:
-            neighbour = adjacent_tile(sprite, face)
-            if not grid.walkable(*neighbour) or neighbour in blocked:
-                continue
-            path = world.astar(grid, state.tile, neighbour, blocked=blocked)
-            if path is None:
-                continue
-            if best is None or len(path) < best[0]:
-                best = (len(path), neighbour, face)
+        best = _npc_target(grid, blocked, state.tile, sprite)
         if best is not None:
             candidates.append((best[0], sprite, best[1], best[2]))
     candidates.sort(key=lambda c: c[0])
@@ -241,7 +283,7 @@ def _milestone_option(state: GameState, milestone: Goal | None, node: str) -> Op
     return Option(
         id="milestone",
         kind="milestone",
-        text=f"head for {milestone.description}",
+        text=f"work on the milestone: {milestone.description}",
         memory="",
         legs=tuple(milestone.legs(state)),
         after=milestone.after,
