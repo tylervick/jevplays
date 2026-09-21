@@ -935,3 +935,72 @@ def test_the_potion_macro_reports_failure_when_the_shop_sold_none(monkeypatch):
     loop = Loop(FakeEmulator(), RecordingBroadcaster(), LoopConfig(paced=False))
     state = overworld_state(map_id=maps.PEWTER_CITY, x=16, y=17, money=3000)
     assert loop._apply_macro("buy_potions", state) is False
+
+
+# --- smooth playback (#31) ----------------------------------------------------------------
+
+
+class CapturingEmulator(FakeEmulator):
+    """A fake that hands back frames captured mid-tick, the way the real emulator does once the
+    loop asks it to capture."""
+
+    def __init__(self, captured):
+        super().__init__()
+        self.capture_every = 0
+        self._captured = list(captured)
+        self.jpegs = 0
+
+    def take_frames(self):
+        out, self._captured = self._captured, []
+        return out
+
+    def frame_jpeg(self, quality: int = 80) -> bytes:
+        self.jpegs += 1
+        return b"live"
+
+
+def test_a_paced_iteration_plays_every_frame_it_captured():
+    """One frame per batch is what made the page lurch: the batch is emulated in milliseconds and
+    the rest of the step is spent asleep. The captured frames are played out across that sleep."""
+    emu = CapturingEmulator([b"f1", b"f2", b"f3", b"f4"])
+    bc = RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=True, idle_frames=6, fps=15))
+    run(loop, 1)
+    frames = [e["jpeg"] for e in bc.events if e["type"] == "frame"]
+    assert frames == ["ZjE=", "ZjI=", "ZjM=", "ZjQ="]  # base64 of f1..f4, in order
+
+
+def test_an_unpaced_iteration_shows_the_live_screen_and_never_a_stale_one():
+    """Unpaced runs do not capture, so there is no window to play anything across and the screen
+    is grabbed live as before. Should a backlog exist anyway, none of it reaches the page: a
+    viewer wants the screen as it is, not as it was several steps ago."""
+    emu = CapturingEmulator([b"f1", b"f2", b"f3"])
+    bc = RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False, idle_frames=6, fps=1000))
+    run(loop, 1)
+    frames = [e["jpeg"] for e in bc.events if e["type"] == "frame"]
+    assert frames == ["bGl2ZQ=="]  # base64 of "live"
+    assert emu.take_frames() == []  # the backlog was drained, not left to grow
+
+
+def test_the_loop_asks_a_paced_emulator_to_capture_and_leaves_an_unpaced_one_alone():
+    """Capturing costs an extra emulated frame and a JPEG every few frames; an unpaced run is
+    measuring, not being watched, and should not pay for it."""
+    watched = CapturingEmulator([])
+    Loop(watched, RecordingBroadcaster(), LoopConfig(paced=True, fps=15))
+    assert watched.capture_every == 4  # 60 / 15
+    measuring = CapturingEmulator([])
+    Loop(measuring, RecordingBroadcaster(), LoopConfig(paced=False, fps=15))
+    assert measuring.capture_every == 0
+
+
+def test_pacing_follows_the_frames_the_game_really_spent():
+    """`_walk` returns NAV_STEP_FRAMES whatever the navigator actually emulated, so the returned
+    counts are an estimate, not a clock. Pacing a run by them makes the game drift -- it sleeps
+    for time the game never spent -- so the emulator's own frame count is the authority."""
+    emu = CapturingEmulator([])
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=True, idle_frames=6, fps=15))
+    before = emu.frame_count()
+    run(loop, 3)
+    assert emu.frame_count() > before
+    assert loop.game_frames == emu.frame_count() - before

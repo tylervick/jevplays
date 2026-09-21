@@ -427,7 +427,12 @@ flag flips, money changes, the party heals on its own).
 `server.py` is a Starlette app on `127.0.0.1:8765` serving `static/` and a websocket at `/ws`.
 The loop pushes four event types, each a JSON object with a `type` field:
 
-- `frame`: JPEG bytes base64, at most 15 per second.
+- `frame`: JPEG bytes base64, at most 15 per second, and close to 15 rather than the 1.4 the
+  page used to get (#31). The emulator advances in batches -- a walking step is one batch -- so a
+  frame published per batch was a frame per lurch. With `capture_every` set (the loop sets it for
+  a paced run only), the emulator renders and keeps the last frame of every fourth frame as it
+  ticks, and the loop plays that batch's frames out across the pacing sleep that follows. The
+  page runs one batch behind and looks like the game instead of a slideshow.
 - `state`: the `GameState`, including `tile` for the dashboard's debugging readout (`tile` is
   never part of what the brain sends to Jev), on every loop iteration where it changed.
 - `decision`: the full `Decision` record.
@@ -451,6 +456,11 @@ a delay between them, plus a `status` naming its progress before each one and a 
 when it finishes, so the page can be developed and demonstrated without an API key or a running
 emulator. `frame` and `state` are never replayed, since the log never held them, so the screen
 stays blank throughout.
+
+A paced run keeps wall time by the emulator's own frame counter, not by what `advance` returns:
+`_walk` reports `NAV_STEP_FRAMES` whatever the navigator actually spent, so pacing by the
+returned counts slept out time the game never had and ran the game at roughly a third of real
+speed. The returned counts remain the fallback for a fake emulator with no counter.
 
 ## 11. Runs, logs, and resume
 

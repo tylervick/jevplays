@@ -5,6 +5,7 @@ frames. Headless by default (window="null"); emulation speed is unlimited so the
 emulator, decides pacing.
 """
 
+from collections import deque
 from io import BytesIO
 from pathlib import Path
 
@@ -16,10 +17,20 @@ from jevplays.emulator.text import decode_cells
 BUTTONS = ("a", "b", "start", "select", "up", "down", "left", "right")
 
 
+CAPTURE_BACKLOG = 240
+"""Captured frames kept before the oldest are dropped: four seconds at 60Hz, far more than one
+batch, so a drain that never comes cannot grow without bound."""
+
+
 class Emulator:
     def __init__(self, rom: Path, *, window: str = "null") -> None:
         self._py = PyBoy(str(rom), window=window, sound_emulated=False)
         self._py.set_emulation_speed(0)
+        self.capture_every = 0
+        """Frames between captures while ticking, or 0 for no capture. The loop sets it for a
+        run somebody is watching, so the page can be shown the frames a batch passed through
+        rather than only the one it ended on (#31)."""
+        self._captured: deque[bytes] = deque(maxlen=CAPTURE_BACKLOG)
 
     def __enter__(self) -> "Emulator":
         return self
@@ -39,9 +50,39 @@ class Emulator:
         return int(self._py.memory[bank, addr])
 
     def tick(self, frames: int = 1, *, render: bool = False) -> int:
-        """Advance `frames` frames. Returns the frames spent so the loop can pace wall time."""
+        """Advance `frames` frames. Returns the frames spent so the loop can pace wall time.
+
+        With `capture_every` set, the batch is ticked in chunks of that many frames and the last
+        frame of each chunk is rendered and kept. A capture never costs an emulated frame: the
+        render replaces the chunk's final tick rather than adding one, so the count this returns
+        stays the truth the pacing arithmetic depends on.
+        """
+        if self.capture_every > 0 and frames >= self.capture_every:
+            done = 0
+            while done < frames:
+                chunk = min(self.capture_every, frames - done)
+                if chunk > 1:
+                    self._py.tick(chunk - 1, False, False)
+                self._py.tick(1, True, False)
+                self._captured.append(self._encode())
+                done += chunk
+            return frames
         self._py.tick(frames, render, False)
         return frames
+
+    def take_frames(self) -> list[bytes]:
+        """Everything captured since the last call, oldest first."""
+        out = list(self._captured)
+        self._captured.clear()
+        return out
+
+    def frame_count(self) -> int:
+        return int(self._py.frame_count)
+
+    def _encode(self, quality: int = 80) -> bytes:
+        buf = BytesIO()
+        self._py.screen.image.convert("RGB").save(buf, "JPEG", quality=quality)
+        return buf.getvalue()
 
     def press(self, button: str, *, hold: int = 8, settle: int = 8) -> int:
         """Hold a button for `hold` frames, then let the game settle for `settle` more."""
@@ -60,9 +101,7 @@ class Emulator:
     def frame_jpeg(self, quality: int = 80) -> bytes:
         """Render one frame and return it as JPEG bytes (160x144)."""
         self._py.tick(1, True, False)
-        buf = BytesIO()
-        self._py.screen.image.convert("RGB").save(buf, "JPEG", quality=quality)
-        return buf.getvalue()
+        return self._encode(quality)
 
     def save(self, path: Path) -> None:
         with open(path, "wb") as f:

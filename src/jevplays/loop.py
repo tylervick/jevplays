@@ -146,7 +146,14 @@ class Loop:
         self._wander_up = True
         self._backoff = min(1.0, self.config.backoff_max)
         self._hold: tuple[Mode, str] | None = None
+        self.game_frames = 0
+        """Frames the game has actually spent this session, for pacing and for the page."""
         self._pending: Pending | None = None
+        if hasattr(emu, "capture_every"):
+            # Only a run somebody is watching pays for capture: each captured frame costs an
+            # extra emulated frame and a JPEG encode, and an unpaced run is being measured, not
+            # watched. See _play_frames for what the captures are for.
+            emu.capture_every = round(FRAMES_PER_SECOND / config.fps) if config.paced else 0
         """The faint prediction waiting for the game to answer it (calibration.py)."""
         """Set after a macro fails twice and the safe default fails too: (mode, decision id) to
         wait out until the screen changes, so the loop stops asking the brain about a decision
@@ -658,9 +665,39 @@ class Loop:
 
     # -- the loop itself ----------------------------------------------------------------
 
+    async def _play_frames(self, frames: list[bytes], *, until: float) -> None:
+        """Play captured frames out across the rest of this step's wall-clock window.
+
+        The game is emulated in batches -- a walking step is `NAV_STEP_FRAMES` frames ticked in
+        one go -- and a paced run then sleeps out the remainder of the step. Publishing one frame
+        per batch is what made the page lurch (#31): motion arrived in ~1 fps jumps with a
+        half-second of stillness after each. The batch's own frames are already captured, so they
+        are spread across the sleep instead, and the page plays smoothly one step behind.
+        """
+        if not frames:
+            return
+        for i, jpeg in enumerate(frames):
+            await self.broadcaster.publish(frame_event(jpeg))
+            remaining = len(frames) - i - 1
+            if remaining:
+                await asyncio.sleep(max(0.0, (until - monotonic()) / remaining))
+
+    def _take_frames(self) -> list[bytes]:
+        take = getattr(self.emu, "take_frames", None)
+        return take() if take is not None else []
+
+    def _frame_count(self) -> int | None:
+        counter = getattr(self.emu, "frame_count", None)
+        return counter() if counter is not None else None
+
     async def run(self, max_iterations: int | None = None) -> None:
         started = monotonic()
         emulated = 0
+        # What `advance` returns is an estimate -- `_walk` reports NAV_STEP_FRAMES whatever the
+        # navigator spent -- so pacing by it drifts: the loop sleeps out time the game never
+        # spent, and a paced run crawls. The emulator's own counter is the clock when it has one
+        # (a fake in a test may not), and the returned counts stay the fallback.
+        first_count = self._frame_count()
         last_frame_at = float("-inf")
         last_state: GameState | None = None
         for i in count():
@@ -674,12 +711,24 @@ class Loop:
                 await self.broadcaster.publish(state_event(state))
                 last_state = state
             now = monotonic()
-            if now - last_frame_at >= 1 / self.config.fps:
+            if not self.config.paced and now - last_frame_at >= 1 / self.config.fps:
+                # Nothing is captured when unpaced, so the screen is grabbed here as before.
                 await self.broadcaster.publish(frame_event(self.emu.frame_jpeg()))
                 last_frame_at = now
-            emulated += await self.advance(state)
+            spent = await self.advance(state)
+            counted = self._frame_count()
+            if counted is not None and first_count is not None:
+                self.game_frames = counted - first_count
+                emulated = self.game_frames
+            else:
+                emulated += spent
+                self.game_frames = emulated
+            captured = self._take_frames()
             if self.config.paced:
                 due = started + emulated / FRAMES_PER_SECOND
+                await self._play_frames(captured, until=due)
                 await asyncio.sleep(max(0.0, due - monotonic()))
             else:
+                # `captured` is empty unpaced (nothing is capturing); draining it above is what
+                # keeps a stale backlog from reaching the page if anything ever does capture.
                 await asyncio.sleep(0)
