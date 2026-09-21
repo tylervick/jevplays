@@ -29,3 +29,31 @@ def test_run_help_lists_the_brain_flags(capsys):
         main(["run", "--help"])
     out = capsys.readouterr().out
     assert "--no-brain" in out and "--goal" in out
+
+
+def test_run_help_lists_the_run_dir_flags(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit):
+        main(["run", "--help"])
+    out = capsys.readouterr().out
+    assert "--runs-dir" in out and "--resume" in out and "--no-log" in out
+
+
+def test_resume_without_a_checkpoint_is_an_error(monkeypatch, tmp_path, capsys):
+    from jevplays.runlog import RunDir
+
+    rom = tmp_path / "game.gb"
+    rom.write_bytes(b"rom")
+    monkeypatch.setenv("JEVPLAYS_ROM", str(rom))
+    run = RunDir.create(tmp_path / "runs", rom=rom, flags={})
+    assert main(["run", "--resume", str(run.path)]) == 2
+    assert "checkpoint" in capsys.readouterr().err
+
+
+def test_state_and_resume_together_are_rejected(capsys):
+    import pytest
+
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--state", "a.state", "--resume", "runs/x"])
+    assert exc.value.code == 2

@@ -50,6 +50,35 @@ def cmd_run(args: argparse.Namespace) -> int:
     if rom is None:
         print("no ROM: pass --rom or set JEVPLAYS_ROM", file=sys.stderr)
         return 2
+    from jevplays.runlog import RunDir
+
+    run_dir = None
+    start_state = args.state
+    if args.resume is not None:
+        try:
+            run_dir = RunDir.open(args.resume)
+        except FileNotFoundError as error:
+            print(f"jevplays run: {error}", file=sys.stderr)
+            return 2
+        start_state = run_dir.last_checkpoint()
+        if start_state is None:
+            print(f"jevplays run: {args.resume} has no checkpoint to resume from", file=sys.stderr)
+            return 2
+        run_dir.mark_resumed()
+    elif not args.no_log:
+        run_dir = RunDir.create(
+            args.runs_dir,
+            rom=rom,
+            flags={
+                "state": str(args.state) if args.state else None,
+                "resume": None,
+                "port": args.port,
+                "unpaced": args.unpaced,
+                "no_brain": args.no_brain,
+                "battle_goal": args.battle_goal,
+            },
+        )
+
     from jevplays.dashboard.events import status_event
     from jevplays.dashboard.server import Broadcaster, create_app, serve
     from jevplays.emulator.intro import walk_intro
@@ -61,9 +90,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         server = asyncio.create_task(serve(create_app(broadcaster), port=args.port))
         try:
             with Emulator(rom) as emu:
-                if args.state:
-                    await broadcaster.publish(status_event("running", f"loading {args.state}"))
-                    emu.load(args.state)
+                if start_state:
+                    await broadcaster.publish(status_event("running", f"loading {start_state}"))
+                    emu.load(start_state)
                 else:
                     await broadcaster.publish(status_event("running", "walking the intro"))
                     walk_intro(emu)
@@ -77,6 +106,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 if server.done():
                     server.result()
                 print(f"dashboard: http://127.0.0.1:{args.port}", flush=True)
+                print(f"run: {run_dir.path}" if run_dir else "run: not logged (--no-log)", flush=True)
                 await broadcaster.publish(status_event("running", "idle at the first decision point"))
                 brain = None
                 if not args.no_brain and os.environ.get("TYPESAFE_API_KEY"):
@@ -87,7 +117,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 else:
                     print("brain: off" + ("" if args.no_brain else " (no TYPESAFE_API_KEY)"), flush=True)
                 config = LoopConfig(paced=not args.unpaced, goal=args.battle_goal)
-                loop = Loop(emu, broadcaster, config, brain=brain)
+                loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir)
                 watcher = asyncio.create_task(_print_goals(loop))
                 try:
                     await loop.run()
@@ -95,6 +125,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     watcher.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await watcher
+                    await loop.checkpoint()
                     await broadcaster.publish(status_event("stopped"))
                     if brain is not None:
                         await brain.close()
@@ -127,7 +158,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="boot the game, walk the intro, serve the dashboard")
     run.add_argument("--rom", type=Path, help="Pokémon Red/Blue ROM (default: $JEVPLAYS_ROM)")
-    run.add_argument("--state", type=Path, help="start from this save state instead of the intro")
+    source = run.add_mutually_exclusive_group()
+    source.add_argument("--state", type=Path, help="start from this save state instead of the intro")
+    source.add_argument(
+        "--resume", type=Path, metavar="RUN_DIR", help="continue a run from its newest checkpoint"
+    )
+    run.add_argument("--runs-dir", type=Path, default=Path("runs"), help="where new run directories go")
+    run.add_argument("--no-log", action="store_true", help="keep no run directory (no log, no checkpoints)")
     run.add_argument("--port", type=int, default=8765)
     run.add_argument("--unpaced", action="store_true", help="run the emulator as fast as it can")
     run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; let code decide instead")
