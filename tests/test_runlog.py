@@ -100,3 +100,79 @@ def test_glyphs_survive_run_json_and_the_log_whatever_the_locale_says(tmp_path, 
     run.append(d)
     assert run.info()["flags"]["battle_goal"] == "catch NIDORAN♂"
     assert next(run.decisions())["state_summary"]["prompt"] == "give a NICKNAME to POKé BALL?"
+
+
+def test_a_torn_last_line_is_skipped_with_a_warning_and_repaired_by_the_next_append(tmp_path):
+    import pytest
+
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    run.append(decision(1))
+    with open(run.log_path, "a", encoding="utf-8") as f:
+        f.write('{"id": "d2", "kin')  # a crash mid-write: no newline, no closing brace
+    assert run.count() == 2
+    with pytest.warns(UserWarning, match="decisions.jsonl"):
+        assert [d["id"] for d in run.decisions()] == ["d1"]
+
+    assert run.append(decision(3)) == 3
+    lines = run.log_path.read_text().splitlines()
+    assert lines[1] == '{"id": "d2", "kin' and json.loads(lines[2])["id"] == "d3"
+    with pytest.warns(UserWarning):
+        assert [d["id"] for d in run.decisions()] == ["d1", "d3"]
+
+
+def test_a_broken_line_that_is_not_the_last_is_corruption_and_raises(tmp_path):
+    import pytest
+
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    run.append(decision(1))
+    with open(run.log_path, "a", encoding="utf-8") as f:
+        f.write("{not json}\n")
+    run.append(decision(3))
+    with pytest.raises(ValueError, match="line 2"):
+        list(run.decisions())
+
+
+def test_truncate_to_moves_the_decisions_after_a_checkpoint_aside(tmp_path):
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    for i in range(30):
+        run.append(decision(i))
+    assert run.truncate_to(25) == 5
+    assert run.count() == 25
+    assert [d["id"] for d in run.decisions()][-1] == "d24"
+    orphaned = (run.path / "decisions.orphaned.jsonl").read_text().splitlines()
+    assert [json.loads(line)["id"] for line in orphaned] == ["d25", "d26", "d27", "d28", "d29"]
+    assert run.truncate_to(25) == 0 and run.count() == 25
+
+
+def test_truncate_to_a_count_the_log_has_not_reached_moves_nothing(tmp_path):
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    run.append(decision(1))
+    assert run.truncate_to(5) == 0
+    assert not (run.path / "decisions.orphaned.jsonl").exists()
+
+
+def test_checkpoint_number_reads_the_count_back_out_of_the_name(tmp_path):
+    import pytest
+
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    path = run.checkpoint(FakeEmulator(), 25)
+    assert RunDir.checkpoint_number(path) == 25
+    with pytest.raises(ValueError):
+        RunDir.checkpoint_number(run.path / "run.json")
+
+
+def test_mark_resumed_records_the_checkpoint_it_came_from(tmp_path):
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    run.mark_resumed(now=datetime(2026, 9, 21, 8, 0, 0), from_checkpoint=25, orphaned=5)
+    assert run.info()["resumed_at"] == [{"at": "2026-09-21T08:00:00", "from_checkpoint": 25, "orphaned": 5}]
+
+
+def test_set_model_does_not_rewrite_run_json_when_nothing_changes(tmp_path, monkeypatch):
+    run = RunDir.create(tmp_path, rom=None, flags={})
+    run.set_model("jev-1.13.0")
+    writes = []
+    monkeypatch.setattr(RunDir, "_write_info", lambda self, info: writes.append(info))
+    run.set_model("jev-1.13.0")
+    assert writes == []
+    run.set_model("jev-1.14.0")
+    assert len(writes) == 1
