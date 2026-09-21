@@ -323,6 +323,14 @@ layers a scripted counter on top for each one, pressing every button of the HEAL
 itself. Jev's only say is whether to go there at all, as the `heal_at_center` and `buy_pokeballs`
 goals in the goal table (8.2); once the legs get there, code runs the whole counter.
 
+The BUY sequence takes the item's shelf label, so one counter serves both purchases:
+`buy_pokeballs` at the Viridian Mart and `buy_potions` at the Pewter one. Potions are a Pewter
+errand because the Viridian shelf has none -- read off the ROM, it stocks Poké Ball, Antidote,
+Parlyz Heal and Burn Heal -- and Pewter is the last counter before Brock, the first fight where a
+Potion decides anything. What Pewter stocks is not verified here, so a shelf without the item is
+an ordinary outcome: the scan runs out, the counter backs out to the overworld, the bag count
+does not move, and the goal blocks itself rather than a guessed inventory being written down.
+
 ### 8.4 Decision record
 
 ```

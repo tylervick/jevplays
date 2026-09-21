@@ -9,7 +9,12 @@ from jevplays.state.snapshot import rows_of, snapshot
 NURSE_TILE, NURSE_FACE = (3, 3), "up"
 CLERK_TILE, CLERK_FACE = (2, 5), "left"
 
-MAX_POKEBALLS_PER_TRIP = 99
+MAX_PER_TRIP = 99
+"""The quantity box tops out at 99 of anything."""
+
+SHELF_SCAN = 10
+"""Presses down the shelf before giving up on finding an item. The longest early-game shelf is
+six items plus CANCEL, so ten reaches every row and still ends."""
 
 
 def _label_starts(rows, prefix: str) -> bool:
@@ -40,26 +45,44 @@ def heal_at_nurse(emu) -> bool:
     return bool(s.party) and s.party[0].hp == s.party[0].max_hp
 
 
-def buy_pokeballs(emu, count: int) -> int:
+def _list_is_open(rows) -> bool:
+    """The BUY list is up: something is highlighted and the shelf's prices are on screen."""
+    return cursor_label(rows) is not None and any("¥" in "".join(row) for row in rows)
+
+
+def _bag_count(emu, name: str) -> int:
+    return sum(item.quantity for item in snapshot(emu).bag if item.name == name)
+
+
+def _buy(emu, *, label: str, bag_name: str, count: int) -> int:
+    """Buy `count` of the shelf item whose label starts with `label`. Returns how many are in the
+    bag afterwards, so the caller compares it with what was there before rather than trusting a
+    boolean.
+
+    A shop that does not stock the item is an ordinary outcome, not an error: the scan runs out,
+    the macro backs out to the overworld, and the count comes back unchanged. That is what keeps
+    an unverified inventory (the Pewter shelf, #27) from needing to be guessed at here.
+    """
     if count <= 0:
-        return _balls(emu)
-    count = min(count, MAX_POKEBALLS_PER_TRIP)
+        return _bag_count(emu, bag_name)
+    count = min(count, MAX_PER_TRIP)
     if not talk_to(emu, *CLERK_TILE, CLERK_FACE, patience=0):
-        return _balls(emu)
+        return _bag_count(emu, bag_name)
     if not wait_for(emu, lambda rows: _label_starts(rows, "BUY")):
-        return _balls(emu)
+        return _bag_count(emu, bag_name)
     emu.press("a", settle=60)
-    if not wait_for(
-        emu, lambda rows: cursor_label(rows) is not None and "BALL" in "".join("".join(r) for r in rows)
-    ):
-        return _balls(emu)
-    for _ in range(6):
-        if _label_starts(rows_of(emu.tilemap()), "POKé BALL"):
+    if not wait_for(emu, _list_is_open):
+        return _bag_count(emu, bag_name)
+    for _ in range(SHELF_SCAN):
+        if _label_starts(rows_of(emu.tilemap()), label):
             break
         emu.press("down", settle=16)
+    else:
+        _exit_to_overworld(emu)
+        return _bag_count(emu, bag_name)
     emu.press("a", settle=60)
-    if not wait_for(emu, lambda rows: any("×0" in "".join(r) for r in rows)):
-        return _balls(emu)
+    if not wait_for(emu, lambda rows: any("×0" in "".join(row) for row in rows)):
+        return _bag_count(emu, bag_name)
     for _ in range(max(0, count - 1)):
         emu.press("up", settle=16)
     emu.press("a", settle=60)
@@ -71,8 +94,12 @@ def buy_pokeballs(emu, count: int) -> int:
     # again, buying more. Wait for the arrow-dismissal to land back on that menu instead.
     wait_for(emu, lambda rows: cursor_label(rows) is not None, frames=300)
     _exit_to_overworld(emu)
-    return _balls(emu)
+    return _bag_count(emu, bag_name)
 
 
-def _balls(emu) -> int:
-    return sum(item.quantity for item in snapshot(emu).bag if item.name == "POKE BALL")
+def buy_pokeballs(emu, count: int) -> int:
+    return _buy(emu, label="POKé BALL", bag_name="POKE BALL", count=count)
+
+
+def buy_potions(emu, count: int) -> int:
+    return _buy(emu, label="POTION", bag_name="POTION", count=count)

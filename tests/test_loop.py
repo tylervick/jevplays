@@ -908,3 +908,30 @@ def test_with_no_goal_picked_the_battle_question_carries_the_flag():
     )
     asyncio.run(loop.advance(snapshot(emu)))
     assert loop.decisions[0].state_summary["goal"] == "Win every battle and explore"
+
+
+def test_the_potion_macro_buys_what_the_bag_still_wants(monkeypatch):
+    from jevplays.executor import shop as shop_module
+
+    asked = []
+
+    def fake_buy(emu, count):
+        asked.append(count)
+        return count
+
+    monkeypatch.setattr(shop_module, "buy_potions", fake_buy)
+    loop = Loop(FakeEmulator(), RecordingBroadcaster(), LoopConfig(paced=False))
+    state = overworld_state(map_id=maps.PEWTER_CITY, x=16, y=17, money=3000)
+    assert loop._apply_macro("buy_potions", state) is True
+    assert asked == [2]
+
+
+def test_the_potion_macro_reports_failure_when_the_shop_sold_none(monkeypatch):
+    """Pewter's stock is unverified: if there are no Potions on the shelf the macro backs out and
+    the count does not move, and the goal must hear about that rather than count itself done."""
+    from jevplays.executor import shop as shop_module
+
+    monkeypatch.setattr(shop_module, "buy_potions", lambda emu, count: 0)
+    loop = Loop(FakeEmulator(), RecordingBroadcaster(), LoopConfig(paced=False))
+    state = overworld_state(map_id=maps.PEWTER_CITY, x=16, y=17, money=3000)
+    assert loop._apply_macro("buy_potions", state) is False
