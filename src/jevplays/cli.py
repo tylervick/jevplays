@@ -126,7 +126,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     async def main_async() -> None:
         broadcaster = Broadcaster()
-        server = asyncio.create_task(serve(create_app(broadcaster), host=args.host, port=args.port))
+        stop_serving = asyncio.Event()
+        server = asyncio.create_task(
+            serve(create_app(broadcaster), host=args.host, port=args.port, stop=stop_serving)
+        )
         try:
             with Emulator(rom) as emu:
                 if start_state:
@@ -184,11 +187,17 @@ def cmd_run(args: argparse.Namespace) -> int:
                         flush=True,
                     )
         finally:
-            server.cancel()
-            # uvicorn re-raises the signal it captured once it has shut down; by then we are
-            # already on our way out, so that second KeyboardInterrupt is nothing but noise.
-            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
-                await server  # let uvicorn shut down before the process exits
+            # Ask uvicorn to stop and give it a moment; cancel only if it does not. A cancelled
+            # lifespan prints a traceback on the way out, a stopped one does not. uvicorn also
+            # re-raises the signal it captured once it has shut down; by then we are already on
+            # our way out, so that second KeyboardInterrupt is nothing but noise.
+            stop_serving.set()
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt, TimeoutError):
+                await asyncio.wait_for(asyncio.shield(server), 3)
+            if not server.done():
+                server.cancel()
+                with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
+                    await server
 
     # A plain `kill` (SIGTERM) is how a supervisor stops a run. Point it at the SIGINT handler so
     # it becomes the KeyboardInterrupt below and the exit checkpoint in the finally still runs.
@@ -221,7 +230,10 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
     async def main_async() -> None:
         broadcaster = Broadcaster()
-        server = asyncio.create_task(serve(create_app(broadcaster), host=args.host, port=args.port))
+        stop_serving = asyncio.Event()
+        server = asyncio.create_task(
+            serve(create_app(broadcaster), host=args.host, port=args.port, stop=stop_serving)
+        )
         try:
             await asyncio.sleep(0.2)
             if server.done():
@@ -240,11 +252,17 @@ def cmd_replay(args: argparse.Namespace) -> int:
             print("replay finished; the dashboard stays up until Ctrl-C", flush=True)
             await server  # keep serving
         finally:
-            server.cancel()
-            # uvicorn re-raises the signal it captured once it has shut down; by then we are
-            # already on our way out, so that second KeyboardInterrupt is nothing but noise.
-            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
-                await server  # let uvicorn shut down before the process exits
+            # Ask uvicorn to stop and give it a moment; cancel only if it does not. A cancelled
+            # lifespan prints a traceback on the way out, a stopped one does not. uvicorn also
+            # re-raises the signal it captured once it has shut down; by then we are already on
+            # our way out, so that second KeyboardInterrupt is nothing but noise.
+            stop_serving.set()
+            with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt, TimeoutError):
+                await asyncio.wait_for(asyncio.shield(server), 3)
+            if not server.done():
+                server.cancel()
+                with contextlib.suppress(asyncio.CancelledError, KeyboardInterrupt):
+                    await server
 
     # A plain `kill` (SIGTERM) is how a supervisor stops a replay. Point it at the SIGINT handler
     # so it becomes the KeyboardInterrupt below and shutdown still runs cleanly.

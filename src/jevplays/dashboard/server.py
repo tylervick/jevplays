@@ -67,6 +67,20 @@ def create_app(broadcaster: Broadcaster) -> Starlette:
     )
 
 
-async def serve(app: Starlette, host: str = "127.0.0.1", port: int = 8765) -> None:
+async def serve(
+    app: Starlette, host: str = "127.0.0.1", port: int = 8765, stop: asyncio.Event | None = None
+) -> None:
+    """Serve until cancelled, or until `stop` is set: then uvicorn shuts down the way it wants
+    to (its lifespan logs a traceback when it is cancelled mid-wait instead)."""
     config = uvicorn.Config(app, host=host, port=port, log_level="warning")
-    await uvicorn.Server(config).serve()
+    server = uvicorn.Server(config)
+    if stop is None:
+        await server.serve()
+        return
+    serving = asyncio.create_task(server.serve())
+    stopped = asyncio.create_task(stop.wait())
+    await asyncio.wait({serving, stopped}, return_when=asyncio.FIRST_COMPLETED)
+    if not serving.done():
+        server.should_exit = True
+        await serving
+    stopped.cancel()
