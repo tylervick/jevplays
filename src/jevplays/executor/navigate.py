@@ -61,14 +61,20 @@ def first_step(grid: list[list[int]], target: tuple[int, int]) -> str | None:
     return direction
 
 
-def step(emu, direction: str, *, hold: int = 18, settle: int = 8) -> bool:
-    """Hold a direction for one tile's walk. True when the player's tile or map changed."""
+def step(emu, direction: str, *, hold: int = 8, settle: int = 0) -> bool:
+    """Take one tile step. True when the player's tile or map changed.
+
+    The tile coordinate updates as the walk begins, not when it ends, and a direction held past
+    the tile boundary starts the next step: an 18-frame hold used to walk two tiles and report
+    one, which is how `talk_to` came to face a wall beside the Mart clerk (#20). So the press is
+    short, and the result is read only once the walk counter says the player is standing still."""
     before = (emu.mem[ram.wCurMap], emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
     emu.press(direction, hold=hold, settle=settle)
-    for _ in range(6):  # a warp or scripted stop can take a few more frames to land
-        after = (emu.mem[ram.wCurMap], emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
-        if after != before:
-            return True
+    for _ in range(12):  # a 16-frame walk, or a warp or scripted stop that takes a little longer
+        if emu.mem[ram.wWalkCounter] == 0:
+            after = (emu.mem[ram.wCurMap], emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
+            if after != before:
+                return True
         emu.tick(4)
     return False
 

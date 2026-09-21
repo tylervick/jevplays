@@ -25,6 +25,7 @@ wCurrentMenuItem = 0xCC26
 wMaxMenuItem = 0xCC28
 wMenuWatchedKeys = 0xCC29
 
+wWalkCounter = 0xCFC5  # frames left in the current tile step; 0 when standing
 wJoyIgnore = 0xCD6B
 # 1 while the START menu (and other overworld menus) has the font loaded into VRAM.
 wFontLoaded = 0xCFC4
