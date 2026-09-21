@@ -1,5 +1,8 @@
 // Milestone 1: show the screen and the raw state. Milestone 2 adds the decision panel,
 // party strip, and decision log.
+const layout = new URLSearchParams(location.search).get("layout");
+if (layout === "stream") document.body.dataset.layout = "stream";
+
 const screen = document.getElementById("screen");
 const status = document.getElementById("status");
 const raw = document.getElementById("state");

@@ -62,3 +62,12 @@ def test_websocket_receives_the_latest_events_on_connect():
     with client.websocket_connect("/ws") as ws:
         first = json.loads(ws.receive_text())
     assert first == {"type": "status", "status": "running", "message": "hello"}
+
+
+def test_the_page_serves_the_same_html_for_the_stream_layout_and_the_css_knows_it():
+    client = TestClient(create_app(Broadcaster()))
+    assert client.get("/?layout=stream").status_code == 200
+    css = client.get("/static/styles.css").text
+    js = client.get("/static/app.js").text
+    assert 'body[data-layout="stream"]' in css
+    assert "dataset.layout" in js and "1920px" in css
