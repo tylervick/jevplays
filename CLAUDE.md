@@ -46,6 +46,8 @@ without an issue behind it.
 - Type effectiveness lives in `state/types.py` for measurement only; never pass it to Jev.
 - A change to a question's wording or a state field Jev sees re-records the fixtures
   (`Scripts/record-fixtures.py`) in the same PR.
-- Story facts (goals, flags, scripted macros) live in `src/jevplays/executor/goals.py`.
+- Options are generated from the map (`executor/options.py`); the three milestones in
+  `executor/goals.py` are the only hand-written story. Never add a goal for a beat Jev can reach
+  by exploring.
 - RAM facts (addresses, layouts) live in `src/jevplays/emulator/ram.py`.
 - Never hand-write map waypoints; read the map (`src/jevplays/executor/world.py`).
