@@ -1,5 +1,7 @@
 """Fakes shared by the unit tests. Nothing here imports pyboy."""
 
+from pathlib import Path
+
 from jevplays.emulator.ram import (
     COLLISION_END,
     CONNECTION_BITS,
@@ -142,6 +144,7 @@ class FakeEmulator:
         self.frames = 0
         self.grid = [[1] * 10 for _ in range(9)]
         self.step_effects = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+        self.saves = 0
         self.set_rows([])
 
     def set_rows(self, lines: list[str]) -> None:
@@ -186,6 +189,11 @@ class FakeEmulator:
 
     def frame_jpeg(self, quality: int = 80) -> bytes:
         return b"\xff\xd8fake"
+
+    def save(self, path) -> None:
+        """Stand-in for Emulator.save: distinct bytes per call so checkpoints can be told apart."""
+        Path(path).write_bytes(b"FAKE-STATE:" + str(self.saves).encode())
+        self.saves += 1
 
 
 def write_mon(
