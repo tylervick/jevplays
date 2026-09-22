@@ -27,6 +27,10 @@ class Goal:
     done: Callable[[GameState], bool]
     legs: Callable[[GameState], list[Leg]]
     after: str | None = None
+    expects_level: int | None = None
+    """The level of the toughest Pokémon this milestone walks into, or None when it walks into no
+    fight. A story fact, so it lives here; `brain.buckets.readiness_bucket` turns it and the
+    lead's level into the word Jev judges with (#42)."""
 
 
 def lead(state: GameState):
@@ -136,6 +140,9 @@ MILESTONES: list[Goal] = [
         done=lambda s: s.badges >= 1,
         legs=_beat_brock_legs,
         after="talk_brock",
+        # Brock's Onix. The Jr. Trainer before him fields level 11s, so the run that can take the
+        # Onix can take the gym.
+        expects_level=14,
     ),
 ]
 """Milestone 4b's spine: the three moments the run always passes through, in order. Everything

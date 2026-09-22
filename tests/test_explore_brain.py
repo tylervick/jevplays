@@ -1,12 +1,14 @@
 import json
 import re
+from dataclasses import replace
 
 from jevplays.brain.decision import ExploreAction
 from jevplays.brain.explore import decide_explore, explore_questions, explore_state
 from jevplays.brain.policy import choose_explore
+from jevplays.executor.goals import MILESTONES
 from jevplays.executor.options import Option
 from jevplays.state.snapshot import BagItem
-from tests.support import overworld_state
+from tests.support import OVERWORLD_LEAD, overworld_state
 
 
 def answers(**kw):
@@ -114,3 +116,36 @@ def test_decide_explore_marks_applied_and_carries_the_option_kind():
     assert d.action_value.kind == "exit"
     assert d.fallback is False and d.fallback_reason == ""
     assert d.answers["explore"]["applied"] is True
+
+
+BROCK = next(g for g in MILESTONES if g.id == "beat_brock")
+
+
+def test_the_state_says_how_the_lead_measures_up_to_the_milestone():
+    """#42: runs walked into the gym at level 9 and lost, because the level and the milestone's
+    name were all Jev had, and neither says a level-9 lead loses to a level-14 Onix."""
+    weak = overworld_state(party=(replace(OVERWORLD_LEAD, level=9),))
+    assert explore_state(weak, [], milestone=BROCK)["readiness"] == "outmatched"
+    strong = overworld_state(party=(replace(OVERWORLD_LEAD, level=15),))
+    assert explore_state(strong, [], milestone=BROCK)["readiness"] == "ready"
+
+
+def test_readiness_is_left_out_when_there_is_no_fight_to_measure_against():
+    """A milestone with nothing to fight, or no party at all, gets no word rather than a
+    misleading one -- and an absent key keeps the state as small as it was."""
+    fetch = next(g for g in MILESTONES if g.id == "get_pokedex")
+    assert "readiness" not in explore_state(overworld_state(), [], milestone=fetch)
+    assert "readiness" not in explore_state(overworld_state(), [], milestone=None)
+    assert "readiness" not in explore_state(overworld_state(party=()), [], milestone=BROCK)
+
+
+def test_the_readiness_word_leaks_no_numbers():
+    state = overworld_state(party=(replace(OVERWORLD_LEAD, level=9),))
+    sj = explore_state(state, [], milestone=BROCK)
+    assert not re.search(r"\d", sj["readiness"])
+
+
+def test_the_question_tells_jev_what_readiness_is_for():
+    state = overworld_state(party=(replace(OVERWORLD_LEAD, level=9),))
+    sj = explore_state(state, [], milestone=BROCK)
+    assert "readiness" in explore_questions(sj)["explore"]["instructions"]
