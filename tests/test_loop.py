@@ -1,5 +1,7 @@
 import asyncio
 
+import pytest
+
 from jevplays.brain.decision import PromptAction
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.emulator import ram
@@ -1260,6 +1262,62 @@ class CapturingEmulator(FakeEmulator):
     def frame_jpeg(self, quality: int = 80) -> bytes:
         self.jpegs += 1
         return b"live"
+
+
+def test_speed_shortens_the_wall_clock_a_paced_run_spends_on_its_frames():
+    """A paced run plays at the game's own 60fps, which takes about two hours to reach Brock --
+    right for watching a moment, wrong for a demo left running for people to drop in on. `speed`
+    multiplies the clock the sleep is computed against, and only that: the same frames are
+    emulated and the same decisions are made, they just arrive sooner."""
+    slept = []
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+
+    def paced_loop(speed):
+        emu = CapturingEmulator([b"f1", b"f2"])
+        return Loop(emu, RecordingBroadcaster(), LoopConfig(paced=True, idle_frames=60, fps=15, speed=speed))
+
+    import jevplays.loop as loop_module
+
+    real_sleep = loop_module.asyncio.sleep
+    loop_module.asyncio.sleep = fake_sleep
+    try:
+        slept.clear()
+        run(paced_loop(1.0), 1)
+        at_one = sum(slept)
+        slept.clear()
+        run(paced_loop(4.0), 1)
+        at_four = sum(slept)
+    finally:
+        loop_module.asyncio.sleep = real_sleep
+
+    assert at_one > 0
+    assert at_four == pytest.approx(at_one / 4, rel=0.2)
+
+
+def test_speed_is_ignored_by_an_unpaced_run():
+    """Unpaced has no clock to stretch: it never sleeps against emulated time, whatever `speed`
+    says, because it is already going as fast as the emulator will."""
+    slept = []
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+
+    import jevplays.loop as loop_module
+
+    real_sleep = loop_module.asyncio.sleep
+    loop_module.asyncio.sleep = fake_sleep
+    try:
+        loop = Loop(
+            CapturingEmulator([b"f1"]),
+            RecordingBroadcaster(),
+            LoopConfig(paced=False, idle_frames=60, speed=9.0),
+        )
+        run(loop, 1)
+    finally:
+        loop_module.asyncio.sleep = real_sleep
+    assert [s for s in slept if s > 0] == []
 
 
 def test_a_paced_iteration_plays_every_frame_it_captured():

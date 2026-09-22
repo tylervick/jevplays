@@ -140,6 +140,29 @@ in CI. After changing a question's wording or the state fields Jev sees, re-reco
 `mise exec -- uv run Scripts/record-fixtures.py` and commit the updated files under
 `tests/fixtures/responses/` in the same PR.
 
+## A demo anyone can watch
+
+    mise run demo                  # 0.0.0.0:8765, six times the game's own clock
+    mise run demo -- --speed 1     # real time
+    mise run demo -- --host 127.0.0.1
+
+One run ends at the Boulder Badge, so an always-on demo needs something to start the next one.
+`Scripts/demo-loop.py` is that: it starts a run, restarts it when it finishes or dies, and kills
+and restarts one that has stopped making decisions (a run can hang in `BATTLE_WAIT` while the
+process stays up and the log ends on an ordinary battle turn, so nothing inside the run notices).
+The startup line prints the address to share; the page reconnects by itself, so a viewer sees the
+next run begin without touching anything.
+
+Speed is the thing to choose. Real time is the game's own 60fps and takes about two hours to
+reach Brock -- right for watching a moment, long for a demo. Unpaced is not offered here: the
+whole run would be over in half a minute and the demo would be a restart loop. `--speed`
+multiplies only the clock the pacing sleep is computed against, so the same frames are emulated
+and the same decisions are made; they just arrive sooner.
+
+It serves the local network by default. Putting it on the public internet is a separate
+decision and needs a tunnel in front of it -- there is no authentication here, and a viewer can
+see whatever the run is doing.
+
 ## Runs
 
 Every `jevplays run` (unless started with `--no-log`) creates `runs/<YYYYMMDD-HHMMSS>/` and keeps

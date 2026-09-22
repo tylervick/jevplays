@@ -159,7 +159,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     print("brain: jev-latest", flush=True)
                 else:
                     print("brain: off" + ("" if args.no_brain else " (no TYPESAFE_API_KEY)"), flush=True)
-                config = LoopConfig(paced=not args.unpaced, goal=args.battle_goal)
+                config = LoopConfig(paced=not args.unpaced, goal=args.battle_goal, speed=args.speed)
                 loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir, memory=memory)
                 watcher = asyncio.create_task(_print_progress(loop))
                 try:
@@ -320,6 +320,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="interface the dashboard listens on; 0.0.0.0 serves it to the local network",
     )
     run.add_argument("--unpaced", action="store_true", help="run the emulator as fast as it can")
+    run.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="how much faster than real time a paced run plays (1.0 is the game's own clock); "
+        "ignored with --unpaced",
+    )
     run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; let code decide instead")
     # --goal is the old spelling, kept working: it is the battle brain's free-text objective,
     # not the overworld one (that is the active milestone, from executor/goals.py).

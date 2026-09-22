@@ -166,3 +166,11 @@ def test_the_printed_dashboard_url_names_an_address_a_browser_can_open():
     assert dashboard_url("127.0.0.1", 8765) == "http://127.0.0.1:8765"
     wide = dashboard_url("0.0.0.0", 8765)
     assert not wide.startswith("http://0.0.0.0") and wide.endswith(":8765")
+
+
+def test_run_takes_a_speed_multiplier_that_defaults_to_real_time():
+    from jevplays.cli import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["run"]).speed == 1.0
+    assert parser.parse_args(["run", "--speed", "6"]).speed == 6.0

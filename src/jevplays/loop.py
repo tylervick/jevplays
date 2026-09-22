@@ -98,6 +98,13 @@ class LoopConfig:
     used until one is active."""
     backoff_max: float = 30.0
     """Cap, in seconds, on the doubling sleep after a BrainUnavailable."""
+    speed: float = 1.0
+    """How much faster than the game's own clock a paced run plays, 1.0 being real time.
+
+    Only the sleep is scaled: the same frames are emulated and the same decisions are made, they
+    just arrive sooner. It exists for a demo left running for people to drop in on, where real
+    time means about two hours to the Boulder Badge. Ignored when `paced` is off, which has no
+    clock to stretch."""
 
 
 def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision:
@@ -864,7 +871,7 @@ class Loop:
                 self.game_frames = emulated
             captured = self._take_frames()
             if self.config.paced:
-                due = started + emulated / FRAMES_PER_SECOND
+                due = started + emulated / (FRAMES_PER_SECOND * self.config.speed)
                 await self._play_frames(captured, until=due)
                 await asyncio.sleep(max(0.0, due - monotonic()))
             else:
