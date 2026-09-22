@@ -60,3 +60,32 @@ def test_api_errors_become_brain_unavailable():
     brain = Brain(client=FakeClient(error=TypeSafeAPIConnectionError("boom")))
     with pytest.raises(BrainUnavailable):
         asyncio.run(brain.ask({}, QUESTIONS))
+
+
+class HangingClient:
+    """A request that stays open and never answers -- the failure the SDK's retries cannot see,
+    because nothing ever raises."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def system_one(self, state, questions):
+        self.calls += 1
+        await asyncio.sleep(30)
+        raise AssertionError("should have been given up on long before this")
+
+
+def test_a_request_that_never_answers_becomes_brain_unavailable():
+    """#47: a paced run stopped dead in a battle with an open connection to the API and no
+    timeout, so the loop's waiting_for_api path never fired and the run never recovered."""
+    client = HangingClient()
+    brain = Brain(client=client, timeout=0.05)
+    with pytest.raises(BrainUnavailable, match="no answer"):
+        asyncio.run(brain.ask({"map": "Route 1"}, {}))
+    assert client.calls == 1
+
+
+def test_a_request_that_answers_in_time_is_untouched():
+    brain = Brain(client=FakeClient(payload={"answers": {}}), timeout=5)
+    response, latency_ms = asyncio.run(brain.ask({}, {}))
+    assert response == {"answers": {}} and latency_ms >= 0

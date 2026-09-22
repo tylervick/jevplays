@@ -555,6 +555,10 @@ was rolled back into `decisions.orphaned.jsonl` drops out of the score on its ow
 - The SDK retries with backoff and honors `retry-after`. On a request that still fails, the loop
   sets status `waiting_for_api`, shows it on the page, waits with capped backoff, and retries the
   same decision. It never presses buttons on a failed request.
+- A request that neither answers nor fails is bounded by `client.REQUEST_TIMEOUT_S` and becomes
+  the same `BrainUnavailable`. Without it the await never returns and the run stops dead with
+  nothing on the page to say so (#47): the SDK retries what fails, and an open connection that
+  never answers has not failed.
 - If the response is missing an answer the builder sent, the decision is marked `fallback` and
   code takes the safest legal action for that mode: the first usable move, NO on a prompt, B on
   a menu. Fallbacks are visible on the page.
