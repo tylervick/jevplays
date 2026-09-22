@@ -76,6 +76,14 @@ run = "uv run pytest -q"
 description = "Lint and test -- the same pair CI runs"
 depends = ["lint", "test"]
 
+[tasks.demo]
+description = "Keep a run going on 0.0.0.0:8765 so the dashboard is always worth opening"
+# Needs JEVPLAYS_ROM and TYPESAFE_API_KEY, so it runs through mise like everything else that
+# touches the game or the API. The default speed is a demo speed, not real time: at the game's
+# own clock one run takes about two hours to reach the Boulder Badge.
+# Arguments after `--` are appended by mise, so `mise run demo -- --speed 20` works.
+run = "uv run Scripts/demo-loop.py"
+
 [tasks.states]
 description = "Regenerate the save states tests/rom/ load (needs JEVPLAYS_ROM; writes states/)"
 run = "uv run Scripts/make-states.py"
