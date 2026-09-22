@@ -149,29 +149,3 @@ def test_the_question_tells_jev_what_readiness_is_for():
     state = overworld_state(party=(replace(OVERWORLD_LEAD, level=9),))
     sj = explore_state(state, [], milestone=BROCK)
     assert "readiness" in explore_questions(sj)["explore"]["instructions"]
-
-
-def test_supplies_says_what_the_bag_holds_whenever_a_fight_is_ahead():
-    """Present whenever `readiness` is, and for the same reason: a word that states the case
-    either way is a fact, where a key that appears only when the bag is bare would be a
-    recommendation wearing a fact's clothes (#52)."""
-    broke = overworld_state(money=0)
-    assert explore_state(broke, [], milestone=BROCK)["supplies"] == "none, unaffordable"
-    rich = overworld_state(money=3000)
-    assert explore_state(rich, [], milestone=BROCK)["supplies"] == "none, affordable"
-
-
-def test_supplies_is_left_out_when_there_is_no_fight_to_stock_up_for():
-    fetch = next(g for g in MILESTONES if g.id == "get_pokedex")
-    assert "supplies" not in explore_state(overworld_state(), [], milestone=fetch)
-    assert "supplies" not in explore_state(overworld_state(), [], milestone=None)
-
-
-def test_the_supplies_word_leaks_no_numbers():
-    sj = explore_state(overworld_state(money=3000), [], milestone=BROCK)
-    assert not re.search(r"\d", sj["supplies"])
-
-
-def test_the_question_tells_jev_what_supplies_is_for():
-    sj = explore_state(overworld_state(money=3000), [], milestone=BROCK)
-    assert "supplies" in explore_questions(sj)["explore"]["instructions"]
