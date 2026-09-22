@@ -5,6 +5,7 @@ from jevplays.brain.buckets import (
     pp_bucket,
     quantity_bucket,
     readiness_bucket,
+    supplies_bucket,
 )
 
 
@@ -52,3 +53,16 @@ def test_readiness_bucket_compares_the_lead_with_what_the_milestone_expects():
 
 def test_readiness_bucket_has_no_opinion_without_an_expectation():
     assert readiness_bucket(9, None) is None
+
+
+def test_supplies_bucket_says_what_the_bag_holds_for_the_fight_ahead():
+    """Sibling of the readiness word: that one sizes up the lead, this one sizes up the bag.
+    Jev sees `bag` and a sentence about a gym, and nothing in either says a Potion is what a
+    gym fight is for, or what one costs (#52)."""
+    assert supplies_bucket(potions=1, money=0, price=300, expects=14) == "stocked"
+    assert supplies_bucket(potions=0, money=300, price=300, expects=14) == "none, affordable"
+    assert supplies_bucket(potions=0, money=299, price=300, expects=14) == "none, unaffordable"
+
+
+def test_supplies_bucket_has_no_opinion_when_the_milestone_has_no_fight():
+    assert supplies_bucket(potions=0, money=9999, price=300, expects=None) is None
