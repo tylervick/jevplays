@@ -41,7 +41,7 @@ from jevplays.dashboard.events import decision_event, frame_event, state_event, 
 from jevplays.emulator import ram
 from jevplays.executor import battle as battle_macros
 from jevplays.executor import goals as goal_table
-from jevplays.executor import navigate, shop, world
+from jevplays.executor import maps, navigate, shop, world
 from jevplays.executor.battle import MacroError
 from jevplays.executor.dialog import answer_prompt, cursor_label, skip_dialog
 from jevplays.executor.goals import Goal
@@ -501,7 +501,12 @@ class Loop:
         return self.emu.tick(self.config.idle_frames)
 
     async def _walk(self, state: GameState) -> int:
+        # Read before stepping: `_advance` begins the next leg, which resets both of these.
+        from_map, from_tile = self.navigator.start_map, self.navigator.start_tile
+        leg = self.navigator.current
         result = self.navigator.step(self.emu, state)
+        if result in ("leg_done", "done"):
+            self._note_crossing(leg, from_map, from_tile)
         if result == "stuck":
             return await self._option_tried("the navigator gave up")
         if result == "lost":
@@ -522,6 +527,31 @@ class Loop:
             self.option_started_at = self.clock()
             await self.broadcaster.publish(status_event("running", f"arrived: {self.option.text}"))
         return NAV_STEP_FRAMES
+
+    def _note_crossing(self, leg, from_map: int | None, from_tile: tuple[int, int] | None) -> None:
+        """Add a leg the run just walked across a map boundary to its own map graph (#35).
+
+        Only `edge` and `warp` legs, and only when the map really changed: a `walk` leg finishing
+        teaches nothing, and a leg that came back `lost` never got here -- the map changed under
+        it -- so this is never reached for one. A warp records the map it actually landed on
+        rather than the leg's `dest_map`, which is `WARP_LAST_MAP` for a building's way out and
+        names nothing."""
+        if leg is None or leg.kind not in ("edge", "warp") or from_map is None or from_tile is None:
+            return
+        to_map = self.emu.mem[ram.wCurMap]
+        if to_map == from_map:
+            return
+        from_node = maps.node_of(from_map, *from_tile)
+        to_node = maps.node_of(to_map, self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
+        before = len(self.memory.links.get(from_node, ()))
+        self.memory.note_crossing(
+            from_node,
+            to_node,
+            direction=leg.direction if leg.kind == "edge" else None,
+            dest_map=None if leg.kind == "edge" else to_map,
+        )
+        if len(self.memory.links.get(from_node, ())) != before:
+            self._save_memory()
 
     async def _option_budget_spent(self) -> int:
         """The option has had its turn. It is marked `tried` -- nothing came of it in the time it

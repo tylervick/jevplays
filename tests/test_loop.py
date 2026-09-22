@@ -995,6 +995,36 @@ def test_an_unmapped_map_offers_the_way_back_out_and_a_brainless_loop_takes_it()
     assert leg is not None and leg.kind == "warp" and leg.dest_map == ram.WARP_LAST_MAP
 
 
+def test_a_crossing_the_run_walked_is_added_to_its_map_graph():
+    """#35. The graph is built from crossings actually made, so the run can plan its way back
+    from a map nobody typed into `maps.LINKS`. The reverse link is recorded too: without it the
+    way home would need a second walk to learn, which is the whole point of keeping it."""
+    emu, bc = (
+        explore_emu(sprites=(), connections={}, warps=[(3, 3, 0, ram.WARP_LAST_MAP)]),
+        RecordingBroadcaster(),
+    )
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.memory.note_tried(UNMAPPED_MAP, "grass")
+    run(loop, 1)  # takes the door back outside and plans its warp leg
+    assert loop.navigator.current.kind == "warp"
+    emu.mem[ram.wCurMap] = maps.PALLET_TOWN  # the warp lands us there
+    run(loop, 1)
+    here = f"map_{UNMAPPED_MAP}"
+    assert [(x.kind, x.dest_node) for x in loop.memory.links[here]] == [("warp", "pallet_town")]
+    assert ("warp", here) in [(x.kind, x.dest_node) for x in loop.memory.links["pallet_town"]]
+
+
+def test_a_blackout_mid_walk_teaches_the_graph_nothing():
+    """A leg that came back `lost` never crossed anything -- the map changed under it. Recording
+    that as a link would invent a road from wherever we were to wherever the blackout put us."""
+    emu, bc = explore_emu(map_id=maps.PALLET_TOWN), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 1)
+    emu.mem[ram.wCurMap] = maps.VIRIDIAN_POKECENTER  # blacked out mid-walk
+    run(loop, 1)
+    assert loop.memory.links == {}
+
+
 def test_a_map_change_under_a_plan_drops_the_option_and_asks_again():
     """The route was for a map we are not on any more, and so was the option list it came from:
     the next turn generates fresh options rather than charging this one with anything."""

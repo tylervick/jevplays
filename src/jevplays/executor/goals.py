@@ -25,7 +25,9 @@ class Goal:
     description: str
     available: Callable[[GameState], bool]
     done: Callable[[GameState], bool]
-    legs: Callable[[GameState], list[Leg]]
+    legs: Callable[[GameState, dict[str, "maps.Link"]], list[Leg]]
+    """Builds the walk/edge/warp plan from here. Takes the run's walked map graph as well as the
+    state, because a route may need links that are not in the hand-written table (#35)."""
     after: str | None = None
     expects_level: int | None = None
     """The level of the toughest Pokémon this milestone walks into, or None when it walks into no
@@ -48,23 +50,23 @@ def node(state: GameState) -> str:
     return maps.node_of(state.map_id, *state.tile)
 
 
-def legs_to(state: GameState, dest_node: str) -> list[Leg]:
+def legs_to(state: GameState, dest_node: str, links: dict | None = None) -> list[Leg]:
     """The edge/warp legs `maps.route` says to follow from here to `dest_node`.
 
     An edge leg carries the map id its destination node names (`maps.MAP_IDS`) as well as the
     direction, so a blackout in the middle of the walk reads as `lost` rather than as the
     crossing the leg was waiting for."""
-    links = maps.route(node(state), dest_node)
-    if not links:
+    hops = maps.route(node(state), dest_node, links=links)
+    if not hops:
         return []
     legs: list[Leg] = []
-    for link in links:
+    for link in hops:
         if link.kind == "edge":
             legs.append(
                 Leg(
                     kind="edge",
                     direction=link.direction,
-                    dest_map=maps.MAP_IDS.get(link.dest_node),
+                    dest_map=maps.map_id_of(link.dest_node),
                     label=f"to {link.dest_node}",
                 )
             )
@@ -73,26 +75,26 @@ def legs_to(state: GameState, dest_node: str) -> list[Leg]:
     return legs
 
 
-def _get_starter_legs(state: GameState) -> list[Leg]:
+def _get_starter_legs(state: GameState, links: dict) -> list[Leg]:
     here = node(state)
     if here == "pallet_town":
         return [Leg(kind="walk", target=(10, 1), label="the edge of Pallet Town")]
     if here == "oaks_lab":
         return [Leg(kind="walk", target=(6, 4), label="Charmander's ball")]
-    return legs_to(state, "pallet_town")
+    return legs_to(state, "pallet_town", links)
 
 
-def _deliver_parcel_legs(state: GameState) -> list[Leg]:
+def _deliver_parcel_legs(state: GameState, links: dict) -> list[Leg]:
     if "got_oaks_parcel" not in state.flags:
-        return legs_to(state, "viridian_mart")
-    legs = legs_to(state, "oaks_lab")
+        return legs_to(state, "viridian_mart", links)
+    legs = legs_to(state, "oaks_lab", links)
     if node(state) == "oaks_lab":
         legs = legs + [Leg(kind="walk", target=(5, 3), label="in front of Oak")]
     return legs
 
 
-def _beat_brock_legs(state: GameState) -> list[Leg]:
-    return legs_to(state, "pewter_gym") + [Leg(kind="walk", target=(4, 2))]
+def _beat_brock_legs(state: GameState, links: dict) -> list[Leg]:
+    return legs_to(state, "pewter_gym", links) + [Leg(kind="walk", target=(4, 2))]
 
 
 GET_STARTER = Goal(

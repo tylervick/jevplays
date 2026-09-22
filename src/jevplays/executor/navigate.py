@@ -121,6 +121,9 @@ class Navigator:
     failed_legs: int = 0
     start_map: int | None = None
     """The map the current leg was begun on."""
+    start_tile: tuple[int, int] | None = None
+    """The tile it was begun on, so a crossing can be named with `maps.node_of` -- which is what
+    tells Route 2's two nodes apart, where the map id alone cannot (#35)."""
     plan_map: int | None = None
     """The map the whole plan was built on, for the dashboard and for debugging a stale plan."""
 
@@ -140,6 +143,7 @@ class Navigator:
     def _begin_leg(self, emu) -> None:
         self.blocked, self.failed_steps = set(), 0
         self.start_map = emu.mem[ram.wCurMap]
+        self.start_tile = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
 
     def describe(self) -> str:
         leg = self.current
