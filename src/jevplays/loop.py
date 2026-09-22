@@ -543,6 +543,11 @@ class Loop:
         option = self.option
         macro = option.after
         if macro is None:
+            if self.emu.mem[ram.wCurMap] == self._option_map:
+                # Arriving is the whole of an exit or a door -- but we are standing on the map
+                # this option started from, so it carried us nowhere and had no macro to make up
+                # for it. Remember that, or it comes back `(new)` and can be chosen forever (#53).
+                return await self._option_tried("it went nowhere")
             # An exit or a door: arriving is the whole of it.
             await self.broadcaster.publish(status_event("running", f"done: {option.text}"))
             self._clear_option()
