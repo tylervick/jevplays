@@ -39,7 +39,7 @@ DEFAULT_CONNECTIONS = {"north": 13, "east": 12}
 DEFAULT_WARPS = [(0, 7, 0, 41), (1, 7, 0, 41), (7, 7, 0, 42)]
 
 
-def town(memory=None, sprites=DEFAULT_SPRITES, connections=None, warps=None):
+def town(memory=None, sprites=DEFAULT_SPRITES, connections=None, warps=None, grass_rate=25):
     emu = FakeEmulator()
     install_map(
         emu,
@@ -49,6 +49,7 @@ def town(memory=None, sprites=DEFAULT_SPRITES, connections=None, warps=None):
     )
     emu.set_sprites(list(sprites))
     emu.mem[0xD362], emu.mem[0xD361] = 4, 4  # the player at (4,4)  (wXCoord, wYCoord)
+    emu.mem[ram.wGrassRate] = grass_rate  # a map whose grass can start a battle, unless a test says otherwise
     return emu, snapshot(emu), memory or Memory.empty()
 
 
@@ -226,3 +227,16 @@ def test_place_words_and_nouns():
     assert place_words((4, 4), Sprite(1, 4, 4, 1), 4) == "just to the north"
     assert place_words((4, 4), Sprite(1, 4, 12, 12), 4) == "to the south-east"
     assert place_words((4, 4), Sprite(1, 0x26, 0, 5), 0x26) == "behind the counter"
+
+
+def test_grass_is_not_offered_where_no_wild_pokemon_live():
+    """Pallet Town has grass tiles and no encounter table, so standing in it can never start a
+    battle. Offering it cost a run the whole option budget waiting for one (#44). The game knows:
+    `wGrassRate` is zero on a map with no wild Pokémon."""
+    emu, state, memory = town(grass_rate=0)
+    assert "grass" not in [o.id for o in generate(emu, state, memory, milestone=None)]
+
+
+def test_grass_is_offered_where_wild_pokemon_do_live():
+    emu, state, memory = town(grass_rate=25)  # Route 1's rate
+    assert "grass" in [o.id for o in generate(emu, state, memory, milestone=None)]

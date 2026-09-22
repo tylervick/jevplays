@@ -339,7 +339,10 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
     drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
     drafts.extend(_door_options(world.read_warps(mem)))
     drafts.extend(_npc_options(grid, state))
-    if grid.grass():
+    # Grass tiles are not the same thing as wild Pokémon: Pallet Town and Viridian City both
+    # have patches with no encounter table, and standing in one waits out the whole option
+    # budget for a battle that cannot start (#44). wGrassRate is the game's own answer.
+    if grid.grass() and mem[ram.wGrassRate] > 0:
         drafts.append(
             Option(
                 id="grass",
