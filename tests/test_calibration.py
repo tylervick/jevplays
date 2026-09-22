@@ -45,11 +45,37 @@ def test_back_at_the_battle_menu_with_hp_left_the_prediction_was_wrong():
     assert resolve_prediction(PENDING, battling(4), ts=5.0)["observed"] is False
 
 
-def test_a_battle_that_ended_resolves_too():
-    """Ran, caught it, or blacked out: our Pokémon never gets another turn, so the question is
-    answered by the party as it stands."""
-    assert resolve_prediction(PENDING, overworld_state(party=(mon(0),)), ts=5.0)["observed"] is True
-    assert resolve_prediction(PENDING, overworld_state(party=(mon(11),)), ts=5.0)["observed"] is False
+def test_a_battle_that_ended_leaves_the_question_open():
+    """#51. The question is "will `our_pokemon` faint before we get to choose again?", and the
+    end of a battle is not us choosing again -- we walk out of it and keep walking. Answering
+    here filed a verdict on a Pokémon that was still upright at 1 HP, and the faint that really
+    answered the question came in the next encounter, after the record was already written."""
+    assert resolve_prediction(PENDING, overworld_state(party=(mon(11),)), ts=5.0) is None
+    assert resolve_prediction(PENDING, overworld_state(party=(mon(0),)), ts=5.0) is None
+
+
+def test_a_faint_between_battles_answers_the_prediction_that_was_open():
+    """The whole of #51: the lead survives at 1 HP, that battle ends, and the next encounter
+    knocks it out before a battle menu ever appears. Nothing was asked about that encounter, so
+    the faint belongs to the last prediction anyone made -- which is exactly what it was asked."""
+    walking = overworld_state(party=(mon(1),))  # out of the battle, still up
+    pending = observe(PENDING, walking)
+    assert resolve_prediction(pending, walking, ts=6.0) is None
+    knocked_out = battling(0, mode=Mode.BATTLE_WAIT)  # the next encounter, before any menu
+    pending = observe(pending, knocked_out)
+    assert resolve_prediction(pending, knocked_out, ts=7.0) is None
+    healed = battling(23)  # blacked out, healed, and finally choosing again
+    assert resolve_prediction(pending, healed, ts=9.0)["observed"] is True
+
+
+def test_a_run_that_ends_answers_its_last_prediction():
+    """A finished run never reaches another battle menu, so `final` closes the last prediction
+    against the party as it stands rather than dropping the turn unscored."""
+    out = resolve_prediction(PENDING, overworld_state(party=(mon(11),)), ts=5.0, final=True)
+    assert out["observed"] is False
+    assert (
+        resolve_prediction(PENDING, overworld_state(party=(mon(0),)), ts=5.0, final=True)["observed"] is True
+    )
 
 
 def test_a_slot_that_is_no_longer_there_is_left_unresolved():
@@ -74,9 +100,11 @@ def test_a_faint_that_ended_the_battle_is_not_undone_by_the_heal_that_follows():
     """Gen 1 heals the whole party on a blackout. Reading HP at the next decision point therefore
     reads the healed party and scores a faint as no faint (#36) -- and with a party of one, every
     faint ends the battle, so every faint in a run was being missed. The observation is latched
-    while it is visible instead."""
+    while it is visible instead, and the latch has to survive all the way to the next menu, which
+    is where the question is answered now (#51)."""
     pending = observe(PENDING, battling(0, mode=Mode.BATTLE_WAIT))
-    healed = overworld_state(party=(mon(23),))  # scurried to a Pokémon Center, back to full
+    assert resolve_prediction(pending, overworld_state(party=(mon(23),)), ts=5.0) is None
+    healed = battling(23)  # scurried to a Pokémon Center, back to full, and choosing again
     assert resolve_prediction(pending, healed, ts=5.0)["observed"] is True
 
 

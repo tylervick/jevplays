@@ -45,14 +45,21 @@ def observe(pending: Pending, state: GameState) -> Pending:
     return pending
 
 
-def resolve_prediction(pending: Pending, state: GameState, *, ts: float) -> dict | None:
+def resolve_prediction(pending: Pending, state: GameState, *, ts: float, final: bool = False) -> dict | None:
     """The outcome record, or None while the question is still open.
 
-    It is open until our Pokémon would get to choose again: mid-battle that means the battle
-    menu is back, and a battle that ended (ran, caught it, blacked out) answers it too, because
-    there is no next turn. A slot the party no longer has stays unresolved rather than guessing.
+    The question is "will `our_pokemon` faint before we get to choose again?", so it stays open
+    until we do choose again -- the battle menu, and nothing else. The end of a battle is not it:
+    the run walks out and keeps walking, and at low HP the next encounter can knock the lead out
+    before a menu ever appears. Answering there filed that turn as no faint and left the faint
+    that followed with no prediction to belong to, both errors in the same direction (#51).
+
+    `final` is the run itself ending. There is no next menu to wait for, so the question is
+    answered against the party as it stands rather than dropped unscored.
+
+    A slot the party no longer has stays unresolved rather than guessing.
     """
-    if state.in_battle and state.mode is not Mode.BATTLE_MENU:
+    if not final and state.mode is not Mode.BATTLE_MENU:
         return None
     if not 0 <= pending.slot < len(state.party):
         return None

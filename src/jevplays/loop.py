@@ -301,11 +301,13 @@ class Loop:
             await self.broadcaster.publish(status_event("running", "our Pokémon fainted"))
         self._pending = latched
 
-    def _resolve_prediction(self, state: GameState) -> None:
-        """Write the pending prediction's outcome once the game has answered it."""
+    def _resolve_prediction(self, state: GameState, *, final: bool = False) -> None:
+        """Write the pending prediction's outcome once the game has answered it. `final` is the
+        run ending: there is no next battle menu to wait for, so the question is answered now
+        rather than left unscored (#51)."""
         if self._pending is None or self.run_dir is None:
             return
-        outcome = resolve_prediction(self._pending, state, ts=time.time())
+        outcome = resolve_prediction(self._pending, state, ts=time.time(), final=final)
         if outcome is None:
             return
         self.run_dir.append_outcome(outcome)
@@ -425,6 +427,9 @@ class Loop:
         if self.milestone is None:
             if not self.finished:
                 self.finished = True
+                # The last turn of the run still deserves its answer: nothing after this reaches
+                # a battle menu, so waiting for one would drop it (#51).
+                self._resolve_prediction(state, final=True)
                 await self.broadcaster.publish(status_event("finished", "Boulder Badge"))
             return self.emu.tick(self.config.idle_frames)
         return None

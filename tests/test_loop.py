@@ -1183,6 +1183,55 @@ def test_pacing_follows_the_frames_the_game_really_spent():
     assert loop.game_frames == emu.frame_count() - before
 
 
+def test_a_prediction_stays_open_after_the_battle_ends(tmp_path):
+    """#51: the end of a battle is not us choosing again. Scoring here filed an answer while the
+    lead was still walking around at 1 HP, and the encounter that knocked it out came after."""
+    emu, loop, run_dir = faint_loop(tmp_path)
+    run(loop, 1)
+    configure_battle_memory(emu, hp=1)
+    emu.mem[ram.wIsInBattle] = 0  # the battle is over; we walk out of it at 1 HP
+    emu.set_rows(DIALOG)
+    run(loop, 1)
+    assert list(run_dir.outcomes()) == []
+
+
+def test_a_faint_in_the_next_encounter_answers_the_prediction_that_was_open(tmp_path):
+    """#51 end to end: survive at 1 HP, leave the battle, and be knocked out by the next
+    encounter before a menu is ever reached. No question was asked about that encounter, so the
+    faint answers the last prediction made -- which asked exactly this."""
+    emu, loop, run_dir = faint_loop(tmp_path)
+    run(loop, 1)
+    configure_battle_memory(emu, hp=1)
+    emu.mem[ram.wIsInBattle] = 0
+    emu.set_rows(DIALOG)
+    run(loop, 1)
+    configure_battle_memory(emu, hp=0)  # the next encounter knocks it out, no menu in between
+    emu.set_rows(DIALOG)
+    run(loop, 1)
+    configure_battle_memory(emu, hp=19)  # blacked out, healed, and choosing again
+    emu.set_rows(BATTLE_MENU)
+    run(loop, 1)
+    assert [o["observed"] for o in run_dir.outcomes()] == [True]
+
+
+def test_a_finished_run_answers_its_last_prediction(tmp_path):
+    """A finished run never reaches another battle menu. Without this the last turn of every run
+    goes unscored, which is data the resolve-at-battle-end rule used to keep."""
+    from jevplays.calibration import Pending
+    from jevplays.runlog import RunDir
+
+    emu, bc = explore_emu(map_id=maps.PALLET_TOWN), RecordingBroadcaster()
+    for flag in ("got_starter", "got_pokedex", "beat_brock"):
+        set_flag(emu, flag)
+    emu.mem[ram.wObtainedBadges] = 1
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    loop = Loop(emu, bc, LoopConfig(paced=False), run_dir=run_dir)
+    loop._pending = Pending(decision_id="d1", slot=0, predicted=0.8)
+    asyncio.run(loop.run())
+    assert loop.finished
+    assert [(o["decision_id"], o["observed"]) for o in run_dir.outcomes()] == [("d1", False)]
+
+
 def test_the_loop_latches_a_faint_before_the_heal_can_hide_it(tmp_path):
     """#36: the lead faints, the blackout heals the party, and the next decision point reads a
     healthy Pokémon. The loop has to notice the zero while it is on screen."""
