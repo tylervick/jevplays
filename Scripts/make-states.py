@@ -48,6 +48,7 @@ from jevplays.executor import maps
 from jevplays.executor.autoplay import finish_battle, play_one_turn, wait_for_fight_menu
 from jevplays.executor.battle import throw_ball
 from jevplays.executor.dialog import skip_dialog
+from jevplays.executor.goals import legs_to
 from jevplays.executor.navigate import Leg, Navigator, goto, step
 from jevplays.loop import Loop, LoopConfig
 from jevplays.state.modes import Mode, yes_no_at
@@ -71,10 +72,11 @@ STORY_STATES = (
     "mart_dex",
     "viridian_oldman",
 )
-BROCK_STATES = ("brock_award",)
-"""Saved the moment `beat_brock` is set, mid-award-dialog, with no badge bit yet (#40). Only
-written on request (`--only brock`): the stand-in brain has to fight its way to Brock and win,
-which is minutes, not seconds, and several blackouts."""
+BROCK_STATES = ("brock_award", "pewter_mart")
+"""`brock_award`: saved the moment `beat_brock` is set, mid-award-dialog, with no badge bit yet
+(#40). `pewter_mart`: inside the Pewter Mart, walked there from `brock_award` (#33). Only written
+on request (`--only brock`; `--only pewter_mart` reuses an existing `brock_award.state`): the
+stand-in brain has to fight its way to Brock and win, which is minutes, not seconds."""
 BROCK_ITERATIONS = 40000
 
 GROUPS: dict[str, tuple[str, ...]] = {
@@ -426,6 +428,32 @@ def make_brock_state(rom: Path, out: Path) -> None:
         raise SystemExit("the stand-in never beat Brock within the iteration ceiling")
 
 
+def make_pewter_mart_state(rom: Path, out: Path) -> None:
+    """`pewter_mart.state`: from `brock_award.state`, press through the award, then walk the
+    milestone route's last link in reverse -- out of the gym and into the Mart -- and save inside."""
+    source = out / "brock_award.state"
+    if not source.is_file():
+        print(f"{source} is missing; run `--only brock` first", file=sys.stderr)
+        raise SystemExit(2)
+    with Emulator(rom) as emu:
+        emu.load(source)
+        skip_dialog(emu, patience=120)
+        settle_overworld(emu)
+        state = snapshot(emu)
+        assert state.badges >= 1, "the award dialog should have granted the badge"
+        nav = Navigator()
+        nav.plan(emu, state, legs_to(state, "pewter_mart"))
+        for _ in range(400):
+            state = snapshot(emu)
+            if state.map_id == maps.PEWTER_MART and state.mode is Mode.OVERWORLD:
+                emu.save(out / "pewter_mart.state")
+                print(f"wrote {out / 'pewter_mart'}.state")
+                return
+            if nav.step(emu, state) == "stuck":
+                break
+        raise SystemExit("could not walk from the gym to the Pewter Mart")
+
+
 def make_center_state(rom: Path, out: Path) -> None:
     """`viridian_center.state`: a detour into the Pokémon Center from `viridian.state`. The loop
     only goes there when the lead is hurt, which the parcel walk is not reliably hurt enough to
@@ -484,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
     run_items = selected("items")
     run_story = selected("story")
     run_brock = args.only in ("brock", "brock_award")  # never in the default set: it takes minutes
+    run_pewter_mart = args.only in ("brock", "pewter_mart")
 
     if run_milestone_1:
         with Emulator(Path(rom)) as emu:
@@ -530,6 +559,8 @@ def main(argv: list[str] | None = None) -> int:
         make_story_states(Path(rom), args.out)
     if run_brock:
         make_brock_state(Path(rom), args.out)
+    if run_pewter_mart:
+        make_pewter_mart_state(Path(rom), args.out)
 
     return 0
 

@@ -351,11 +351,13 @@ layers a scripted counter on top for each one, pressing every button of the HEAL
 itself. Jev's only say is whether to go there at all -- the `heal` option, or the option for the clerk
 standing behind the counter (8.2); once the legs get there, code runs the whole counter.
 
-The BUY sequence takes the item's shelf label, so one counter could serve both purchases;
-as built, a clerk option only buys Poké Balls. Potions would be a Pewter errand, because the
-Viridian shelf has none -- read off the ROM, it stocks Poké Ball, Antidote, Parlyz Heal and Burn
-Heal -- and Pewter is the last counter before Brock, the first fight where a Potion decides
-anything. Buying them is #33, still open. A shelf without the item is an ordinary outcome
+The BUY sequence takes the item's shelf label, so one counter serves both purchases: a clerk
+option runs `shop.restock`, which tops the bag up to five Poké Balls and then five Potions with
+the money left, balls first (#33). The Viridian shelf has no Potion -- read off the ROM, it
+stocks Poké Ball, Antidote, Parlyz Heal and Burn Heal -- so Potions come from Pewter, the last
+counter before Brock, the first fight where a Potion decides anything. A full bag is not a
+failure (there was nothing to do); wanting something and buying nothing marks the option
+`tried`. A shelf without the item is an ordinary outcome
 either way: the scan runs out, the counter backs out to the overworld, the bag count does not
 move, and the option is marked `tried` rather than a guessed inventory being written down.
 

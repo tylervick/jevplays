@@ -80,12 +80,8 @@ GRASS_CANDIDATES = 40
 """How many of the nearest grass cells `wander` runs a path search to. Bounded so the search
 cannot grow with the map."""
 
-REPEATABLE_COUNTERS = frozenset(("heal", "buy_pokeballs"))
+REPEATABLE_COUNTERS = frozenset(("heal", "shop"))
 """NPC macros worth running again: healing and buying are not things one does once."""
-
-MAX_POKEBALLS = 5
-"""How many balls one `buy_pokeballs` trip buys at most, money permitting."""
-POKEBALL_PRICE = 200
 
 
 @dataclass
@@ -590,10 +586,14 @@ class Loop:
             return talk_to(emu, 4, 2, "up")
         if macro == "heal":
             return shop.heal_at_nurse(emu)
-        if macro == "buy_pokeballs":
-            before = goal_table.balls(state)
-            count = min(MAX_POKEBALLS, state.money // POKEBALL_PRICE)
-            return shop.buy_pokeballs(emu, count) > before
+        if macro == "shop":
+            # Top the bag up with whatever the shelf has of what it wants (balls, then Potions).
+            # A full bag is not a failure -- there was nothing to do -- but wanting something and
+            # coming away with nothing is, so Jev sees "tried" on a shelf that cannot help.
+            wanted = shop.shopping_list(state)
+            if not wanted:
+                return True
+            return any(shop.restock(emu, state).values())
         if macro == "choose_charmander":
             return self._choose_charmander()
         if macro == "wander":

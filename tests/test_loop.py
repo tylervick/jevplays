@@ -1196,3 +1196,26 @@ def test_the_loop_latches_a_faint_before_the_heal_can_hide_it(tmp_path):
     emu.set_rows(BATTLE_MENU)
     run(loop, 1)
     assert [o["observed"] for o in run_dir.outcomes()] == [True]
+
+
+def test_the_clerk_option_restocks_and_a_full_bag_is_not_a_failure(monkeypatch):
+    """The clerk macro buys what the bag still wants (balls, then Potions); with nothing wanted
+    it does nothing and still counts as done, and a shelf that yields nothing counts as tried."""
+    from jevplays.executor import shop as shop_module
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        shop_module, "restock", lambda emu, state: calls.append("restock") or {"POKE BALL": 2}
+    )
+    monkeypatch.setattr(shop_module, "shopping_list", lambda state: [("POKE BALL", 2)])
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    assert loop._apply_macro("shop", snapshot(emu)) is True and calls == ["restock"]
+
+    monkeypatch.setattr(shop_module, "shopping_list", lambda state: [])
+    calls.clear()
+    assert loop._apply_macro("shop", snapshot(emu)) is True and calls == []
+
+    monkeypatch.setattr(shop_module, "shopping_list", lambda state: [("POTION", 3)])
+    monkeypatch.setattr(shop_module, "restock", lambda emu, state: {"POTION": 0})
+    assert loop._apply_macro("shop", snapshot(emu)) is False
