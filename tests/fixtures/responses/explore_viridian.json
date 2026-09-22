@@ -146,12 +146,13 @@
       "npc_7": "talk to a gambler to the north-west (new)",
       "npc_2": "talk to a gambler to the north-east (new)"
     },
-    "readiness": "outmatched"
+    "readiness": "outmatched",
+    "supplies": "none, affordable"
   },
   "questions": {
     "explore": {
       "type": "choice",
-      "instructions": "Which of \"options\" should we do next to make progress in the game, given \"progress\" and the \"milestone\"? Each option ends with a word in parentheses: \"new\" means we have never done it from here; \"visited\" or \"talked already\" means we have done it before and may not need to again; \"tried\" means we chose it before from here and nothing came of it, so repeat it only if nothing else is worth doing. \"readiness\", when present, says how the lead measures up to the fight the milestone walks into: training first is worth more than a milestone the party is outmatched for.",
+      "instructions": "Which of \"options\" should we do next to make progress in the game, given \"progress\" and the \"milestone\"? Each option ends with a word in parentheses: \"new\" means we have never done it from here; \"visited\" or \"talked already\" means we have done it before and may not need to again; \"tried\" means we chose it before from here and nothing came of it, so repeat it only if nothing else is worth doing. \"readiness\", when present, says how the lead measures up to the fight the milestone walks into: training first is worth more than a milestone the party is outmatched for. \"supplies\", when present, says what the bag holds for that same fight, and whether a Potion could be bought.",
       "criteria": {
         "milestone": "work on the milestone: Challenge Brock at the Pewter Gym and earn the Boulder Badge (new)",
         "heal": "go heal at Viridian Pokémon Center (new)",
@@ -183,31 +184,31 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 1289,
+      "input_tokens": 1327,
       "output_tokens": 184
     },
     "answers": {
       "explore": {
         "type": "choice",
         "choice": "heal",
-        "confidence": 0.63,
+        "confidence": 0.42,
         "probabilities": {
+          "npc_3": 0.0,
+          "milestone": 0.01,
+          "door_41": 0.34,
           "npc_1": 0.0,
           "door_44": 0.0,
-          "npc_5": 0.0,
+          "exit_west": 0.02,
           "npc_7": 0.0,
           "npc_2": 0.0,
-          "milestone": 0.01,
-          "npc_3": 0.0,
-          "npc_4": 0.0,
-          "exit_west": 0.01,
-          "heal": 0.66,
-          "door_45": 0.0,
-          "door_41": 0.25,
+          "exit_north": 0.07,
+          "heal": 0.46,
+          "door_42": 0.09,
           "door_43": 0.0,
-          "exit_south": 0.0,
-          "door_42": 0.0,
-          "exit_north": 0.07
+          "npc_4": 0.0,
+          "door_45": 0.0,
+          "npc_5": 0.0,
+          "exit_south": 0.01
         }
       },
       "needs_heal": {
@@ -216,5 +217,5 @@
       }
     }
   },
-  "latency_ms": 279
+  "latency_ms": 204
 }
