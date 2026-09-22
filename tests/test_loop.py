@@ -690,12 +690,14 @@ def grass_option():
     )
 
 
-def start_option(loop, option, map_id):
+def start_option(loop, option, map_id, arrived_on=None):
     """Put the loop where `_choose_option` would have left it: this option taken on, its legs
-    (of which an absorbing option has none) already finished."""
+    (of which an absorbing option has none) already finished. `arrived_on` is the map the legs
+    ended on, which is `map_id` for an option that acts where it stands."""
     loop.option = option
     loop.option_started_at = loop.clock()
     loop._option_map = map_id
+    loop._arrived_map = map_id if arrived_on is None else arrived_on
     loop._arrived = True
 
 
@@ -703,6 +705,32 @@ def macro_less(option_id="milestone", kind="milestone"):
     return Option(
         id=option_id, kind=kind, text="work on the milestone: somewhere", memory="new", legs=(), after=None
     )
+
+
+def test_an_arrived_option_whose_map_changed_under_it_is_dropped():
+    """#50. A blackout during the grass option moves the run to Pallet Town, which has grass
+    tiles but no encounter table -- so `wander` steps around a town where no battle can start
+    until OPTION_BUDGET_S (90 seconds of *wall clock*) runs out. `_walk` already drops an option
+    the map changed under, but only while the navigator is busy; one that has arrived and is
+    running its macro never looked again."""
+    emu, bc = explore_emu(map_id=maps.ROUTE_1), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    start_option(loop, grass_option(), maps.ROUTE_1)
+    emu.mem[ram.wCurMap] = maps.PALLET_TOWN  # blacked out mid-wander
+    asyncio.run(loop._overworld_turn(snapshot(emu)))
+    assert loop.option is None
+    assert loop.memory.tried == set()  # it was displaced, not tried and found wanting
+
+
+def test_an_option_that_walked_us_to_another_map_is_not_dropped_as_displaced():
+    """An exit or a door arrives somewhere else on purpose -- that is the whole of it. The check
+    is against the map the legs ended on, not the map the option was generated on."""
+    emu, bc = explore_emu(map_id=maps.ROUTE_1), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    door = Option(id="door_41", kind="door", text="enter somewhere", memory="new", legs=(), after=None)
+    start_option(loop, door, maps.PALLET_TOWN, arrived_on=maps.ROUTE_1)
+    asyncio.run(loop._overworld_turn(snapshot(emu)))
+    assert [e["message"] for e in bc.events if e.get("type") == "status" and "done" in str(e.get("message"))]
 
 
 def test_an_option_that_does_nothing_at_all_is_remembered_as_tried():
@@ -934,6 +962,7 @@ def test_an_option_that_carried_the_run_to_another_map_is_not_marked_tried_back_
             after="no_such_macro",
         ),
         maps.PALLET_TOWN,  # where the option was generated, before its legs moved us
+        arrived_on=maps.OAKS_LAB,  # ... and where they left us
     )
     asyncio.run(loop.advance(snapshot(emu)))
     assert loop.option is None and loop.memory.tried == set()
