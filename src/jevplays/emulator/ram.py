@@ -78,6 +78,7 @@ WARP_LAST_MAP = 0xFF  # destination "the map we came from"
 wTilesetBank = 0xD52B
 wTilesetBlocksPtr = 0xD52C  # little-endian ROM address
 wTilesetCollisionPtr = 0xD530
+wGrassRate = 0xD887  # how often this map's grass starts a battle; 0 means no wild Pokémon live here
 wGrassTile = 0xD535
 COLLISION_END = 0xFF
 

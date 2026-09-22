@@ -108,3 +108,17 @@ def test_the_old_mans_option_is_remembered_and_the_run_moves_off_his_map(rom, st
         # He never moves (his script is decorative); what the run proves is that it talked and moved on.
         assert final.map_id != maps.VIRIDIAN_CITY
         assert (maps.VIRIDIAN_CITY, slot) in memory.talked
+
+
+def test_grass_is_offered_on_route_1_and_not_in_pallet_town(rom, state_path):
+    """The distinction the fake cannot make: both maps have grass tiles, only one has wild
+    Pokémon (#44). Pallet's patch cost a run its whole option budget."""
+    with Emulator(rom) as emu:
+        emu.load(state_path("route1"))
+        emu.tick(1)
+        route = [o.id for o in generate(emu, snapshot(emu), Memory.empty(), milestone=None)]
+        emu.load(state_path("pallet"))
+        emu.tick(1)
+        pallet = [o.id for o in generate(emu, snapshot(emu), Memory.empty(), milestone=None)]
+    assert "grass" in route
+    assert "grass" not in pallet
