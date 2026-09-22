@@ -11,6 +11,35 @@ HEAL_FIRST_THRESHOLD = 0.7
 PROMPT_YES_THRESHOLD = 0.5
 MENU_CLOSE_THRESHOLD = 0.6
 NEVER_NICKNAME = True
+NEVER_LEARN_FIFTH_MOVE = True
+"""Keep the four moves a Pokémon already has rather than trading one for a new one.
+
+Gen 1 asks about a fifth move in a ring: NO to "make room" leads to "Abandon learning X?", and
+NO to that leads straight back to "make room". Neither NO leaves it, and Jev is stateless, so it
+is asked the same question forever -- 594 contiguous decisions in one measured run (#55). The way
+out is a mechanical fact about the box, not a judgment, so it is settled here.
+
+This does hard-code "never learn a fifth move". It costs nothing up to Brock (a starter has EMBER
+by level 9 and the moves that follow are worse), and *which* move to trade away is a real judgment
+that could be Jev's once `menu_state` carries move types and power -- today it carries bare names.
+"""
+
+
+def settled_prompt(text: str) -> tuple[bool, str] | None:
+    """The answer policy gives a YES/NO box, and why, or None when it is Jev's to judge.
+
+    Re-asking Jev at a box whose answer is already settled only gives it a way to deadlock its
+    own goal, which is the same reasoning `Loop._choose_charmander` states for the boxes on the
+    way to the starter."""
+    lowered = text.lower()
+    if NEVER_NICKNAME and "nickname" in lowered:
+        return False, "never nickname"
+    if NEVER_LEARN_FIFTH_MOVE:
+        if "abandon learning" in lowered:
+            return True, "never learn a fifth move"
+        if "make room" in lowered:
+            return False, "never learn a fifth move"
+    return None
 
 
 def _noul(answers: dict[str, dict], key: str) -> float:

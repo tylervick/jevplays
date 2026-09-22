@@ -503,6 +503,44 @@ def test_a_nickname_prompt_never_asks_jev_and_answers_no():
     assert "nickname" in loop.decisions[-1].fallback_reason
 
 
+MAKE_ROOM_ROWS = (
+    PROMPT_ROWS
+    + [""] * 4
+    + [
+        "·Delete an older····",
+        "·move to make room··",
+        "·for RAGE?··········",
+    ]
+)
+ABANDON_ROWS = (
+    PROMPT_ROWS
+    + [""] * 4
+    + [
+        "····················",
+        "·Abandon learning···",
+        "·RAGE?··············",
+    ]
+)
+
+
+def test_the_move_learning_ring_is_answered_by_policy_and_never_reaches_jev():
+    """#55. Gen 1 asks two questions in a ring: NO to "make room" leads to "Abandon learning X?",
+    and NO to that leads straight back to "make room". No NO path leaves it, and Jev is stateless,
+    so the 297th ask looks new -- one run spent 594 contiguous decisions there, 56% of itself.
+    Policy answers both: keep the moveset, abandon the new move, two presses and out."""
+    for (
+        rows,
+        expected,
+    ) in ((MAKE_ROOM_ROWS, ["down", "a"]), (ABANDON_ROWS, ["a"])):
+        emu, bc = prompt_emu(rows), RecordingBroadcaster()
+        brain = QuestionBrain(prompt=0.99)
+        loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+        run(loop, 1)
+        assert brain.calls == 0
+        assert emu.presses == expected
+        assert "fifth move" in loop.decisions[-1].fallback_reason
+
+
 MENU_ROWS = [""] * 2 + ["··▶HEAL····", "···········", "·· CANCEL··"]
 MENU_ROWS_MOVED = [""] * 2 + ["·· HEAL····", "···········", "··▶CANCEL··"]
 
