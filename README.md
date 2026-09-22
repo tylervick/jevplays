@@ -159,9 +159,42 @@ whole run would be over in half a minute and the demo would be a restart loop. `
 multiplies only the clock the pacing sleep is computed against, so the same frames are emulated
 and the same decisions are made; they just arrive sooner.
 
-It serves the local network by default. Putting it on the public internet is a separate
-decision and needs a tunnel in front of it -- there is no authentication here, and a viewer can
-see whatever the run is doing.
+It serves the local network by default, and anyone on your tailnet can open it at this machine's
+tailnet address.
+
+### A public link
+
+The link is public: anyone who has the URL can watch, with no login. A Cloudflare Tunnel from
+the machine running `mise run demo` gives it a hostname without opening a port, and the ROM never
+leaves that machine. Once, with `cloudflared` installed and logged in to the account that holds
+the domain:
+
+    cloudflared tunnel create jevplays
+    cloudflared tunnel route dns jevplays jev.example.com
+    cloudflared tunnel run --url http://localhost:8765 jevplays
+
+Nobody can steer anything from the page: it is read-only, and nothing a viewer sends is acted on.
+It does stream a commercial game to whoever has the link, and every decision a run makes is
+TypeSafe quota. Three limits keep that bounded, all flags on `Scripts/demo-loop.py`:
+
+- `--pause-after 60`: a run stops stepping the game once no dashboard has been open for this many
+  seconds -- no frames, no decisions -- and carries on where it left off when a tab opens. The
+  page says "unwatched" meanwhile. A crawler or a link preview fetches the page without running it,
+  so it never opens the socket and never wakes the game, and a tab in the background lets go of its
+  socket until it is shown again.
+- `--daily-decisions 1500`: the day's budget (UTC), about five watched hours at 6x. It is counted
+  from `decisions.jsonl` across every run, so a restart does not reset it, and each run is started
+  with only what is left. A run that reaches it rests with the page up and says so; the next day's
+  run starts after midnight UTC. The run enforces the number it was given, so a supervisor that
+  dies does not leave a run spending past it.
+- `--max-viewers 20`: tabs served at once; the next one is told the demo is full and retries. Each
+  tab is its own frame stream, about 175 KiB/s (1.4 Mbit/s) at the demo's 6x, from this machine's
+  upload.
+
+`GET /health` answers `{"status": ..., "viewers": n}`; the supervisor polls it so that a run
+paused or resting on purpose is not mistaken for a hung one. Run directories last written more than
+two days ago are pruned before each start: logging stays on because the watchdog and the budget
+both read it, and a run directory is save-state data that should not pile up.
 
 ## Runs
 

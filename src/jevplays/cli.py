@@ -125,7 +125,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     failures: list[Exception] = []
 
     async def main_async() -> None:
-        broadcaster = Broadcaster()
+        broadcaster = Broadcaster(max_viewers=args.max_viewers)
         stop_serving = asyncio.Event()
         server = asyncio.create_task(
             serve(create_app(broadcaster), host=args.host, port=args.port, stop=stop_serving)
@@ -159,7 +159,13 @@ def cmd_run(args: argparse.Namespace) -> int:
                     print("brain: jev-latest", flush=True)
                 else:
                     print("brain: off" + ("" if args.no_brain else " (no TYPESAFE_API_KEY)"), flush=True)
-                config = LoopConfig(paced=not args.unpaced, goal=args.battle_goal, speed=args.speed)
+                config = LoopConfig(
+                    paced=not args.unpaced,
+                    goal=args.battle_goal,
+                    speed=args.speed,
+                    pause_after=args.pause_after,
+                    max_decisions=args.max_decisions,
+                )
                 loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir, memory=memory)
                 watcher = asyncio.create_task(_print_progress(loop))
                 try:
@@ -328,6 +334,19 @@ def build_parser() -> argparse.ArgumentParser:
         "ignored with --unpaced",
     )
     run.add_argument("--no-brain", action="store_true", help="never call TypeSafe; let code decide instead")
+    run.add_argument(
+        "--pause-after",
+        type=float,
+        metavar="SECONDS",
+        help="stop stepping the game after this long with no dashboard open, until one opens",
+    )
+    run.add_argument(
+        "--max-decisions",
+        type=int,
+        metavar="N",
+        help="make at most N decisions, then rest with the dashboard still up",
+    )
+    run.add_argument("--max-viewers", type=int, metavar="N", help="turn away dashboard tabs past N at once")
     # --goal is the old spelling, kept working: it is the battle brain's free-text objective,
     # not the overworld one (that is the active milestone, from executor/goals.py).
     run.add_argument(

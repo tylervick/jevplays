@@ -1452,3 +1452,152 @@ def test_the_clerk_option_restocks_and_a_full_bag_is_not_a_failure(monkeypatch):
     monkeypatch.setattr(shop_module, "shopping_list", lambda state: [("POTION", 3)])
     monkeypatch.setattr(shop_module, "restock", lambda emu, state: {"POTION": 0})
     assert loop._apply_macro("shop", snapshot(emu)) is False
+
+
+# --- a demo nobody is watching, and a demo that has spent its day ---------------------------
+
+
+class ViewedBroadcaster(RecordingBroadcaster):
+    """A broadcaster the test decides the audience of. `wait_for_viewer` is where a paused run
+    blocks, so it is also where the test lets time pass."""
+
+    def __init__(self, idle: list[float], on_wait=None) -> None:
+        super().__init__()
+        self.idle = list(idle)
+        """Seconds unwatched, one per call to idle_for; the last value repeats."""
+        self.on_wait = on_wait
+
+    def idle_for(self) -> float:
+        return self.idle.pop(0) if len(self.idle) > 1 else self.idle[0]
+
+    async def wait_for_viewer(self) -> None:
+        self.events.append({"type": "waited"})
+        self.idle = [0.0]
+        if self.on_wait is not None:
+            self.on_wait()
+
+
+def test_a_run_nobody_has_watched_for_a_while_pauses_until_someone_does():
+    """Every decision is TypeSafe quota, and a public link means most of the day nobody is on the
+    page. Past `pause_after` seconds unwatched, the loop says so and stops -- no frames, no
+    decisions, no emulation -- until a tab opens."""
+    bc = ViewedBroadcaster(idle=[61.0])
+    loop = Loop(FakeEmulator(), bc, LoopConfig(paced=False, idle_frames=7, pause_after=60))
+    run(loop, 1)
+    kinds = [e.get("status", e["type"]) for e in bc.events]
+    assert kinds[:3] == ["unwatched", "waited", "running"]
+    assert "state" in kinds[3:]  # the step it held back runs once someone is watching
+
+
+def test_a_run_watched_recently_enough_or_with_no_pause_configured_never_pauses():
+    bc = ViewedBroadcaster(idle=[59.0])
+    run(Loop(FakeEmulator(), bc, LoopConfig(paced=False, idle_frames=7, pause_after=60)), 2)
+    assert all(e["type"] != "waited" for e in bc.events)
+    bc = ViewedBroadcaster(idle=[1e9])
+    run(Loop(FakeEmulator(), bc, LoopConfig(paced=False, idle_frames=7)), 2)
+    assert all(e["type"] != "waited" for e in bc.events)
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_a_paused_run_picks_up_its_pace_where_it_left_off_instead_of_catching_up(monkeypatch):
+    """The pacer schedules each step against the time the run started. Three hours unwatched
+    would put every later step three hours overdue, and the run would play flat out -- a burst
+    of decisions the moment someone opens the link -- until it caught up. The pause is not game
+    time, so the schedule moves forward by it."""
+    import jevplays.loop as loop_module
+
+    clock = FakeClock()
+    slept_after_resume: list[float] = []
+    resumed = False
+
+    async def fake_sleep(seconds):
+        if resumed:
+            slept_after_resume.append(seconds)
+        clock.now += max(0.0, seconds)
+
+    def three_hours_pass():
+        nonlocal resumed
+        clock.now += 3 * 3600
+        resumed = True
+
+    monkeypatch.setattr(loop_module, "monotonic", clock)
+    monkeypatch.setattr(loop_module.asyncio, "sleep", fake_sleep)
+    bc = ViewedBroadcaster(idle=[0.0, 999.0], on_wait=three_hours_pass)
+    emu = CapturingEmulator([])
+    loop = Loop(emu, bc, LoopConfig(paced=True, idle_frames=60, fps=15, pause_after=60))
+    loop.clock = clock
+
+    async def one_second_of_game(state):
+        return emu.tick(60)
+
+    loop.advance = one_second_of_game
+    run(loop, 2)
+    # One step of 60 frames at the game's own clock is a second of sleep, pause or no pause.
+    assert sum(slept_after_resume) == pytest.approx(1.0, abs=0.05)
+
+
+def test_a_pause_does_not_eat_the_budget_of_the_option_being_carried_out(monkeypatch):
+    """An option has OPTION_BUDGET_S of wall clock before it is dropped as `tried`. Time spent
+    paused is time nobody played, so it is not charged to the option."""
+    clock = FakeClock()
+    bc = ViewedBroadcaster(idle=[999.0], on_wait=lambda: setattr(clock, "now", clock.now + 3 * 3600))
+    loop = Loop(FakeEmulator(), bc, LoopConfig(paced=False, idle_frames=7, pause_after=60))
+    loop.clock = clock
+    loop.option = Option(id="exit_north", kind="exit", text="go north", memory="new", legs=(), after=None)
+    loop.option_started_at = clock.now - 10
+    charged: list[float] = []
+
+    async def advance(state):
+        charged.append(clock.now - loop.option_started_at)
+        return 7
+
+    loop.advance = advance
+    run(loop, 1)
+    assert charged == [pytest.approx(10)]
+
+
+def test_a_run_that_reaches_max_decisions_rests_and_keeps_the_page_up():
+    """The demo's daily ceiling is carried by the process that spends it, so a supervisor that
+    dies cannot leave a run spending past it. At the limit the loop makes no more decisions and
+    says why on the page, and waits -- the dashboard stays up for anyone who opens the link."""
+    bc = RecordingBroadcaster()
+    loop = Loop(FakeEmulator(), bc, LoopConfig(paced=False, idle_frames=7, max_decisions=2))
+    loop.decisions += [local_decision("prompt", {}, PromptAction("yes"), "test")] * 2
+
+    async def scenario():
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(loop.run(max_iterations=5), 0.2)
+
+    asyncio.run(scenario())
+    statuses = [e for e in bc.events if e["type"] == "status"]
+    assert [e["status"] for e in statuses] == ["resting"]
+    assert "budget" in statuses[0]["message"]
+    assert all(e["type"] == "status" for e in bc.events)  # nothing else ran
+
+
+def test_max_decisions_counts_this_session_not_a_resumed_log():
+    bc = RecordingBroadcaster()
+    loop = Loop(FakeEmulator(), bc, LoopConfig(paced=False, idle_frames=7, max_decisions=1))
+    loop._logged_before = 500  # a resumed run's history was spent on earlier days
+    # Resting never returns, so a loop that wrongly rests shows up as a timeout, not a hang.
+    asyncio.run(asyncio.wait_for(loop.run(max_iterations=1), 1))
+    assert all(e.get("status") != "resting" for e in bc.events)
+
+
+def test_a_faster_run_captures_less_often_so_the_page_still_gets_fps_frames_a_second():
+    """`fps` is what a viewer's page receives per second of wall clock. At six times the game's
+    clock, capturing every fourth game frame sent 90 a second -- about 720 KiB/s to every tab, all
+    of it from a home upload once the link is public. The capture interval scales with speed."""
+    six = CapturingEmulator([])
+    Loop(six, RecordingBroadcaster(), LoopConfig(paced=True, fps=15, speed=6.0))
+    assert six.capture_every == 24  # 60 * 6 / 15
+    one = CapturingEmulator([])
+    Loop(one, RecordingBroadcaster(), LoopConfig(paced=True, fps=15, speed=1.0))
+    assert one.capture_every == 4
