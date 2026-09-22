@@ -113,9 +113,14 @@ function renderParty(party) {
   }
 }
 
+const TRY_AGAIN_LATER = 1013; // the server is at its viewer limit
+let ws = null;
+
 function connect() {
+  if (document.hidden) return; // a retry that came due after the tab was hidden; shown reconnects
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  const sock = new WebSocket(`${proto}://${location.host}/ws`);
+  ws = sock;
   ws.onmessage = (msg) => {
     const event = JSON.parse(msg.data);
     if (event.type === "frame") {
@@ -144,11 +149,25 @@ function connect() {
       renderDecision(event.decision);
     }
   };
-  ws.onclose = () => {
-    status.textContent = "disconnected, retrying…";
+  ws.onclose = (event) => {
+    // Hidden: closed on purpose below, and it reconnects when shown. Superseded: a newer socket
+    // already replaced this one, and retrying here too would leave two open.
+    if (document.hidden || sock !== ws) return;
+    const full = event.code === TRY_AGAIN_LATER;
+    status.textContent = full ? "the demo is full, retrying…" : "disconnected, retrying…";
     status.dataset.status = "stopped";
-    setTimeout(connect, 1000);
+    setTimeout(connect, full ? 30000 : 1000);
   };
 }
+
+// A tab nobody can see is not watching: let the socket go so the run can pause (a background
+// tab left open overnight would otherwise keep it playing), and pick it back up when shown.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    if (ws) ws.close();
+  } else if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+    connect();
+  }
+});
 
 connect();

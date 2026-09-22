@@ -174,3 +174,16 @@ def test_run_takes_a_speed_multiplier_that_defaults_to_real_time():
     parser = build_parser()
     assert parser.parse_args(["run"]).speed == 1.0
     assert parser.parse_args(["run", "--speed", "6"]).speed == 6.0
+
+
+def test_run_takes_the_demo_limits_and_leaves_them_off_by_default():
+    """A run on the command line plays until stopped for whoever is at the keyboard; only the demo
+    behind a public link pauses when nobody watches, rests at a daily budget, and turns viewers
+    away past a limit."""
+    from jevplays.cli import build_parser
+
+    parser = build_parser()
+    plain = parser.parse_args(["run"])
+    assert (plain.pause_after, plain.max_decisions, plain.max_viewers) == (None, None, None)
+    demo = parser.parse_args(["run", "--pause-after", "60", "--max-decisions", "40", "--max-viewers", "20"])
+    assert (demo.pause_after, demo.max_decisions, demo.max_viewers) == (60.0, 40, 20)

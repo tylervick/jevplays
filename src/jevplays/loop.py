@@ -101,10 +101,22 @@ class LoopConfig:
     speed: float = 1.0
     """How much faster than the game's own clock a paced run plays, 1.0 being real time.
 
-    Only the sleep is scaled: the same frames are emulated and the same decisions are made, they
-    just arrive sooner. It exists for a demo left running for people to drop in on, where real
-    time means about two hours to the Boulder Badge. Ignored when `paced` is off, which has no
-    clock to stretch."""
+    The same frames are emulated and the same decisions are made; they just arrive sooner. It
+    exists for a demo left running for people to drop in on, where real time means about two
+    hours to the Boulder Badge. Ignored when `paced` is off, which has no clock to stretch.
+
+    Anything else derived from the game's frame clock has to be scaled with it, or it speeds up
+    too. The pacing sleep is one. The capture interval is the other: it is `speed` times longer,
+    so the page still gets `fps` frames per wall-clock second. #71 missed that, and a 6x demo sent
+    90 frames a second to every tab. A new clock knob needs the same audit."""
+    pause_after: float | None = None
+    """Seconds with no dashboard open after which the run stops stepping the game until a tab
+    opens; None never pauses. For a demo behind a public link, where most of the day nobody is
+    watching and every decision is TypeSafe quota. Needs a broadcaster that counts its viewers."""
+    max_decisions: int | None = None
+    """Decisions this session may make before the run rests: it stops deciding and keeps the
+    page up saying why. None is no limit. The demo supervisor passes what is left of the day's
+    budget, so the ceiling is carried by the process that spends it."""
 
 
 def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision:
@@ -179,7 +191,7 @@ class Loop:
             # Only a run somebody is watching pays for capture: each captured frame costs an
             # extra emulated frame and a JPEG encode, and an unpaced run is being measured, not
             # watched. See _play_frames for what the captures are for.
-            emu.capture_every = round(FRAMES_PER_SECOND / config.fps) if config.paced else 0
+            emu.capture_every = round(FRAMES_PER_SECOND * config.speed / config.fps) if config.paced else 0
         """The faint prediction waiting for the game to answer it (calibration.py)."""
         """Set after a macro fails twice and the safe default fails too: (mode, decision id) to
         wait out until the screen changes, so the loop stops asking the brain about a decision
@@ -832,6 +844,32 @@ class Loop:
         counter = getattr(self.emu, "frame_count", None)
         return counter() if counter is not None else None
 
+    def _out_of_budget(self) -> bool:
+        return self.config.max_decisions is not None and len(self.decisions) >= self.config.max_decisions
+
+    async def _rest(self) -> None:
+        """Stop for good, with the page up: today's budget is spent. The supervisor starts the
+        next run once the day turns over; until then this waits to be stopped."""
+        await self.broadcaster.publish(
+            status_event("resting", "today's decision budget is spent; back after 00:00 UTC")
+        )
+        await asyncio.Event().wait()
+
+    async def _wait_while_unwatched(self) -> float:
+        """Hold the run while nobody has had the page open for `pause_after` seconds. Returns how
+        long it held, in pacing seconds; the option being carried out is not charged for it."""
+        if self.config.pause_after is None or self.broadcaster.idle_for() < self.config.pause_after:
+            return 0.0
+        await self.broadcaster.publish(
+            status_event("unwatched", "nobody is watching; it carries on when someone opens the page")
+        )
+        began, began_budget = monotonic(), self.clock()
+        await self.broadcaster.wait_for_viewer()
+        if self.option is not None:
+            self.option_started_at += self.clock() - began_budget
+        await self.broadcaster.publish(status_event("running", "someone is watching"))
+        return monotonic() - began
+
     async def run(self, max_iterations: int | None = None) -> None:
         """Play until `max_iterations` turns have passed or the last milestone is done (`finished`)."""
         started = monotonic()
@@ -846,6 +884,12 @@ class Loop:
         for i in count():
             if max_iterations is not None and i >= max_iterations:
                 return
+            if self._out_of_budget():
+                await self._rest()
+            paused = await self._wait_while_unwatched()
+            # Time spent paused was not game time: the schedule moves forward by it, or every
+            # later step would be overdue and the run would play flat out until it caught up.
+            started += paused
             state = snapshot(self.emu)
             if self._hold is not None and state.mode != self._hold[0]:
                 self._hold = None

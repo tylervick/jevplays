@@ -44,3 +44,99 @@ def test_the_backoff_grows_then_settles(tmp_path):
     assert demo_loop.backoff(1) == 4
     assert demo_loop.backoff(5) >= demo_loop.backoff(4)
     assert demo_loop.backoff(50) == demo_loop.MAX_BACKOFF_S
+
+
+def utc(y, mo, d, h=12) -> float:
+    from datetime import UTC, datetime
+
+    return datetime(y, mo, d, h, tzinfo=UTC).timestamp()
+
+
+def make_run_at(root: Path, name: str, stamps: list[float]) -> Path:
+    run = root / name
+    run.mkdir(parents=True)
+    (run / "run.json").write_text("{}")
+    (run / "decisions.jsonl").write_text("".join(json.dumps({"ts": ts}) + "\n" for ts in stamps))
+    return run
+
+
+def test_the_days_decisions_are_counted_across_every_run_by_their_own_timestamps(tmp_path):
+    """The daily ceiling is a budget for the day, not for one run: the demo restarts a run at
+    the badge and after every stall. Counting from the logs on disk means a restarted supervisor
+    picks up the same count, and a run that straddles midnight is split where its decisions fall."""
+    from datetime import date
+
+    make_run_at(tmp_path, "20260921-230000", [utc(2026, 9, 21, 23), utc(2026, 9, 22, 0), utc(2026, 9, 22, 1)])
+    make_run_at(tmp_path, "20260922-020000", [utc(2026, 9, 22, 2)] * 4)
+    (tmp_path / "half-made").mkdir()  # no run.json: not a run
+    assert demo_loop.decisions_on(tmp_path, date(2026, 9, 22)) == 6
+    assert demo_loop.decisions_on(tmp_path, date(2026, 9, 21)) == 1
+    assert demo_loop.decisions_on(tmp_path / "missing", date(2026, 9, 22)) == 0
+
+
+def test_a_torn_last_line_is_not_a_decision_and_does_not_stop_the_count(tmp_path):
+    """A run killed mid-append can leave half a line; the count is a budget, not a parser test."""
+    from datetime import date
+
+    run = make_run_at(tmp_path, "20260922-020000", [utc(2026, 9, 22)] * 2)
+    with (run / "decisions.jsonl").open("a") as f:
+        f.write('{"ts": 17')
+    assert demo_loop.decisions_on(tmp_path, date(2026, 9, 22)) == 2
+
+
+def test_pruning_drops_runs_last_written_over_two_days_ago_and_never_the_newest(tmp_path):
+    """runs/ is save-state data growing ~50 MB a day. Two days keeps today's count honest (a run
+    from yesterday may still hold decisions made after midnight) and recent runs for accuracy.py."""
+    import os
+
+    now = utc(2026, 9, 22)
+    old = make_run_at(tmp_path, "20260919-120000", [])
+    recent = make_run_at(tmp_path, "20260921-120000", [])
+    for path, at in ((old, now - 3 * 86400), (recent, now - 1 * 86400)):
+        for f in [path, *path.iterdir()]:
+            os.utime(f, (at, at))
+    stray = tmp_path / "notes"
+    stray.mkdir()
+    os.utime(stray, (now - 30 * 86400,) * 2)
+
+    assert demo_loop.prune(tmp_path, now=now) == [old]
+    assert not old.exists() and recent.exists() and stray.exists()  # only run directories go
+
+    only = tmp_path / "only"
+    make_run_at(only, "20260101-000000", [])
+    lone = only / "20260101-000000"
+    for f in [lone, *lone.iterdir()]:
+        os.utime(f, (0, 0))
+    assert demo_loop.prune(only, now=now) == []  # the newest run stays, however old
+
+
+def test_a_run_waiting_on_purpose_is_not_stalled():
+    """#67's watchdog kills a run that stops deciding. A run paused because nobody is watching,
+    or resting on a spent budget, stops deciding on purpose and must be left alone -- and when it
+    wakes, its quiet time is not held against it."""
+    assert demo_loop.waiting_on_purpose("unwatched")
+    assert demo_loop.waiting_on_purpose("resting")
+    assert not demo_loop.waiting_on_purpose("running")
+    assert not demo_loop.waiting_on_purpose("paused")  # the loop's own "stuck" pause is a stall
+    assert not demo_loop.waiting_on_purpose(None)  # no answer from the page
+
+
+def test_the_run_command_carries_the_demo_limits():
+    import argparse
+
+    args = argparse.Namespace(
+        state="states/route1.state",
+        host="0.0.0.0",
+        port=8765,
+        runs_dir=Path("runs/demo"),
+        speed=6.0,
+        pause_after=60.0,
+        max_viewers=20,
+    )
+    cmd = demo_loop.command(args, max_decisions=37)
+    flags = dict(zip(cmd[4::2], cmd[5::2], strict=False))
+    assert cmd[:4] == ["uv", "run", "jevplays", "run"]
+    assert flags["--max-decisions"] == "37"
+    assert flags["--pause-after"] == "60.0"
+    assert flags["--max-viewers"] == "20"
+    assert flags["--speed"] == "6.0"
