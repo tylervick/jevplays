@@ -58,9 +58,18 @@ links: dict[str, list[Link]]      # from-node -> the links crossed out of it
 
 `options.generate` already holds the `Memory`, so `_heal_option` and `_milestone_option` pass `memory.links` down.
 
-## 6. What this lets go of
+## 6. The milestone guard is generalised, not removed
 
-`_milestone_option`'s `node.startswith("map_")` guard is removed. It exists because an unmapped node could never route; with the overlay it can. Removing it is only safe because **#53 landed first**: a milestone that still cannot be routed now has no legs and no macro, so it is not offered at all, rather than being treated as arrived. The two changes are complementary and this one depends on that one.
+**Corrected during implementation.** This section originally said `_milestone_option`'s `node.startswith("map_")` guard could simply be deleted, because #53 now drops a milestone with no legs and no macro. Building it showed that is wrong: a milestone whose route fails still carries its `after` macro, so it is offered anyway and the macro runs in the wrong place — `choose_charmander` walking up to a table that is not on this map. Two loop tests caught it.
+
+The guard stays, with a better question. Not *"is this node in the hand-written table"* but *"is this node in the graph at all"*:
+
+```python
+if node not in maps.LINKS and node not in links:
+    return None
+```
+
+A map the router knows no way out of can route nowhere, so the milestone is withheld exactly as before. One crossing out of it lifts the guard, which is precisely the case this design exists for. #53 still does the rest of the work: a routable-looking milestone that yields no legs and has no macro is dropped rather than treated as arrived.
 
 `_heal_option` keeps its shape. It gets more useful for free: a Center becomes reachable from anywhere the run has walked back from.
 
@@ -83,7 +92,7 @@ Unit, over a synthetic `Memory`:
 - a milestone on an unmapped node is offered when the overlay can route it, and not offered when it cannot (the #53 interaction)
 - `Memory.from_dict` on a dict with no `links` key
 
-ROM, under `tests/rom/` and skipped without the save states: a run that has crossed Pewter → Route 3 can route a heal trip back from Route 3 to the Pewter Pokémon Center.
+**No ROM test was written.** It would need a save state on Route 3, which `Scripts/make-states.py` does not produce and which takes minutes to author. The live measurement in section 9 covers the same ground better, because it exercises the graph the run actually built rather than one a test handed it.
 
 ## 9. How we will know it worked
 
@@ -95,3 +104,16 @@ Four unpaced runs from `states/brock_award.state` with the throwaway probe miles
 - decisions to the same point, to see what the routing costs
 
 A null result is reportable: if a run that can now route home does not choose to, that is a fact about what Jev weighs, and #52 has just shown the same shape of answer is worth having.
+
+### 9.1 What the measurement actually said
+
+| | before | after |
+| --- | --- | --- |
+| graph nodes built per run | 0 | 9 |
+| heal offered while outside `LINKS` | 0 | 2 |
+| maps reached | 9 | 9 |
+| blackouts past Pewter | 0 | 0 |
+
+The mechanism is demonstrated, and one moment demonstrates it better than the table: in **Mt. Moon 1F**, three maps outside the hand-written graph, a hurt Charmeleon was offered "go heal at Pewter Pokémon Center" and took it.
+
+**The headline metric did not fire.** No run blacked out past Pewter in either arm, because a post-Brock lead handles Mt. Moon comfortably, so the loss this design prevents was never actually incurred. What is proven is that the return path exists and gets used; what is not proven is that it saves a run. Re-measuring from a weaker party, or further east, is what would settle that.
