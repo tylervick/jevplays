@@ -503,6 +503,44 @@ def test_a_nickname_prompt_never_asks_jev_and_answers_no():
     assert "nickname" in loop.decisions[-1].fallback_reason
 
 
+MAKE_ROOM_ROWS = (
+    PROMPT_ROWS
+    + [""] * 4
+    + [
+        "·Delete an older····",
+        "·move to make room··",
+        "·for RAGE?··········",
+    ]
+)
+ABANDON_ROWS = (
+    PROMPT_ROWS
+    + [""] * 4
+    + [
+        "····················",
+        "·Abandon learning···",
+        "·RAGE?··············",
+    ]
+)
+
+
+def test_the_move_learning_ring_is_answered_by_policy_and_never_reaches_jev():
+    """#55. Gen 1 asks two questions in a ring: NO to "make room" leads to "Abandon learning X?",
+    and NO to that leads straight back to "make room". No NO path leaves it, and Jev is stateless,
+    so the 297th ask looks new -- one run spent 594 contiguous decisions there, 56% of itself.
+    Policy answers both: keep the moveset, abandon the new move, two presses and out."""
+    for (
+        rows,
+        expected,
+    ) in ((MAKE_ROOM_ROWS, ["down", "a"]), (ABANDON_ROWS, ["a"])):
+        emu, bc = prompt_emu(rows), RecordingBroadcaster()
+        brain = QuestionBrain(prompt=0.99)
+        loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+        run(loop, 1)
+        assert brain.calls == 0
+        assert emu.presses == expected
+        assert "fifth move" in loop.decisions[-1].fallback_reason
+
+
 MENU_ROWS = [""] * 2 + ["··▶HEAL····", "···········", "·· CANCEL··"]
 MENU_ROWS_MOVED = [""] * 2 + ["·· HEAL····", "···········", "··▶CANCEL··"]
 
@@ -659,6 +697,35 @@ def start_option(loop, option, map_id):
     loop.option_started_at = loop.clock()
     loop._option_map = map_id
     loop._arrived = True
+
+
+def macro_less(option_id="milestone", kind="milestone"):
+    return Option(
+        id=option_id, kind=kind, text="work on the milestone: somewhere", memory="new", legs=(), after=None
+    )
+
+
+def test_an_option_that_does_nothing_at_all_is_remembered_as_tried():
+    """#53's backstop. An option with no macro that finishes on the map it started on moved
+    nothing and did nothing. Without a memory stamp it comes back `(new)` and can be chosen
+    again forever -- which is how one probe made 654 identical decisions in 86 seconds."""
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    here = emu.mem[ram.wCurMap]
+    start_option(loop, macro_less(), here)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert (here, "milestone") in loop.memory.tried
+
+
+def test_a_door_that_carried_us_somewhere_is_not_remembered_as_tried():
+    """Exits and doors are macro-less too, and arriving is the whole of them. Marking one
+    `tried` would tell Jev that leaving worked out badly when it worked exactly as asked."""
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    started_on = emu.mem[ram.wCurMap] + 1  # the door was taken from the map next door
+    start_option(loop, macro_less(option_id="door_41", kind="door"), started_on)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert loop.memory.tried == set()
 
 
 def test_an_idle_overworld_asks_once_and_walks_the_option_jev_picked():

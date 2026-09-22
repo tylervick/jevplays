@@ -3,7 +3,7 @@ import re
 from dataclasses import replace
 
 from jevplays.brain.decision import MenuAction, PromptAction
-from jevplays.brain.policy import choose_menu, choose_prompt
+from jevplays.brain.policy import choose_menu, choose_prompt, settled_prompt
 from jevplays.brain.prompt import (
     decide_menu,
     decide_prompt,
@@ -182,3 +182,18 @@ def test_decide_prompt_marks_a_missing_prompt_answer_as_a_fallback():
     assert d.action == "answer NO" and d.action_value == PromptAction(yes=False)
     assert d.fallback is True and "no usable prompt answer" in d.fallback_reason
     assert "policy_note" not in d.state_summary
+
+
+def test_settled_prompt_answers_the_boxes_that_are_not_judgment_calls():
+    """A nickname is not a judgment, and neither is the move-learning ring: NO to "make room"
+    leads to "Abandon learning X?" and NO to that leads back, so no NO path leaves it (#55)."""
+    assert settled_prompt("Do you want to give a NICKNAME to it?") == (False, "never nickname")
+    assert settled_prompt("Abandon learning RAGE?") == (True, "never learn a fifth move")
+    assert settled_prompt("Delete an older move to make room for RAGE?") == (
+        False,
+        "never learn a fifth move",
+    )
+
+
+def test_settled_prompt_leaves_an_ordinary_question_to_jev():
+    assert settled_prompt("Do you want to go to the next floor?") is None

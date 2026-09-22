@@ -207,6 +207,26 @@ def test_milestone_option_is_omitted_on_an_unmapped_node():
     assert not any(o.kind == "milestone" for o in opts)
 
 
+def test_a_milestone_that_can_neither_be_walked_to_nor_acted_on_is_not_offered():
+    """#53. A milestone whose route comes back empty has no legs, and with no `after` macro it
+    also has nothing to do where it stands -- so it does literally nothing, reports itself done,
+    stamps no memory, and comes back `(new)` for Jev to pick again. The probe past Brock chose
+    one 654 times in 86 seconds without leaving the building."""
+    milestone = milestone_stub(legs=(), after=None)
+    emu, state, memory = town()
+    opts = generate(emu, state, memory, milestone)
+    assert not any(o.kind == "milestone" for o in opts)
+
+
+def test_a_milestone_with_no_legs_but_a_macro_is_still_offered():
+    """The other reason legs come back empty: we are already standing where the milestone
+    happens (talk to Oak in his lab). That one has work to do here and must keep being offered."""
+    milestone = milestone_stub(legs=(), after="talk_oak")
+    emu, state, memory = town()
+    opts = generate(emu, state, memory, milestone)
+    assert opts[0].kind == "milestone" and opts[0].legs == ()
+
+
 def test_texts_and_labels_carry_no_numbers():
     # Route names carry a digit by design (map_name(13) == "Route 2"), so this uses a map with
     # no connections and covers every other kind: door, npc, grass, heal, and milestone (whose

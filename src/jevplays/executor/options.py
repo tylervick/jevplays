@@ -311,12 +311,21 @@ def _heal_option(state: GameState, node: str) -> Option | None:
 def _milestone_option(state: GameState, milestone: Goal | None, node: str) -> Option | None:
     if milestone is None or milestone.done(state) or node.startswith("map_"):
         return None
+    legs = tuple(milestone.legs(state))
+    if not legs and milestone.after is None:
+        # Empty legs mean one of two things: we are standing where the milestone happens (talk to
+        # Oak in his lab), or `maps.route` found no way there at all. The macro tells them apart
+        # -- without one there is nothing to do here and nowhere to walk, so the option would run,
+        # report itself done, stamp nothing, and come back `(new)` for Jev to pick again. A probe
+        # past Brock chose one 654 times in 86 seconds that way (#53). Offer nothing instead and
+        # let the exits and doors carry the run: a beat Jev can reach by exploring is not a goal.
+        return None
     return Option(
         id="milestone",
         kind="milestone",
         text=f"work on the milestone: {milestone.description}",
         memory="",
-        legs=tuple(milestone.legs(state)),
+        legs=legs,
         after=milestone.after,
     )
 

@@ -26,7 +26,7 @@ from jevplays.brain.battle import ALL_ACTIONS, battle_questions, battle_state, b
 from jevplays.brain.decision import Action, BattleAction, Decision, ExploreAction, MenuAction, PromptAction
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.brain.explore import decide_explore, explore_questions, explore_state
-from jevplays.brain.policy import NEVER_NICKNAME
+from jevplays.brain.policy import settled_prompt
 from jevplays.brain.prompt import (
     decide_menu,
     decide_prompt,
@@ -548,6 +548,11 @@ class Loop:
         option = self.option
         macro = option.after
         if macro is None:
+            if self.emu.mem[ram.wCurMap] == self._option_map:
+                # Arriving is the whole of an exit or a door -- but we are standing on the map
+                # this option started from, so it carried us nowhere and had no macro to make up
+                # for it. Remember that, or it comes back `(new)` and can be chosen forever (#53).
+                return await self._option_tried("it went nowhere")
             # An exit or a door: arriving is the whole of it.
             await self.broadcaster.publish(status_event("running", f"done: {option.text}"))
             self._clear_option()
@@ -689,9 +694,12 @@ class Loop:
     async def _prompt_turn(self, state: GameState) -> int:
         sj = prompt_state(state, self._goal_description())
         text = sj.get("prompt") or ""
-        if NEVER_NICKNAME and "nickname" in text.lower():
-            # Settled by policy, so Jev is never asked: a nickname is not a judgment call.
-            decision = local_decision("prompt", sj, PromptAction(yes=False), "policy: never nickname")
+        settled = settled_prompt(text)
+        if settled is not None:
+            # Settled by policy, so Jev is never asked: a nickname is not a judgment call, and
+            # neither is the way out of the move-learning ring (#55).
+            yes, why = settled
+            decision = local_decision("prompt", sj, PromptAction(yes=yes), f"policy: {why}")
             await self._record(decision)
         else:
             decision = await self._decide(
