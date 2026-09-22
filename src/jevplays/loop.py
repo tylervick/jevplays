@@ -157,6 +157,10 @@ class Loop:
         self._seen_map: int | None = None
         """The map the last overworld turn ran on, so a change is noticed exactly once."""
         self._arrived = False
+        self._arrived_map: int | None = None
+        """The map the option's legs ended on. An arrived option that finds itself somewhere
+        else has been displaced -- a blackout, a scripted teleport -- and is no longer about
+        anything here (#50)."""
         """The legs are finished: the next overworld turn runs the option's `after` macro."""
         self._wander_up = True
         self._backoff = min(1.0, self.config.backoff_max)
@@ -398,6 +402,17 @@ class Loop:
         if self.navigator.busy:
             return await self._walk(state)
         if self.option is not None:
+            if self._arrived and self._arrived_map is not None and state.map_id != self._arrived_map:
+                # The map changed under an option that had already arrived: a blackout, or a
+                # scripted teleport. `_walk` handles the same fact with `lost`, but only while
+                # the navigator is busy -- an option running its macro never looked again. A
+                # blackout mid-`wander` therefore kept stepping around Pallet Town, which has
+                # grass tiles but no encounter table, until the 90-second budget ran out. That
+                # budget is wall clock, so an unpaced run at ~18,000 fps spent 90 real seconds
+                # on it -- most of a run that otherwise takes twenty (#50).
+                self._clear_option()
+                await self.broadcaster.publish(status_event("running", "re-planning after a map change"))
+                return self.emu.tick(self.config.idle_frames)
             if self.clock() - self.option_started_at > OPTION_BUDGET_S:
                 return await self._option_budget_spent()
             if self._arrived:
@@ -478,6 +493,7 @@ class Loop:
         self.option_started_at = self.clock()
         self._option_map = state.map_id
         self._arrived = not option.legs
+        self._arrived_map = state.map_id if self._arrived else None
         await self.broadcaster.publish(status_event("running", f"option: {option.text}"))
         if option.legs:
             self.navigator.plan(self.emu, state, list(option.legs))
@@ -502,6 +518,7 @@ class Loop:
             # after this one re-reads the mode before pressing anything. The budget starts here,
             # not where the legs did: see OPTION_BUDGET_S.
             self._arrived = True
+            self._arrived_map = self.emu.mem[ram.wCurMap]
             self.option_started_at = self.clock()
             await self.broadcaster.publish(status_event("running", f"arrived: {self.option.text}"))
         return NAV_STEP_FRAMES
@@ -534,7 +551,7 @@ class Loop:
         self.option = None
         self.option_started_at = 0.0
         self.navigator.clear()
-        self._option_map, self._arrived = None, False
+        self._option_map, self._arrived, self._arrived_map = None, False, None
 
     def _save_memory(self) -> None:
         if self.run_dir is not None:
