@@ -50,9 +50,7 @@ class Option:
     text: str  # what Jev reads, without the memory word
     memory: str  # new | visited | talked already | tried
     legs: tuple[Leg, ...]
-    after: (
-        str | None
-    )  # macro name: talk_<slot> | heal | buy_pokeballs | wander | the milestone's after | None
+    after: str | None  # macro name: talk_<slot> | heal | shop | wander | the milestone's after | None
     target: tuple[int, int] | None = None  # the tile the npc option talks from
     face: str | None = None  # the direction it faces
     dest_map: int | None = None  # exit/door destination
@@ -268,7 +266,7 @@ def _npc_options(grid: world.MapGrid, state: GameState) -> list[Option]:
         if sprite.picture == NURSE_PICTURE:
             after = "heal"
         elif sprite.picture == CLERK_PICTURE:
-            after = "buy_pokeballs"
+            after = "shop"
         options.append(
             Option(
                 id=f"npc_{sprite.slot}",

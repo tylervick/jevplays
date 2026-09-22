@@ -37,3 +37,17 @@ def test_buy_two_potions_at_the_pewter_mart(rom, state_path):
         s = snapshot(emu)
         assert any(item.name == "POTION" and item.quantity >= 2 for item in s.bag)
         assert s.mode is Mode.OVERWORLD
+
+
+def test_restocking_at_viridian_buys_balls_and_finds_no_potion(rom, state_path):
+    """The clerk option's macro: balls first, then Potions from what is left. Viridian's shelf has
+    no Potion (read off the ROM), which is an ordinary outcome: 0 bought, the run carries on."""
+    from jevplays.executor.shop import restock
+
+    with Emulator(rom) as emu:
+        emu.load(state_path("mart_dex"))
+        before = snapshot(emu)
+        bought = restock(emu, before)
+        assert bought["POKE BALL"] >= 1 and bought.get("POTION", 0) == 0
+        after = snapshot(emu)
+        assert after.money < before.money and after.mode is Mode.OVERWORLD
