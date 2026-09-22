@@ -1,3 +1,4 @@
+import json
 import re
 
 from jevplays.emulator import ram
@@ -39,7 +40,7 @@ DEFAULT_CONNECTIONS = {"north": 13, "east": 12}
 DEFAULT_WARPS = [(0, 7, 0, 41), (1, 7, 0, 41), (7, 7, 0, 42)]
 
 
-def town(memory=None, sprites=DEFAULT_SPRITES, connections=None, warps=None, grass_rate=25):
+def town(memory=None, sprites=DEFAULT_SPRITES, connections=None, warps=None, grass_rate=25, map_id=None):
     emu = FakeEmulator()
     install_map(
         emu,
@@ -50,6 +51,8 @@ def town(memory=None, sprites=DEFAULT_SPRITES, connections=None, warps=None, gra
     emu.set_sprites(list(sprites))
     emu.mem[0xD362], emu.mem[0xD361] = 4, 4  # the player at (4,4)  (wXCoord, wYCoord)
     emu.mem[ram.wGrassRate] = grass_rate  # a map whose grass can start a battle, unless a test says otherwise
+    if map_id is not None:
+        emu.mem[ram.wCurMap] = map_id
     return emu, snapshot(emu), memory or Memory.empty()
 
 
@@ -177,13 +180,17 @@ def test_no_heal_option_inside_a_pokemon_center():
     assert not any(o.kind == "heal" for o in opts)
 
 
-def milestone_stub(*, description="get the parcel to the professor", legs=(), after="talk_oak", done=False):
+def milestone_stub(
+    *, description="get the parcel to the professor", legs=(), after="talk_oak", done=False, dest=None
+):
+    """`dest` routes to a node the way a real milestone does; `legs` hands back a fixed list."""
+    plan = (lambda s, links: legs_to(s, dest, links=links)) if dest else (lambda s, links: list(legs))
     return Goal(
         id="test_milestone",
         description=description,
         available=lambda s: True,
         done=lambda s: done,
-        legs=lambda s: list(legs),
+        legs=plan,
         after=after,
     )
 
@@ -198,13 +205,18 @@ def test_milestone_option_comes_first_with_the_new_text():
     assert opts[0].legs == (Leg(kind="walk", target=(5, 5)),)
 
 
-def test_milestone_option_is_omitted_on_an_unmapped_node():
-    milestone = milestone_stub()
-    emu, state, memory = town()
-    emu.mem[ram.wCurMap] = 250  # not in maps.NODE_NAMES
-    state = snapshot(emu)
-    opts = generate(emu, state, memory, milestone)
-    assert not any(o.kind == "milestone" for o in opts)
+def test_a_node_with_no_way_out_of_it_still_withholds_the_milestone():
+    """Generalises the old `map_` guard rather than dropping it (#35). A node the router knows
+    nothing about can route nowhere, and a milestone offered there would still carry its `after`
+    macro and run it in the wrong place -- `choose_charmander` walking up to a table that is not
+    there. What changes is the question: not "is this node in the hand-written table" but "is it
+    in the graph at all", so one crossing out of here lifts it."""
+    emu, state, memory = town(map_id=250)  # not in maps.NODE_NAMES, and nothing walked out of it
+    acts_here = milestone_stub(legs=(), after="choose_charmander")
+    assert not any(o.kind == "milestone" for o in generate(emu, state, memory, acts_here))
+    walked = Memory.empty()
+    walked.note_crossing("map_250", "pallet_town", direction="south")
+    assert generate(emu, state, walked, acts_here)[0].kind == "milestone"
 
 
 def test_a_milestone_that_can_neither_be_walked_to_nor_acted_on_is_not_offered():
@@ -260,3 +272,101 @@ def test_grass_is_not_offered_where_no_wild_pokemon_live():
 def test_grass_is_offered_where_wild_pokemon_do_live():
     emu, state, memory = town(grass_rate=25)  # Route 1's rate
     assert "grass" in [o.id for o in generate(emu, state, memory, milestone=None)]
+
+
+# --- the graph the run builds (#35) ------------------------------------------------------------
+
+
+def test_a_crossing_records_the_link_it_walked_and_its_reverse():
+    """Gen 1 overworld connections are symmetric, so one walk east teaches the way back west.
+    Without the reverse the return path would need a second walk to learn, which is the whole
+    thing this is for."""
+    memory = Memory.empty()
+    memory.note_crossing("pewter_city", "map_14", direction="east")
+    assert [(x.kind, x.dest_node, x.direction) for x in memory.links["pewter_city"]] == [
+        ("edge", "map_14", "east")
+    ]
+    assert [(x.kind, x.dest_node, x.direction) for x in memory.links["map_14"]] == [
+        ("edge", "pewter_city", "west")
+    ]
+
+
+def test_a_warp_crossing_records_the_way_back_out():
+    memory = Memory.empty()
+    memory.note_crossing("map_14", "map_60", dest_map=60)
+    assert [(x.kind, x.dest_node, x.dest_map) for x in memory.links["map_14"]] == [("warp", "map_60", 60)]
+    assert [(x.kind, x.dest_node, x.dest_map) for x in memory.links["map_60"]] == [
+        ("warp", "map_14", maps.WARP_LAST_MAP)
+    ]
+
+
+def test_recording_the_same_crossing_twice_changes_nothing():
+    memory = Memory.empty()
+    memory.note_crossing("pewter_city", "map_14", direction="east")
+    memory.note_crossing("pewter_city", "map_14", direction="east")
+    assert len(memory.links["pewter_city"]) == 1 and len(memory.links["map_14"]) == 1
+
+
+def test_links_survive_a_round_trip_through_the_run_directory():
+    memory = Memory.empty()
+    memory.note_crossing("pewter_city", "map_14", direction="east")
+    back = Memory.from_dict(json.loads(json.dumps(memory.to_dict())))
+    assert back.links == memory.links
+
+
+def test_a_memory_written_before_the_graph_existed_still_loads():
+    """`--resume` reads whatever `runs/<stamp>/memory.json` holds, and the ones already on disk
+    have no links key."""
+    back = Memory.from_dict({"visited_maps": [1], "talked": [], "tried": []})
+    assert back.links == {} and back.visited_maps == {1}
+
+
+def crossed_east_from_pewter():
+    """A memory that has walked Pewter -> Route 3, which `maps.LINKS` does not know about."""
+    memory = Memory.empty()
+    memory.note_crossing("pewter_city", "map_14", direction="east")
+    return memory
+
+
+def test_legs_to_plans_over_the_walked_graph_and_stamps_the_destination_map():
+    """The `dest_map` is what lets the navigator tell the crossing from a blackout, so a leg
+    built for a synthesised node has to carry one too (#8, #35)."""
+    _emu, state, _memory = town(map_id=14)
+    legs = legs_to(state, "pewter_pokecenter", links=crossed_east_from_pewter().links)
+    assert [(x.kind, x.direction, x.dest_map) for x in legs] == [
+        ("edge", "west", maps.PEWTER_CITY),
+        ("warp", None, maps.PEWTER_POKECENTER),
+    ]
+
+
+def test_a_milestone_is_offered_from_an_unmapped_map_once_the_way_back_is_known():
+    """The `map_` guard existed because an unmapped node could never route. It can now, and #53
+    is what makes dropping the guard safe: a milestone that still cannot be routed has no legs
+    and no macro, so it is not offered at all."""
+    emu, state, memory = town(map_id=14)
+    milestone = milestone_stub(dest="pewter_gym", after=None)
+    assert not any(o.kind == "milestone" for o in generate(emu, state, Memory.empty(), milestone))
+    opts = generate(emu, state, crossed_east_from_pewter(), milestone)
+    assert opts[0].kind == "milestone" and opts[0].legs
+
+
+def test_a_heal_trip_can_be_planned_back_from_a_map_nobody_typed_in():
+    """This is what the graph is for: a run that walked east can come home and heal instead of
+    blacking out and losing the ground it took."""
+    emu, state, memory = town(map_id=14)
+    hurt_lead(emu)
+    state = snapshot(emu)
+    assert not any(o.kind == "heal" for o in generate(emu, state, Memory.empty(), None))
+    heal = next(o for o in generate(emu, state, crossed_east_from_pewter(), None) if o.kind == "heal")
+    assert heal.legs and heal.after == "heal"
+
+
+def test_walking_a_warp_both_ways_keeps_one_link_with_a_destination_to_check():
+    """Going in records `warp(dest)` and coming back out records `warp(WARP_LAST_MAP)` for the
+    same pair of nodes. Both are true, but only the first carries a map id the navigator can
+    check a crossing against, so the concrete one is the one kept (#8, #35)."""
+    memory = Memory.empty()
+    memory.note_crossing("map_15", "map_59", dest_map=59)  # walked in
+    memory.note_crossing("map_59", "map_15", dest_map=15)  # and back out
+    assert [(x.kind, x.dest_node, x.dest_map) for x in memory.links["map_15"]] == [("warp", "map_59", 59)]
+    assert [(x.kind, x.dest_node, x.dest_map) for x in memory.links["map_59"]] == [("warp", "map_15", 15)]

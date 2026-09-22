@@ -1,3 +1,4 @@
+from jevplays.executor import maps
 from jevplays.executor.maps import LINKS, MAP_IDS, NODE_NAMES, ROUTE_2, VIRIDIAN_CITY, node_of, route
 
 
@@ -36,3 +37,39 @@ def test_map_ids_reverse_node_names_and_cover_both_halves_of_route_2():
     assert MAP_IDS["route_2_south"] == MAP_IDS["route_2_north"] == ROUTE_2
     assert all(MAP_IDS[name] == map_id for map_id, name in NODE_NAMES.items())
     assert set(LINKS) <= set(MAP_IDS)
+
+
+# --- the graph the run builds (#35) ------------------------------------------------------------
+
+
+def test_map_id_of_resolves_named_and_synthesised_nodes():
+    """`node_of` already returns `map_<id>` for a map with no name; this is its inverse, so an
+    edge leg to one still carries a `dest_map` for the navigator to check against."""
+    assert maps.map_id_of("pewter_city") == maps.PEWTER_CITY
+    assert maps.map_id_of("route_2_south") == maps.ROUTE_2
+    assert maps.map_id_of("map_14") == 14
+    assert maps.map_id_of("nowhere") is None
+
+
+def test_route_searches_the_overlay_as_well_as_the_table():
+    """Route 3 is not in LINKS, so the table alone cannot get there or back. One crossing is
+    enough once it has been walked."""
+    links = {
+        "pewter_city": [maps.edge("east", "map_14")],
+        "map_14": [maps.edge("west", "pewter_city")],
+    }
+    assert maps.route("pewter_city", "map_14") is None
+    assert maps.route("map_14", "pewter_pokecenter") is None
+    out = maps.route("map_14", "pewter_pokecenter", links=links)
+    assert [(link.kind, link.dest_node) for link in out] == [
+        ("edge", "pewter_city"),
+        ("warp", "pewter_pokecenter"),
+    ]
+
+
+def test_the_hand_written_table_is_searched_before_the_overlay():
+    """LINKS carries the node names, the Route 2 split and the leg labels, none of which RAM
+    gives you, so where both know a way out of a node the curated one is taken."""
+    links = {"pallet_town": [maps.edge("north", "map_99")]}
+    out = maps.route("pallet_town", "route_1", links=links)
+    assert [link.dest_node for link in out] == ["route_1"]

@@ -50,7 +50,7 @@ def test_active_milestone_progresses_through_the_spine():
 
 def test_get_pokedex_legs_go_to_the_mart_before_the_parcel_and_the_lab_after():
     before = state(flags={"got_starter"})
-    legs = milestone("get_pokedex").legs(before)
+    legs = milestone("get_pokedex").legs(before, {})
     assert legs[-1].kind == "warp" and legs[-1].dest_map == 42
 
     after = state(
@@ -60,17 +60,17 @@ def test_get_pokedex_legs_go_to_the_mart_before_the_parcel_and_the_lab_after():
         flags={"got_starter", "got_oaks_parcel"},
         bag=(BagItem("OAKS PARCEL", 1),),
     )
-    legs = milestone("get_pokedex").legs(after)
+    legs = milestone("get_pokedex").legs(after, {})
     assert legs[-1].dest_map == OAKS_LAB
 
 
 def test_milestone_beat_brock_legs_end_at_the_gym_door():
     from_viridian = state(map_id=VIRIDIAN_CITY, x=29, y=20, flags={"got_starter", "got_pokedex"})
-    legs = milestone("beat_brock").legs(from_viridian)
+    legs = milestone("beat_brock").legs(from_viridian, {})
     assert legs[-1].kind == "walk" and legs[-1].target == (4, 2)
 
     in_gym = state(map_id=PEWTER_GYM, x=4, y=6, flags={"got_starter", "got_pokedex"})
-    legs = milestone("beat_brock").legs(in_gym)
+    legs = milestone("beat_brock").legs(in_gym, {})
     assert len(legs) == 1 and legs[0].kind == "walk" and legs[0].target == (4, 2)
 
 

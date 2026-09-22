@@ -43,6 +43,19 @@ an edge leg lands on, so the navigator can tell an arrival from a blackout. A no
 and is not checked."""
 
 
+def map_id_of(node: str) -> int | None:
+    """The map id a node name stands for, or None for a name that is neither.
+
+    The inverse of `node_of`, including its `map_<id>` form for a map with no name of its own
+    (#35). An edge leg built for such a node still carries a `dest_map`, so a blackout mid-walk
+    reads as `lost` rather than as the crossing the leg was waiting for."""
+    if node in MAP_IDS:
+        return MAP_IDS[node]
+    if node.startswith("map_") and node[4:].isdigit():
+        return int(node[4:])
+    return None
+
+
 def node_of(map_id: int, x: int, y: int) -> str:
     if map_id == ROUTE_2:
         return "route_2_south" if y >= ROUTE_2_SPLIT_ROW else "route_2_north"
@@ -115,17 +128,24 @@ LINKS: dict[str, list[Link]] = {
 }
 
 
-def route(from_node: str, to_node: str) -> list[Link] | None:
-    """Breadth-first over LINKS; the list of links to follow, or None."""
+def route(from_node: str, to_node: str, links: dict[str, list[Link]] | None = None) -> list[Link] | None:
+    """Breadth-first over LINKS and `links` together; the list of links to follow, or None.
+
+    `links` is the graph this run has built out of the crossings it actually walked (#35), which
+    is what lets a milestone or a heal trip be routed from a map nobody typed into LINKS. The
+    hand-written table is searched first out of any node: it carries the node names, the Route 2
+    split and the leg labels, none of which RAM gives you, so where both know a way out the
+    curated one wins."""
     from collections import deque
 
     if from_node == to_node:
         return []
+    overlay = links or {}
     came: dict[str, tuple[str, Link] | None] = {from_node: None}
     queue = deque([from_node])
     while queue:
         node = queue.popleft()
-        for link in LINKS.get(node, []):
+        for link in [*LINKS.get(node, []), *overlay.get(node, [])]:
             if link.dest_node in came:
                 continue
             came[link.dest_node] = (node, link)
