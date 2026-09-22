@@ -183,7 +183,11 @@ def test_no_heal_option_inside_a_pokemon_center():
 def milestone_stub(
     *, description="get the parcel to the professor", legs=(), after="talk_oak", done=False, dest=None
 ):
-    """`dest` routes to a node the way a real milestone does; `legs` hands back a fixed list."""
+    """`dest` routes to a node the way a real milestone does; `legs` hands back a fixed list.
+
+    They are alternatives, not a pair: passing both would silently drop `legs` and leave a test
+    asserting against a plan it did not ask for."""
+    assert not (dest and legs), "milestone_stub takes dest or legs, not both"
     plan = (lambda s, links: legs_to(s, dest, links=links)) if dest else (lambda s, links: list(legs))
     return Goal(
         id="test_milestone",
