@@ -8,19 +8,12 @@ done each one before.
 import time
 import uuid
 
-from jevplays.brain.buckets import (
-    hp_bucket,
-    money_bucket,
-    quantity_bucket,
-    readiness_bucket,
-    supplies_bucket,
-)
+from jevplays.brain.buckets import hp_bucket, money_bucket, quantity_bucket, readiness_bucket
 from jevplays.brain.decision import Decision, ExploreAction
 from jevplays.brain.policy import choose_explore
 from jevplays.brain.record import answer_record, question_record
 from jevplays.executor.goals import Goal
 from jevplays.executor.options import Option
-from jevplays.executor.shop import POTION_PRICE
 from jevplays.state.events import TRACKED_FLAGS
 from jevplays.state.snapshot import GameState
 
@@ -56,16 +49,6 @@ def explore_state(state: GameState, options: list[Option], milestone: Goal | Non
     )
     if readiness is not None:
         sj["readiness"] = readiness
-    # Same gate as readiness, and the same reasoning: a fight ahead is what makes either word
-    # mean anything, and an absent key says "no opinion" rather than guessing (#52).
-    supplies = supplies_bucket(
-        potions=sum(item.quantity for item in state.bag if item.name == "POTION"),
-        money=state.money,
-        price=POTION_PRICE,
-        expects=milestone.expects_level if milestone else None,
-    )
-    if supplies is not None:
-        sj["supplies"] = supplies
     return sj
 
 
@@ -81,8 +64,7 @@ def explore_questions(sj: dict) -> dict[str, dict]:
                 "before from here and nothing came of it, so repeat it only if nothing else is "
                 'worth doing. "readiness", when present, says how the lead measures up to the '
                 "fight the milestone walks into: training first is worth more than a milestone "
-                'the party is outmatched for. "supplies", when present, says what the bag holds '
-                "for that same fight, and whether a Potion could be bought."
+                "the party is outmatched for."
             ),
             "criteria": dict(sj["options"]),
         },

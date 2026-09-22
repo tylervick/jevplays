@@ -68,23 +68,3 @@ def readiness_bucket(level: int, expects: int | None) -> str | None:
     if level >= expects - 2:
         return "close"
     return "outmatched"
-
-
-def supplies_bucket(*, potions: int, money: int, price: int, expects: int | None) -> str | None:
-    """What the bag holds for the fight the milestone is walking into, or None when the milestone
-    has no fight to stock up for.
-
-    Sibling of `readiness_bucket`: that one sizes up the lead, this one sizes up the bag. Jev is
-    shown `bag` and the milestone's description, and nothing in either says that a Potion is what
-    a gym fight is for, or that a shelf sells one for what we are carrying (#52). Both halves of
-    that are arithmetic, so both belong here.
-
-    The word is present whenever there is a fight ahead and says which case we are in, rather
-    than appearing only when the bag is bare: a key whose mere presence means "go shopping" is a
-    recommendation, and what Jev is shown is meant to be facts.
-    """
-    if expects is None:
-        return None
-    if potions > 0:
-        return "stocked"
-    return "none, affordable" if money >= price else "none, unaffordable"
