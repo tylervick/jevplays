@@ -156,8 +156,9 @@ next run begin without touching anything.
 Speed is the thing to choose. Real time is the game's own 60fps and takes about two hours to
 reach Brock -- right for watching a moment, long for a demo. Unpaced is not offered here: the
 whole run would be over in half a minute and the demo would be a restart loop. `--speed`
-multiplies only the clock the pacing sleep is computed against, so the same frames are emulated
-and the same decisions are made; they just arrive sooner.
+multiplies the game's clock: the pacing sleep is computed against it, and frames are captured
+`speed` times further apart in game time, so the page still gets 15 a second. The same frames are
+emulated and the same decisions are made; they just arrive sooner.
 
 It serves the local network by default, and anyone on your tailnet can open it at this machine's
 tailnet address.

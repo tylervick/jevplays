@@ -101,10 +101,14 @@ class LoopConfig:
     speed: float = 1.0
     """How much faster than the game's own clock a paced run plays, 1.0 being real time.
 
-    Only the sleep is scaled: the same frames are emulated and the same decisions are made, they
-    just arrive sooner. It exists for a demo left running for people to drop in on, where real
-    time means about two hours to the Boulder Badge. Ignored when `paced` is off, which has no
-    clock to stretch."""
+    The same frames are emulated and the same decisions are made; they just arrive sooner. It
+    exists for a demo left running for people to drop in on, where real time means about two
+    hours to the Boulder Badge. Ignored when `paced` is off, which has no clock to stretch.
+
+    Anything else derived from the game's frame clock has to be scaled with it, or it speeds up
+    too. The pacing sleep is one. The capture interval is the other: it is `speed` times longer,
+    so the page still gets `fps` frames per wall-clock second. #71 missed that, and a 6x demo sent
+    90 frames a second to every tab. A new clock knob needs the same audit."""
     pause_after: float | None = None
     """Seconds with no dashboard open after which the run stops stepping the game until a tab
     opens; None never pauses. For a demo behind a public link, where most of the day nobody is
