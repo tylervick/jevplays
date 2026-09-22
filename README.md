@@ -4,6 +4,13 @@ Jev, TypeSafe's System One model, plays Pokémon Red on a headless emulator whil
 dashboard shows the game next to live probability bars for every decision. Code reads the game's
 memory, asks Jev narrow typed questions, and presses the buttons; Jev supplies the judgment.
 
+![Jev choosing what to do next: the game on the left, and on the right the option list it was
+offered with the probability it gave each one](docs/media/jevplays-demo.webp)
+
+*A live run. Code read the map and offered six things to do from where Jev was standing; Jev put
+91% on the milestone and the executor walked there. `docs/media/jevplays-demo.mp4` is the same
+clip, and `docs/media/jevplays-still.jpg` a single frame.*
+
 Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`, amended by
 `docs/superpowers/specs/2026-09-21-generated-options-design.md`. Status: milestone 4b, generated
 options and the first full run to Brock. The emulator boots, walks the intro or loads a save
