@@ -50,3 +50,21 @@ def quantity_bucket(n: int) -> str:
     if n <= 3:
         return "few"
     return "plenty"
+
+
+def readiness_bucket(level: int, expects: int | None) -> str | None:
+    """How the lead measures up to the fight the milestone is walking into, or None when the
+    milestone has no fight worth sizing up.
+
+    The comparison is arithmetic, so it belongs here rather than in the model: Jev is shown the
+    lead's level and the milestone's description, and nothing in either says a level-9 Charmander
+    loses to a level-14 Onix (#42). The bands are deliberately coarse -- two levels of slack
+    before "close" becomes "ready" -- because the point is a judgment, not a gate.
+    """
+    if expects is None:
+        return None
+    if level >= expects:
+        return "ready"
+    if level >= expects - 2:
+        return "close"
+    return "outmatched"

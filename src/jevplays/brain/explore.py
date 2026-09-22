@@ -8,7 +8,7 @@ done each one before.
 import time
 import uuid
 
-from jevplays.brain.buckets import hp_bucket, money_bucket, quantity_bucket
+from jevplays.brain.buckets import hp_bucket, money_bucket, quantity_bucket, readiness_bucket
 from jevplays.brain.decision import Decision, ExploreAction
 from jevplays.brain.policy import choose_explore
 from jevplays.brain.record import answer_record, question_record
@@ -31,7 +31,7 @@ are left out of `progress` entirely."""
 
 
 def explore_state(state: GameState, options: list[Option], milestone: Goal | None) -> dict:
-    return {
+    sj = {
         "map": state.map,
         "progress": [
             PROGRESS_WORDS[name] for name in TRACKED_FLAGS if name in state.flags and name in PROGRESS_WORDS
@@ -42,6 +42,14 @@ def explore_state(state: GameState, options: list[Option], milestone: Goal | Non
         "milestone": milestone.description if milestone is not None else "none yet",
         "options": {option.id: option.labelled() for option in options},
     }
+    # Only when there is a fight to measure against and a lead to measure: an absent key says
+    # "no opinion", which is the truth, where a word would be a guess (#42).
+    readiness = (
+        readiness_bucket(state.party[0].level, milestone.expects_level) if state.party and milestone else None
+    )
+    if readiness is not None:
+        sj["readiness"] = readiness
+    return sj
 
 
 def explore_questions(sj: dict) -> dict[str, dict]:
@@ -54,7 +62,9 @@ def explore_questions(sj: dict) -> dict[str, dict]:
                 '"new" means we have never done it from here; "visited" or "talked already" means '
                 'we have done it before and may not need to again; "tried" means we chose it '
                 "before from here and nothing came of it, so repeat it only if nothing else is "
-                "worth doing."
+                'worth doing. "readiness", when present, says how the lead measures up to the '
+                "fight the milestone walks into: training first is worth more than a milestone "
+                "the party is outmatched for."
             ),
             "criteria": dict(sj["options"]),
         },

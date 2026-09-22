@@ -1,4 +1,11 @@
-from jevplays.brain.buckets import hp_bucket, money_bucket, power_bucket, pp_bucket, quantity_bucket
+from jevplays.brain.buckets import (
+    hp_bucket,
+    money_bucket,
+    power_bucket,
+    pp_bucket,
+    quantity_bucket,
+    readiness_bucket,
+)
 
 
 def test_hp_buckets_follow_the_spec_thresholds():
@@ -31,3 +38,17 @@ def test_quantity_bucket_follows_the_spec_thresholds():
     assert quantity_bucket(0) == "none"
     assert quantity_bucket(1) == "few" and quantity_bucket(3) == "few"
     assert quantity_bucket(4) == "plenty"
+
+
+def test_readiness_bucket_compares_the_lead_with_what_the_milestone_expects():
+    """#42: four runs walked into the Pewter Gym at levels 9 to 12 and lost ten battles between
+    them, because nothing in what Jev sees says a level-9 lead is not ready for a level-14 Onix.
+    The comparison is code's to make; the word is what Jev judges with."""
+    assert readiness_bucket(9, 14) == "outmatched"
+    assert readiness_bucket(12, 14) == "close"
+    assert readiness_bucket(14, 14) == "ready"
+    assert readiness_bucket(18, 14) == "ready"
+
+
+def test_readiness_bucket_has_no_opinion_without_an_expectation():
+    assert readiness_bucket(9, None) is None

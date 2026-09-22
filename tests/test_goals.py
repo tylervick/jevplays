@@ -81,3 +81,11 @@ def test_brock_is_only_beaten_once_the_badge_bit_is_set_not_when_the_flag_is():
     assert brock.done(mid_dialog) is False and active_milestone(mid_dialog) is brock
     awarded = replace(mid_dialog, badges=1)
     assert brock.done(awarded) is True and active_milestone(awarded) is None
+
+
+def test_the_brock_milestone_names_the_fight_it_walks_into():
+    """Story fact, so it lives here beside the milestone rather than in the brain: Brock's Onix is
+    level 14, and that is the number the readiness word is measured against (#42)."""
+    brock = next(g for g in MILESTONES if g.id == "beat_brock")
+    assert brock.expects_level == 14
+    assert next(g for g in MILESTONES if g.id == "get_pokedex").expects_level is None
