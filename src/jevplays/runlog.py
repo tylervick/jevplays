@@ -289,3 +289,45 @@ class RunDir:
             if m and (best is None or int(m.group(1)) > best[0]):
                 best = (int(m.group(1)), candidate)
         return best[1] if best else None
+
+    # -- snapshots (#82) ----------------------------------------------------------------
+
+    @property
+    def snapshots_path(self) -> Path:
+        return self.path / "snapshots"
+
+    def snapshot(self, emu, n: int, sidecar: dict) -> Path:
+        """The game and what the loop knew at decision `n`, after it was logged and before its
+        buttons were pressed: the point a counterfactual branch starts from."""
+        self.snapshots_path.mkdir(exist_ok=True)
+        path = self.snapshots_path / f"{n}.state"
+        emu.save(path)
+        (self.snapshots_path / f"{n}.json").write_text(
+            json.dumps(sidecar, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        return path
+
+    def snapshot_state(self, n: int) -> Path | None:
+        path = self.snapshots_path / f"{n}.state"
+        return path if path.is_file() else None
+
+    def snapshot_info(self, n: int) -> dict | None:
+        path = self.snapshots_path / f"{n}.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+    def note_milestone(self, milestone: str, frame: int) -> None:
+        self.snapshots_path.mkdir(exist_ok=True)
+        with open(self.snapshots_path / "milestones.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"milestone": milestone, "frame": frame}) + "\n")
+
+    def milestones_done(self) -> dict[str, int]:
+        """The game frame each milestone was first seen done at, on the clock the sidecars use."""
+        path = self.snapshots_path / "milestones.jsonl"
+        done: dict[str, int] = {}
+        if not path.is_file():
+            return done
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                done.setdefault(row["milestone"], row["frame"])
+        return done

@@ -113,6 +113,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "unpaced": args.unpaced,
                 "no_brain": args.no_brain,
                 "battle_goal": args.battle_goal,
+                "snapshot_every_decision": args.snapshot_every_decision,
             },
         )
 
@@ -165,6 +166,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     speed=args.speed,
                     pause_after=args.pause_after,
                     max_decisions=args.max_decisions,
+                    snapshot_every_decision=args.snapshot_every_decision,
                 )
                 loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir, memory=memory)
                 watcher = asyncio.create_task(_print_progress(loop))
@@ -319,6 +321,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--runs-dir", type=Path, default=Path("runs"), help="where new run directories go")
     run.add_argument("--no-log", action="store_true", help="keep no run directory (no log, no checkpoints)")
+    run.add_argument(
+        "--snapshot-every-decision",
+        action="store_true",
+        help="save the game at every decision so `jevplays branch` can replay it (about 170 KB each)",
+    )
     run.add_argument("--port", type=int, default=8765)
     run.add_argument(
         "--host",
@@ -394,6 +401,10 @@ def main(argv: list[str] | None = None) -> int:
     # cannot express that with --state already in a mutually exclusive group, so check it here.
     if getattr(args, "resume", None) is not None and getattr(args, "no_log", False):
         parser.error("--no-log cannot be combined with --resume")
+    if getattr(args, "snapshot_every_decision", False) and (
+        getattr(args, "resume", None) is not None or getattr(args, "no_log", False)
+    ):
+        parser.error("--snapshot-every-decision needs a fresh, logged run (no --resume, no --no-log)")
     return args.func(args)
 
 

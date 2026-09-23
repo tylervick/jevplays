@@ -187,3 +187,14 @@ def test_run_takes_the_demo_limits_and_leaves_them_off_by_default():
     assert (plain.pause_after, plain.max_decisions, plain.max_viewers) == (None, None, None)
     demo = parser.parse_args(["run", "--pause-after", "60", "--max-decisions", "40", "--max-viewers", "20"])
     assert (demo.pause_after, demo.max_decisions, demo.max_viewers) == (60.0, 40, 20)
+
+
+def test_snapshots_cannot_be_combined_with_resume_or_no_log(tmp_path, capsys):
+    import pytest
+
+    from jevplays.cli import main
+
+    for extra in (["--resume", str(tmp_path)], ["--no-log"]):
+        with pytest.raises(SystemExit):
+            main(["run", "--snapshot-every-decision", *extra])
+        assert "--snapshot-every-decision" in capsys.readouterr().err

@@ -132,6 +132,8 @@ class LoopConfig:
     """Decisions this session may make before the run rests: it stops deciding and keeps the
     page up saying why. None is no limit. The demo supervisor passes what is left of the day's
     budget, so the ceiling is carried by the process that spends it."""
+    snapshot_every_decision: bool = False
+    """Save the game and the loop's memory at every decision, for `jevplays branch` (#82)."""
 
 
 def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision:
@@ -296,6 +298,16 @@ class Loop:
             self.run_dir.append(decision)
             if decision.model:
                 self.run_dir.set_model(decision.model)
+            if self.config.snapshot_every_decision:
+                self.run_dir.snapshot(
+                    self.emu,
+                    self.decision_count,
+                    {
+                        "frame": self._game_clock(),
+                        "milestone": self.milestone.id if self.milestone is not None else None,
+                        "memory": self.memory.to_dict(),
+                    },
+                )
         await self.broadcaster.publish(decision_event(decision))
         await self._maybe_checkpoint()
 
@@ -523,6 +535,8 @@ class Loop:
         previous = self.milestone
         self.milestone = goal_table.active_milestone(state)
         if previous is not None and (self.milestone is None or self.milestone.id != previous.id):
+            if self.config.snapshot_every_decision and self.run_dir is not None:
+                self.run_dir.note_milestone(previous.id, self._game_clock())
             await self.broadcaster.publish(status_event("running", f"milestone done: {previous.id}"))
         if self.milestone is None:
             if not self.finished:
