@@ -7,8 +7,8 @@
 
 Reads RUN_DIR/branches/branches.sqlite. The default prints the counts, then per decision kind the
 mean regret (seconds of game time Jev's choice cost against the best alternative) with its 95%
-interval, the share of decisions where Jev's choice was the best or tied with it, and the same
-regret for three first-action rules: a random alternative, the strongest move, and the offline
+interval, the share of decisions where Jev's choice was as good as the best (the rule is printed
+under the headline), and the same regret for three first-action rules: a random alternative, the strongest move, and the offline
 milestone-first pick. `--decision` prints one decision's alternatives; `--export` writes one
 branch as a run directory for `jevplays replay`.
 """
@@ -21,7 +21,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from jevplays.branch.score import FRAMES_PER_SECOND, headline, score_decision, seed_frames
+from jevplays.branch.score import FRAMES_PER_SECOND, TIE_RULE, headline, score_decision, seed_frames
 from jevplays.branch.store import BranchKey, BranchStore, export_branch
 
 
@@ -44,7 +44,7 @@ def summary(store: BranchStore) -> int:
     if "spread" in meta:
         print(f"determinism check: largest answer spread {meta['spread']}")
     rng = random.Random(0)
-    scores = [score_decision(i, store.branches(i.decision), seeds, rng) for i in infos]
+    scores = [score_decision(i, store.branches(i.decision), seeds) for i in infos]
     for kind, row in headline(scores, rng).items():
         ci = row["ci"]
         interval = f" [{ci[0]:.1f}, {ci[1]:.1f}]" if ci else ""
@@ -52,11 +52,12 @@ def summary(store: BranchStore) -> int:
         print(
             f"{kind:<8} decisions {row['decisions']} scored {row['scored']} "
             f"censored_chosen {row['censored_chosen']}  "
-            f"regret {_s(row['mean_regret_s'])}{interval}  best or tied {tied}  "
+            f"regret {_s(row['mean_regret_s'])}{interval}  as good as best {tied}  "
             f"random {_s(row['random_regret_s'])} ({row['random_missing']} missing)  "
             f"strongest {_s(row['strongest_regret_s'])} ({row['strongest_missing']} missing)  "
             f"offline {_s(row['offline_regret_s'])} ({row['offline_missing']} missing)"
         )
+    print(TIE_RULE)
     return 0
 
 

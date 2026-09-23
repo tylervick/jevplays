@@ -1,7 +1,15 @@
 import math
 import random
 
-from jevplays.branch.score import answer_spread, bootstrap_ci, headline, score_decision, seed_frames
+from jevplays.branch.score import (
+    FRAMES_PER_SECOND,
+    answer_spread,
+    as_good_as_best,
+    bootstrap_ci,
+    headline,
+    score_decision,
+    seed_frames,
+)
 from jevplays.branch.store import BranchKey, BranchResult, DecisionInfo
 
 
@@ -60,7 +68,7 @@ def test_regret_is_chosen_minus_best_in_seconds_on_the_scoring_seeds():
             "run": [900] * 8,
         }
     )
-    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    s = score_decision(INFO, r, seeds=8)
     assert s.best == "move:B"
     assert s.regret_s == (600 - 360) / 60
     assert s.tied is False
@@ -70,13 +78,13 @@ def test_regret_is_chosen_minus_best_in_seconds_on_the_scoring_seeds():
 
 def test_a_choice_that_is_the_best_has_zero_regret_and_is_tied():
     r = rows({"move:A": [300] * 8, "move:B": [600] * 8, "run": [900] * 8})
-    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    s = score_decision(INFO, r, seeds=8)
     assert s.regret_s == 0.0 and s.tied is True
 
 
 def test_a_censored_chosen_alternative_has_no_regret():
     r = rows({"move:A": [None] * 8, "move:B": [300] * 8, "run": [900] * 8})
-    assert score_decision(INFO, r, seeds=8, rng=random.Random(0)).regret_s is None
+    assert score_decision(INFO, r, seeds=8).regret_s is None
 
 
 def test_bootstrap_is_reproducible_with_a_fixed_rng():
@@ -87,12 +95,8 @@ def test_bootstrap_is_reproducible_with_a_fixed_rng():
 
 
 def test_headline_splits_by_kind_and_counts_uncensored_decisions():
-    good = score_decision(
-        INFO, rows({"move:A": [300] * 8, "move:B": [600] * 8, "run": [900] * 8}), 8, random.Random(0)
-    )
-    bad = score_decision(
-        INFO, rows({"move:A": [None] * 8, "move:B": [300] * 8, "run": [900] * 8}), 8, random.Random(0)
-    )
+    good = score_decision(INFO, rows({"move:A": [300] * 8, "move:B": [600] * 8, "run": [900] * 8}), 8)
+    bad = score_decision(INFO, rows({"move:A": [None] * 8, "move:B": [300] * 8, "run": [900] * 8}), 8)
     h = headline([good, bad], random.Random(0))
     assert set(h) == {"battle"}
     assert h["battle"]["decisions"] == 2 and h["battle"]["scored"] == 1
@@ -106,7 +110,7 @@ def test_a_choice_better_than_best_on_the_scoring_seeds_still_counts_as_tied():
     # [350]*4+[360]*4. Best is still picked from the selection half (B, 350 < 400), but A's
     # scoring-half advantage must count as "best or tied", not a miss.
     r = rows({"move:A": [400] * 4 + [300] * 4, "move:B": [350] * 4 + [360] * 4, "run": [900] * 8})
-    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    s = score_decision(INFO, r, seeds=8)
     assert s.best == "move:B"
     assert s.regret_s == -1.0
     assert s.tied is True
@@ -115,9 +119,8 @@ def test_a_choice_better_than_best_on_the_scoring_seeds_still_counts_as_tied():
 def test_a_capped_best_on_one_scoring_seed_does_not_force_a_tie_to_false():
     # move:B is picked as best from the selection half (300 < 600). On the scoring half it caps
     # on seed 4 (frames None) while move:A finishes there instead; the two are equal (360) on
-    # seeds 5-7. Whatever the capped seed resamples to, move:A's bootstrap draws are never worse
-    # than 0 (a finished seed beating a capped one, or a tie), so a lone infinite pair must not,
-    # by itself, force `tied` to False.
+    # seeds 5-7. A finished choice against a capped best is "no later", and so is an equal time,
+    # so a lone infinite pair must not, by itself, force `tied` to False.
     r = rows(
         {
             "move:A": [600] * 4 + [500, 360, 360, 360],
@@ -125,7 +128,7 @@ def test_a_capped_best_on_one_scoring_seed_does_not_force_a_tie_to_false():
             "run": [900] * 8,
         }
     )
-    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    s = score_decision(INFO, r, seeds=8)
     assert s.best == "move:B"
     assert s.tied is True
 
@@ -136,7 +139,7 @@ def test_all_alternatives_censored_reports_no_best_or_regret():
     # check; asserting `best is None` rules that out.
     info = DecisionInfo(1, "battle", "move:B", ["move:A", "move:B", "run"], "move:B", None, 1000)
     r = rows({"move:A": [None] * 8, "move:B": [None] * 8, "run": [None] * 8})
-    s = score_decision(info, r, seeds=8, rng=random.Random(0))
+    s = score_decision(info, r, seeds=8)
     assert s.best is None
     assert s.regret_s is None
     assert s.tied is None
@@ -148,18 +151,54 @@ def test_a_decision_with_only_error_rows_has_no_best_and_does_not_crash():
         for alt in ("move:A", "move:B", "run")
         for seed in range(8)
     ]
-    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    s = score_decision(INFO, r, seeds=8)
     assert s.best is None
     assert s.regret_s is None
     assert s.tied is None
 
 
 def test_headline_counts_a_decision_whose_chosen_alternative_never_finished():
-    good = score_decision(
-        INFO, rows({"move:A": [300] * 8, "move:B": [600] * 8, "run": [900] * 8}), 8, random.Random(0)
-    )
-    bad = score_decision(
-        INFO, rows({"move:A": [None] * 8, "move:B": [300] * 8, "run": [900] * 8}), 8, random.Random(0)
-    )
+    good = score_decision(INFO, rows({"move:A": [300] * 8, "move:B": [600] * 8, "run": [900] * 8}), 8)
+    bad = score_decision(INFO, rows({"move:A": [None] * 8, "move:B": [300] * 8, "run": [900] * 8}), 8)
     h = headline([good, bad], random.Random(0))
     assert h["battle"]["censored_chosen"] == 1
+
+
+S = FRAMES_PER_SECOND
+
+
+def test_one_lucky_seed_does_not_make_a_choice_that_lost_by_minutes_as_good_as_best():
+    """The final review's counterexample: paired (chosen - best) of -1 s, 600 s, 700 s and 800 s on
+    the scoring seeds. A bootstrap of four values has the minimum (-1 s) as its lower bound and so
+    called this a tie; chosen was no later on only one seed of four, so it is not as good."""
+    best = [300 * S] * 4 + [1000 * S] * 4
+    chosen = [900 * S] * 4 + [999 * S, 1600 * S, 1700 * S, 1800 * S]
+    r = rows({"move:A": chosen, "move:B": best, "run": [5000 * S] * 8})
+    s = score_decision(INFO, r, seeds=8)
+    assert s.best == "move:B"
+    assert s.tied is False
+
+
+def test_no_later_on_exactly_half_the_scoring_seeds_is_as_good_as_best():
+    r = rows({"move:A": [900] * 4 + [300, 360, 500, 500], "move:B": [300] * 4 + [360] * 4, "run": [2000] * 8})
+    s = score_decision(INFO, r, seeds=8)
+    assert s.best == "move:B"
+    assert s.tied is True
+
+
+def test_no_later_on_fewer_than_half_the_scoring_seeds_is_not_as_good():
+    r = rows({"move:A": [900] * 4 + [300, 500, 500, 500], "move:B": [300] * 4 + [360] * 4, "run": [2000] * 8})
+    assert score_decision(INFO, r, seeds=8).tied is False
+
+
+def test_as_good_as_best_pairs_by_seed_and_counts_both_capped_as_no_later():
+    inf = math.inf
+    scoring = range(4, 8)
+    # seed 4: both capped (no later); seed 5: chosen finished, best capped (no later);
+    # seeds 6, 7: chosen later -> 2 of 4, as good
+    assert as_good_as_best({4: inf, 5: 100.0, 6: 500.0, 7: 500.0}, {4: inf, 5: inf, 6: 1.0, 7: 1.0}, scoring)
+    # chosen capped where the best finished is later
+    assert not as_good_as_best({4: inf, 5: inf, 6: inf}, {4: 1.0, 5: 1.0, 6: 1.0}, scoring)
+    # only seeds present for both are paired: seed 4 alone, no later
+    assert as_good_as_best({4: 1.0, 6: 9.0}, {4: 1.0, 7: 1.0}, scoring)
+    assert as_good_as_best({4: 1.0}, {5: 1.0}, scoring) is None

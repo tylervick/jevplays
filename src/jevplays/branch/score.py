@@ -70,13 +70,38 @@ class DecisionScore:
     best: str | None
     regret_s: float | None
     tied: bool | None
+    """As good as the best, by `as_good_as_best` (TIE_RULE); None when there is no best."""
     baselines: dict[str, float | None]
     censored_chosen: bool
     strongest_set: bool
     offline_set: bool
 
 
-def score_decision(info: DecisionInfo, rows, seeds: int, rng: random.Random) -> DecisionScore:
+TIE_RULE = (
+    "as good as best: Jev's choice is the held-out best, or reached the milestone no later than it "
+    "on at least half of the scoring seeds (paired by seed; a seed where both capped counts as no later)"
+)
+
+
+def as_good_as_best(chosen: dict[int, float], best: dict[int, float], scoring: range) -> bool | None:
+    """The tie rule (spec: "Scoring"). Paired by seed over the scoring seeds present for both, with
+    a capped or stalled branch as infinity: the chosen alternative is as good as the best when it
+    reached the milestone no later than the best (chosen <= best) on at least half of them. A seed
+    where both capped counts as no later -- neither got there within the cap, so the choice lost
+    nothing measurable on it -- and a finished choice against a capped best counts as no later too.
+    None when no scoring seed is present for both.
+
+    A countable rule, not a bootstrap interval: with K=8 there are 4 paired values, and a 95%
+    bootstrap of 4 values is degenerate (its lower bound is just the minimum), so one lucky seed
+    would call a choice that lost by minutes on the other three a tie."""
+    paired = [s for s in scoring if s in chosen and s in best]
+    if not paired:
+        return None
+    no_later = sum(1 for s in paired if chosen[s] <= best[s])
+    return 2 * no_later >= len(paired)
+
+
+def score_decision(info: DecisionInfo, rows, seeds: int) -> DecisionScore:
     """The best alternative is picked on the first half of the seeds and scored on the second, so
     choosing the best of several noisy medians does not flatter it (spec: "Scoring"). When no
     alternative even finished on the selection half (every seed of every alternative capped,
@@ -115,25 +140,10 @@ def score_decision(info: DecisionInfo, rows, seeds: int, rng: random.Random) -> 
     )
 
     tied = None
-    if info.chosen in frames:
-        pairs = [
-            frames[info.chosen][s] - frames[best][s]
-            for s in scoring
-            if s in frames[info.chosen] and s in frames[best]
-        ]
-        # Drop only both-censored pairs (inf - inf = nan); keep a lone infinite pair (one side
-        # finished, the other capped on that seed) in the bootstrap so it doesn't, by itself,
-        # force the decision to "not tied" -- `median_low` never averages, so it never turns an
-        # infinite pair into a nan the way `fmean` or `median`'s midpoint would.
-        pairs = [d for d in pairs if not math.isnan(d)]
-        if info.chosen == best:
-            tied = True
-        elif pairs:
-            lo, _hi = bootstrap_ci(pairs, rng, stat=statistics.median_low)
-            # "Best or tied": the interval doesn't show the choice as worse than best. This also
-            # covers a choice that's actually *better* than the selection-half winner -- that's
-            # not a miss either.
-            tied = lo <= 0
+    if info.chosen == best:
+        tied = True
+    elif info.chosen in frames:
+        tied = as_good_as_best(frames[info.chosen], frames[best], scoring)
 
     every = [r for r in (regret(a) for a in alts) if r is not None]
     baselines = {
@@ -159,7 +169,7 @@ def headline(scores: list[DecisionScore], rng: random.Random) -> dict[str, dict]
     """Per kind: how many decisions, how many had a finite regret, how many of those had a chosen
     alternative that never finished while the best one did (`censored_chosen` -- a hint that the
     mean regret is a floor, not the true cost), the mean regret with its 95% interval, the share
-    where Jev's choice was the best or tied with it, and each baseline's mean regret plus how many
+    where Jev's choice was as good as the best (TIE_RULE), and each baseline's mean regret plus how many
     decisions of that kind it could not be scored for (a baseline that was never set, such as no
     offline milestone-first pick for that decision, is not counted as missing)."""
     out: dict[str, dict] = {}
