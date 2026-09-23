@@ -169,6 +169,8 @@ class Loop:
         self.option: Option | None = None
         """The option Jev picked and the loop is carrying out, or None between decisions."""
         self.option_started_at: int = 0
+        self._battled = False
+        """A battle has happened since the option was taken on: what finishes the grass (#81)."""
         """The game frame the option's budget counts from (`_game_clock`)."""
         self.finished = False
         """The last milestone is done. `run()` returns on the turn this is set."""
@@ -208,6 +210,8 @@ class Loop:
 
     async def advance(self, state: GameState) -> int:
         """Move the game forward one step for the current mode. Returns emulated frames spent."""
+        if state.in_battle and self.option is not None:
+            self._battled = True
         if state.mode in (Mode.DIALOG, Mode.BATTLE_WAIT):
             return self.emu.press("a", settle=30)
         if state.mode is Mode.MOVE_LIST:
@@ -518,6 +522,7 @@ class Loop:
         is `wander` from where we stand, so there is nowhere to walk to first)."""
         self.option = option
         self.option_started_at = self._game_clock()
+        self._battled = False
         self._option_map = state.map_id
         self._arrived = not option.legs
         self._arrived_map = state.map_id if self._arrived else None
@@ -607,6 +612,7 @@ class Loop:
     def _clear_option(self) -> None:
         self.option = None
         self.option_started_at = 0
+        self._battled = False
         self.navigator.clear()
         self._option_map, self._arrived, self._arrived_map = None, False, None
 
@@ -618,7 +624,7 @@ class Loop:
         """Run the scripted tail of the option -- talking, healing, buying, wandering. A macro
         that fails marks the option `tried`, the same as a navigator that gives up. One that
         works finishes the option, except `wander`: the grass is one step per turn, so it keeps
-        the option until a battle interrupts it or its budget runs out."""
+        the option until a battle has happened or its budget runs out."""
         option = self.option
         macro = option.after
         if macro is None:
@@ -628,6 +634,12 @@ class Loop:
                 # for it. Remember that, or it comes back `(new)` and can be chosen forever (#53).
                 return await self._option_tried("it went nowhere")
             # An exit or a door: arriving is the whole of it.
+            await self.broadcaster.publish(status_event("running", f"done: {option.text}"))
+            self._clear_option()
+            return self.emu.tick(self.config.idle_frames)
+        if macro == "wander" and self._battled:
+            # The grass is for starting a battle, and one has: done, not tried. Jev chooses what
+            # next -- train again, or go heal if the fight left the lead hurt (#81).
             await self.broadcaster.publish(status_event("running", f"done: {option.text}"))
             self._clear_option()
             return self.emu.tick(self.config.idle_frames)
