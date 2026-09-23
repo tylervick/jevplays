@@ -9,7 +9,7 @@ from jevplays.executor import maps
 from jevplays.executor.goals import MILESTONES
 from jevplays.executor.options import Option
 from jevplays.executor.world import build_grid
-from jevplays.loop import OPTION_BUDGET_S, Loop, LoopConfig, local_decision
+from jevplays.loop import OPTION_BUDGET_FRAMES, Loop, LoopConfig, local_decision
 from jevplays.state.events import EVENTS
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import snapshot
@@ -697,7 +697,7 @@ def start_option(loop, option, map_id, arrived_on=None):
     (of which an absorbing option has none) already finished. `arrived_on` is the map the legs
     ended on, which is `map_id` for an option that acts where it stands."""
     loop.option = option
-    loop.option_started_at = loop.clock()
+    loop.option_started_at = loop.emu.frame_count()
     loop._option_map = map_id
     loop._arrived_map = map_id if arrived_on is None else arrived_on
     loop._arrived = True
@@ -712,7 +712,7 @@ def macro_less(option_id="milestone", kind="milestone"):
 def test_an_arrived_option_whose_map_changed_under_it_is_dropped():
     """#50. A blackout during the grass option moves the run to Pallet Town, which has grass
     tiles but no encounter table -- so `wander` steps around a town where no battle can start
-    until OPTION_BUDGET_S (90 seconds of *wall clock*) runs out. `_walk` already drops an option
+    until the option budget runs out. `_walk` already drops an option
     the map changed under, but only while the navigator is busy; one that has arrived and is
     running its macro never looked again."""
     emu, bc = explore_emu(map_id=maps.ROUTE_1), RecordingBroadcaster()
@@ -829,11 +829,9 @@ def test_an_option_that_outstays_its_budget_is_dropped_and_marked_tried():
     emu, bc = explore_emu(), RecordingBroadcaster()
     brain = QuestionBrain(explore="grass", needs_heal=0.1)
     loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
-    now = [1000.0]
-    loop.clock = lambda: now[0]
     run(loop, 3)
     assert loop.option is not None and loop.option.id == "grass" and brain.calls == 1
-    now[0] += OPTION_BUDGET_S + 1
+    emu.tick(OPTION_BUDGET_FRAMES + 1)
     run(loop, 2)
     assert brain.calls == 2  # the budget handed the decision back
     assert (UNMAPPED_MAP, "grass") in loop.memory.tried
@@ -850,11 +848,9 @@ def test_the_budget_starts_when_the_legs_finish_so_a_long_walk_is_never_cancelle
     emu, bc = talking_emu(), RecordingBroadcaster()
     brain = QuestionBrain(explore="npc_4", needs_heal=0.1)
     loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
-    now = [1000.0]
-    loop.clock = lambda: now[0]
     run(loop, 1)  # asks, and plans the walk to the sprite's neighbour
     assert loop.navigator.busy
-    now[0] += OPTION_BUDGET_S * 10  # a very long walk indeed
+    emu.tick(OPTION_BUDGET_FRAMES * 10)  # a very long walk indeed
     run(loop, 20)
     assert (UNMAPPED_MAP, 4) in loop.memory.talked  # the macro ran on arrival
     assert loop.memory.tried == set()  # and nothing was blamed for the walk taking a while
@@ -973,10 +969,8 @@ def test_an_option_that_carried_the_run_to_another_map_is_not_marked_tried_back_
 
     # The grass never leaves the map it was offered on, so its budget running out is exactly the
     # "nothing came of it" the word is for, and it is marked.
-    now = [1000.0]
-    loop.clock = lambda: now[0]
     start_option(loop, grass_option(), maps.OAKS_LAB)
-    now[0] += OPTION_BUDGET_S + 1
+    emu.tick(OPTION_BUDGET_FRAMES + 1)
     asyncio.run(loop.advance(snapshot(emu)))
     assert loop.memory.tried == {(maps.OAKS_LAB, "grass")}
 
@@ -1532,7 +1526,6 @@ def test_a_paused_run_picks_up_its_pace_where_it_left_off_instead_of_catching_up
     bc = ViewedBroadcaster(idle=[0.0, 999.0], on_wait=three_hours_pass)
     emu = CapturingEmulator([])
     loop = Loop(emu, bc, LoopConfig(paced=True, idle_frames=60, fps=15, pause_after=60))
-    loop.clock = clock
 
     async def one_second_of_game(state):
         return emu.tick(60)
@@ -1543,24 +1536,44 @@ def test_a_paused_run_picks_up_its_pace_where_it_left_off_instead_of_catching_up
     assert sum(slept_after_resume) == pytest.approx(1.0, abs=0.05)
 
 
-def test_a_pause_does_not_eat_the_budget_of_the_option_being_carried_out(monkeypatch):
-    """An option has OPTION_BUDGET_S of wall clock before it is dropped as `tried`. Time spent
-    paused is time nobody played, so it is not charged to the option."""
-    clock = FakeClock()
-    bc = ViewedBroadcaster(idle=[999.0], on_wait=lambda: setattr(clock, "now", clock.now + 3 * 3600))
-    loop = Loop(FakeEmulator(), bc, LoopConfig(paced=False, idle_frames=7, pause_after=60))
-    loop.clock = clock
+def test_a_pause_does_not_eat_the_budget_of_the_option_being_carried_out():
+    """Time spent paused is time nobody played. The budget is counted in game frames, and no
+    frames pass while the run waits for a viewer, so however long the pause, the option being
+    carried out is charged nothing for it."""
+    emu = FakeEmulator()
+    bc = ViewedBroadcaster(idle=[999.0])
+    loop = Loop(emu, bc, LoopConfig(paced=False, idle_frames=7, pause_after=60))
     loop.option = Option(id="exit_north", kind="exit", text="go north", memory="new", legs=(), after=None)
-    loop.option_started_at = clock.now - 10
-    charged: list[float] = []
+    emu.tick(100)
+    loop.option_started_at = emu.frame_count() - 10
+    charged: list[int] = []
 
     async def advance(state):
-        charged.append(clock.now - loop.option_started_at)
+        charged.append(emu.frame_count() - loop.option_started_at)
         return 7
 
     loop.advance = advance
     run(loop, 1)
-    assert charged == [pytest.approx(10)]
+    assert [e["type"] for e in bc.events][1] == "waited"  # it did pause
+    assert charged == [10]
+
+
+def test_the_option_budget_is_game_time_so_speed_does_not_change_how_long_jev_trains():
+    """#61: 90 seconds of wall clock was 5,400 frames of training at real time, 32,400 at the
+    demo's 6x, and effectively unlimited unpaced -- so `--speed` changed how many battles one
+    "train in the grass" decision bought. Counted in game frames, the budget is the same at any
+    speed, and wall time passing on its own charges nothing."""
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(explore="grass", needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    run(loop, 1)
+    assert loop.option is not None and loop.option.id == "grass"
+    emu.tick(OPTION_BUDGET_FRAMES - 200)  # just inside, with room for the turns below
+    run(loop, 2)
+    assert brain.calls == 1 and loop.option is not None  # still training
+    emu.tick(400)
+    run(loop, 2)
+    assert brain.calls == 2  # spent: Jev is asked again
 
 
 def test_a_run_that_reaches_max_decisions_rests_and_keeps_the_page_up():
