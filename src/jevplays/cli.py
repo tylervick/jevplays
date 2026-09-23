@@ -283,6 +283,19 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_branch(args: argparse.Namespace) -> int:
+    rom = args.rom or _rom_from_env()
+    if rom is None:
+        print("no ROM: pass --rom or set JEVPLAYS_ROM", file=sys.stderr)
+        return 2
+    if not os.environ.get("TYPESAFE_API_KEY"):
+        print("jevplays branch: TYPESAFE_API_KEY is not set; every branch asks Jev", file=sys.stderr)
+        return 2
+    from jevplays.branch.runner import measure
+
+    return measure(args.run_dir, rom=rom, seeds=args.seeds, sample=args.sample, workers=args.workers)
+
+
 def _lan_address() -> str:
     """This machine's address on the network it routes through, or loopback if it has none. The
     UDP socket is never sent on: connect() only picks the interface the route would use."""
@@ -390,6 +403,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="hold the first decision until a browser connects, at most this long (0: start at once)",
     )
     replay.set_defaults(func=cmd_replay)
+
+    branch = sub.add_parser(
+        "branch", help="replay every alternative of each decision in a recorded run (#82)"
+    )
+    branch.add_argument("run_dir", type=Path)
+    branch.add_argument("--rom", type=Path, help="Pokémon Red/Blue ROM (default: $JEVPLAYS_ROM)")
+    branch.add_argument("--seeds", type=int, default=8, help="random seeds per alternative")
+    branch.add_argument("--sample", type=int, default=None, help="branch only N decisions, chosen at random")
+    branch.add_argument("--workers", type=int, default=os.cpu_count() or 1)
+    branch.set_defaults(func=cmd_branch)
     return parser
 
 
