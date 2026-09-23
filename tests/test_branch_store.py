@@ -67,3 +67,17 @@ def test_the_sink_numbers_and_stores_the_branchs_decisions(tmp_path):
     sink.save_memory({})
     sink.append_outcome({})
     assert s.branch_decisions(KEY)[0]["action"] == "use EMBER"
+
+
+def test_export_writes_a_run_directory_replay_can_read(tmp_path):
+    from jevplays.branch.store import export_branch
+    from jevplays.runlog import RunDir
+
+    s = store(tmp_path)
+    s.add_decision(KEY, 1, {"id": "a", "kind": "battle", "action": "use EMBER"})
+    s.add_decision(KEY, 2, {"id": "b", "kind": "explore", "action": "explore: x"})
+    s.finish_branch(KEY, BranchResult("done", 100, 0, 1, 1))
+    path = export_branch(s, KEY, tmp_path / "exported")
+    run = RunDir.open(path)
+    assert [d["id"] for d in run.decisions()] == ["a", "b"]
+    assert run.info()["flags"]["branch"] == [12, "move:EMBER", 3]

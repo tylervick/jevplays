@@ -201,3 +201,14 @@ class BranchSink:
 
     def append_outcome(self, outcome: dict) -> None:
         pass
+
+
+def export_branch(store: BranchStore, key: BranchKey, root: Path) -> Path:
+    """Write one branch out as an ordinary run directory, so `jevplays replay` plays it."""
+    from jevplays.runlog import RunDir
+
+    run = RunDir.create(root, rom=None, flags={"branch": list(key), "measurement": str(store.path)})
+    with open(run.log_path, "w", encoding="utf-8") as f:
+        for body in store.branch_decisions(key):
+            f.write(json.dumps(body, ensure_ascii=False) + "\n")
+    return run.path
