@@ -51,8 +51,12 @@ class CachedBrain:
         reported = response.get("model", "")
         if self.expected_model and reported and reported != self.expected_model:
             raise ModelDrift(f"the run used {self.expected_model}; this answer came from {reported}")
+        # Another branch process may have asked the same input while this one waited; the store
+        # keeps the first write, and returning that one (not this answer) means every branch that
+        # puts this input to Jev gets the same answer (spec: "The response cache").
         self.store.put_response(key, response, latency_ms, reported)
-        return response, latency_ms
+        stored = self.store.get_response(key)
+        return stored if stored is not None else (response, latency_ms)
 
     async def close(self) -> None:
         close = getattr(self.inner, "close", None)

@@ -71,3 +71,27 @@ def test_close_tolerates_a_brain_with_nothing_to_close():
             return {}, 0
 
     asyncio.run(CachedBrain(Bare(), DictStore(), expected_model=None).close())
+
+
+def test_concurrent_misses_converge_on_the_first_answer_stored(tmp_path):
+    """Two branch processes miss on the same input at once: the one whose answer lands second in
+    the store must return the first one's, so every branch faces the same Jev."""
+    from jevplays.branch.store import BranchStore
+
+    db = tmp_path / "branches.sqlite"
+    store_a, store_b = BranchStore(db), BranchStore(db)
+    brain_b = CachedBrain(Inner(), store_b, expected_model=None)
+
+    class Racing(Inner):
+        async def ask(self, state, questions):
+            # while A's request is in flight, B misses, asks, and stores its answer first
+            self.competing = await brain_b.ask(state, questions)
+            return {"model": self.reported, "answers": {"n": "A's own"}}, 999
+
+    racing = Racing()
+    brain_a = CachedBrain(racing, store_a, expected_model=None)
+    got, latency = asyncio.run(brain_a.ask({"hp": "low"}, Q))
+    assert racing.competing == ({"model": "jev-1.13.0", "answers": {"n": 1}}, 300)
+    assert (got, latency) == racing.competing
+    assert store_a.get_response(cache_key("jev-latest", {"hp": "low"}, Q)) == racing.competing
+    assert brain_a.calls == 1 and brain_b.calls == 1
