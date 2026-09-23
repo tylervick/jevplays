@@ -34,3 +34,18 @@ def test_run_away_from_a_wild_battle(rom, state_path):
                 break
             emu.press("a", settle=20)
         assert emu.mem[ram.wIsInBattle] == 0
+
+
+def test_an_open_move_list_reads_as_one_and_b_goes_back_to_the_battle_menu(rom, state_path):
+    """#67: the loop presses B on the move list, never A, so a stray A that opened FIGHT costs a
+    press instead of using the move under the cursor. Both halves are the real game's screens."""
+    from jevplays.state.modes import Mode
+    from jevplays.state.snapshot import snapshot
+
+    with Emulator(rom) as emu:
+        emu.load(state_path("battle_trainer"))
+        assert snapshot(emu).mode is Mode.BATTLE_MENU
+        select_command(emu, "FIGHT")
+        assert snapshot(emu).mode is Mode.MOVE_LIST
+        emu.press("b", settle=20)
+        assert snapshot(emu).mode is Mode.BATTLE_MENU

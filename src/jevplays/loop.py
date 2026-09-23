@@ -206,6 +206,10 @@ class Loop:
         """Move the game forward one step for the current mode. Returns emulated frames spent."""
         if state.mode in (Mode.DIALOG, Mode.BATTLE_WAIT):
             return self.emu.press("a", settle=30)
+        if state.mode is Mode.MOVE_LIST:
+            # Only a stray A gets the loop here; the macros never leave this list open. Back out
+            # to the battle menu, where Jev is asked, rather than use the move under the cursor.
+            return self.emu.press("b", settle=20)
         if state.mode is Mode.TRANSITION:
             return self.emu.tick(30)
         if state.mode is Mode.BATTLE_MENU and self.brain is not None:

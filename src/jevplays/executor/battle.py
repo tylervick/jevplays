@@ -8,14 +8,14 @@ before raising, so the loop always picks up from the same screen."""
 from jevplays.brain.decision import BattleAction
 from jevplays.emulator.text import CURSOR, NON_TEXT, row_text
 from jevplays.executor.dialog import cursor_label, wait_for
-from jevplays.state.modes import BATTLE_MENU_ROW
+from jevplays.state.modes import BATTLE_MENU_ROW, MOVE_LIST_ROWS
 from jevplays.state.snapshot import rows_of
 
 COMMANDS = {"FIGHT": (0, 0), "PKMN": (0, 1), "ITEM": (1, 0), "RUN": (1, 1)}
 """(row, column) of each command in the 2x2 battle menu. The PKMN command is drawn as the two
 glyph tiles PK and MN, which decode to "PK" and "MN" and join as "PKMN"."""
 
-MOVE_ROWS = (13, 14, 15, 16)
+MOVE_ROWS = MOVE_LIST_ROWS
 """The four move slots on the FIGHT screen, top to bottom."""
 
 ITEM_ROWS = (4, 6, 8)
