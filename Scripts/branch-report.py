@@ -8,8 +8,9 @@
 Reads RUN_DIR/branches/branches.sqlite. The default prints the counts, then per decision kind the
 mean regret (seconds of game time Jev's choice cost against the best alternative) with its 95%
 interval, the share of decisions where Jev's choice was as good as the best (the rule is printed
-under the headline), and the same regret for three first-action rules: a random alternative, the strongest move, and the offline
-milestone-first pick. `--decision` prints one decision's alternatives; `--export` writes one
+under the headline), and the same regret for three first-action rules -- a random alternative, the strongest move, and the offline
+milestone-first pick -- each paired with Jev on the decisions both have a regret for: n, both
+means, and (rule − Jev) with its 95% interval over decisions. `--decision` prints one decision's alternatives; `--export` writes one
 branch as a run directory for `jevplays replay`.
 """
 
@@ -45,6 +46,7 @@ def summary(store: BranchStore) -> int:
         print(f"determinism check: largest answer spread {meta['spread']}")
     rng = random.Random(0)
     scores = [score_decision(i, store.branches(i.decision), seeds) for i in infos]
+    rules = {"random": "random", "strongest": "strongest move", "offline": "offline pick"}
     for kind, row in headline(scores, rng).items():
         ci = row["ci"]
         interval = f" [{ci[0]:.1f}, {ci[1]:.1f}]" if ci else ""
@@ -52,11 +54,22 @@ def summary(store: BranchStore) -> int:
         print(
             f"{kind:<8} decisions {row['decisions']} scored {row['scored']} "
             f"censored_chosen {row['censored_chosen']}  "
-            f"regret {_s(row['mean_regret_s'])}{interval}  as good as best {tied}  "
-            f"random {_s(row['random_regret_s'])} ({row['random_missing']} missing)  "
-            f"strongest {_s(row['strongest_regret_s'])} ({row['strongest_missing']} missing)  "
-            f"offline {_s(row['offline_regret_s'])} ({row['offline_missing']} missing)"
+            f"regret {_s(row['mean_regret_s'])}{interval}  as good as best {tied}"
         )
+        for name, label in rules.items():
+            diff, dci = row[f"{name}_diff_s"], row[f"{name}_diff_ci"]
+            diff_str = "-" if diff is None else f"{diff:+.1f}s"
+            diff_ci = f" [{dci[0]:.1f}, {dci[1]:.1f}]" if dci else ""
+            extra = (
+                f", dropped {row['random_censored_alternatives']} censored alternatives"
+                if name == "random"
+                else ""
+            )
+            print(
+                f"  vs {label}: n {row[f'{name}_paired']}, Jev {_s(row[f'{name}_jev_s'])}, "
+                f"rule {_s(row[f'{name}_regret_s'])}, rule − Jev {diff_str}{diff_ci}"
+                f"  ({row[f'{name}_missing']} missing{extra})"
+            )
     print(TIE_RULE)
     return 0
 

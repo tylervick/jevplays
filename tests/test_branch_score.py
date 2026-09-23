@@ -3,6 +3,7 @@ import random
 
 from jevplays.branch.score import (
     FRAMES_PER_SECOND,
+    DecisionScore,
     answer_spread,
     as_good_as_best,
     bootstrap_ci,
@@ -202,3 +203,56 @@ def test_as_good_as_best_pairs_by_seed_and_counts_both_capped_as_no_later():
     # only seeds present for both are paired: seed 4 alone, no later
     assert as_good_as_best({4: 1.0, 6: 9.0}, {4: 1.0, 7: 1.0}, scoring)
     assert as_good_as_best({4: 1.0}, {5: 1.0}, scoring) is None
+
+
+def _score(regret, strongest, random_regret=None, random_censored=0):
+    return DecisionScore(
+        1,
+        "battle",
+        "move:A",
+        "move:B",
+        regret,
+        None,
+        {"random": random_regret, "strongest": strongest, "offline": None},
+        False,
+        True,
+        False,
+        random_censored,
+    )
+
+
+def test_a_baseline_is_compared_with_jev_only_on_decisions_where_both_have_a_regret():
+    scores = [
+        _score(1.0, 5.0),
+        _score(3.0, 4.0),
+        # the strongest move never finished here: out of the comparison, and Jev's 100 s with it
+        _score(100.0, None),
+        # Jev's choice never finished here: out of the comparison, and the rule's 50 s with it
+        _score(None, 50.0),
+    ]
+    h = headline(scores, random.Random(0))["battle"]
+    assert h["strongest_paired"] == 2
+    assert h["strongest_jev_s"] == 2.0
+    assert h["strongest_regret_s"] == 4.5
+    assert h["strongest_diff_s"] == 2.5
+    lo, hi = h["strongest_diff_ci"]
+    assert 1.0 <= lo <= hi <= 4.0
+    assert h["strongest_missing"] == 1
+    # Jev's own line still covers every decision it has a regret for
+    assert h["scored"] == 3 and h["mean_regret_s"] == 104.0 / 3
+    # offline was never set for any decision: nothing paired, nothing missing
+    assert h["offline_paired"] == 0 and h["offline_diff_s"] is None and h["offline_missing"] == 0
+
+
+def test_random_counts_the_censored_alternatives_it_dropped_on_its_paired_decisions():
+    # move:A (chosen) and move:B finish; run never does, so random's mean drops it
+    r = rows({"move:A": [600] * 8, "move:B": [300] * 8, "run": [None] * 8})
+    s = score_decision(INFO, r, seeds=8)
+    assert s.random_censored == 1
+    assert s.baselines["random"] == ((600 - 300) + 0) / 60 / 2
+    h = headline(
+        [s, _score(1.0, 1.0, random_regret=2.0, random_censored=2), _score(None, 1.0, 3.0, 5)],
+        random.Random(0),
+    )
+    assert h["battle"]["random_paired"] == 2
+    assert h["battle"]["random_censored_alternatives"] == 3

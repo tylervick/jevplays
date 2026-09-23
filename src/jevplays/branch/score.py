@@ -75,6 +75,8 @@ class DecisionScore:
     censored_chosen: bool
     strongest_set: bool
     offline_set: bool
+    random_censored: int = 0
+    """Alternatives left out of the `random` baseline's mean because their regret was not finite."""
 
 
 TIE_RULE = (
@@ -145,7 +147,8 @@ def score_decision(info: DecisionInfo, rows, seeds: int) -> DecisionScore:
     elif info.chosen in frames:
         tied = as_good_as_best(frames[info.chosen], frames[best], scoring)
 
-    every = [r for r in (regret(a) for a in alts) if r is not None]
+    regrets = [regret(a) for a in alts]
+    every = [r for r in regrets if r is not None]
     baselines = {
         "random": statistics.fmean(every) if every else None,
         "strongest": regret(info.strongest),
@@ -162,17 +165,33 @@ def score_decision(info: DecisionInfo, rows, seeds: int) -> DecisionScore:
         censored_chosen,
         strongest_set,
         offline_set,
+        len(regrets) - len(every),
     )
+
+
+BASELINES = ("random", "strongest", "offline")
 
 
 def headline(scores: list[DecisionScore], rng: random.Random) -> dict[str, dict]:
     """Per kind: how many decisions, how many had a finite regret, how many of those had a chosen
     alternative that never finished while the best one did (`censored_chosen` -- a hint that the
-    mean regret is a floor, not the true cost), the mean regret with its 95% interval, the share
-    where Jev's choice was as good as the best (TIE_RULE), and each baseline's mean regret plus how many
-    decisions of that kind it could not be scored for (a baseline that was never set, such as no
-    offline milestone-first pick for that decision, is not counted as missing)."""
+    mean regret is a floor, not the true cost), the mean regret with its 95% interval, and the
+    share where Jev's choice was as good as the best (TIE_RULE).
+
+    Each baseline is paired with Jev (spec: "Scoring"): over the decisions where both Jev's regret
+    and the baseline's are finite, `<name>_paired` counts them, `<name>_jev_s` and `<name>_regret_s`
+    are the two mean regrets on that same set, and `<name>_diff_s` is the mean of (baseline - Jev)
+    with `<name>_diff_ci` its 95% bootstrap interval over decisions (positive: Jev did better).
+    `<name>_missing` counts the decisions of that kind the baseline could not be scored for (one
+    that was never set, such as no offline milestone-first pick, is not missing).
+    `random_censored_alternatives` sums, over random's paired decisions, the alternatives its
+    per-decision mean had to drop because their regret was not finite."""
     out: dict[str, dict] = {}
+    applicable = {
+        "random": lambda _s: True,
+        "strongest": lambda s: s.strongest_set,
+        "offline": lambda s: s.offline_set,
+    }
     for kind in sorted({s.kind for s in scores}):
         mine = [s for s in scores if s.kind == kind]
         finite = [s.regret_s for s in mine if s.regret_s is not None]
@@ -185,16 +204,20 @@ def headline(scores: list[DecisionScore], rng: random.Random) -> dict[str, dict]
         row["mean_regret_s"] = statistics.fmean(finite) if finite else None
         row["ci"] = bootstrap_ci(finite, rng) if len(finite) > 1 else None
         row["best_or_tied"] = sum(judged) / len(judged) if judged else None
-        applicable = {
-            "random": lambda _s: True,
-            "strongest": lambda s: s.strongest_set,
-            "offline": lambda s: s.offline_set,
-        }
-        for name, is_applicable in applicable.items():
-            values = [s.baselines[name] for s in mine if s.baselines.get(name) is not None]
-            row[f"{name}_regret_s"] = statistics.fmean(values) if values else None
+        for name in BASELINES:
+            paired = [s for s in mine if s.regret_s is not None and s.baselines.get(name) is not None]
+            jev = [s.regret_s for s in paired]
+            rule = [s.baselines[name] for s in paired]
+            diffs = [b - j for b, j in zip(rule, jev, strict=True)]
+            row[f"{name}_paired"] = len(paired)
+            row[f"{name}_jev_s"] = statistics.fmean(jev) if jev else None
+            row[f"{name}_regret_s"] = statistics.fmean(rule) if rule else None
+            row[f"{name}_diff_s"] = statistics.fmean(diffs) if diffs else None
+            row[f"{name}_diff_ci"] = bootstrap_ci(diffs, rng) if len(diffs) > 1 else None
             row[f"{name}_missing"] = sum(
-                1 for s in mine if is_applicable(s) and s.baselines.get(name) is None
+                1 for s in mine if applicable[name](s) and s.baselines.get(name) is None
             )
+            if name == "random":
+                row["random_censored_alternatives"] = sum(s.random_censored for s in paired)
         out[kind] = row
     return out
