@@ -17,6 +17,7 @@ import asyncio
 import heapq
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import partial
 from itertools import count
@@ -151,6 +152,12 @@ def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision
     )
 
 
+class ForcedActionMissed(RuntimeError):
+    """A branch's forced action could not be taken where it was meant to be (#82): another
+    decision point came first, or the forced option is not on offer. The branch is recorded as
+    an error rather than letting Jev decide in its place."""
+
+
 class Loop:
     def __init__(
         self,
@@ -160,6 +167,9 @@ class Loop:
         brain=None,
         run_dir: RunDir | None = None,
         memory: Memory | None = None,
+        forced: BattleAction | ExploreAction | None = None,
+        forced_delay: int = 0,
+        stop: "Callable[[Loop, GameState], str | None] | None" = None,
     ) -> None:
         self.emu = emu
         self.broadcaster = broadcaster
@@ -211,6 +221,14 @@ class Loop:
         """Set after a macro fails twice and the safe default fails too: (mode, decision id) to
         wait out until the screen changes, so the loop stops asking the brain about a decision
         it cannot carry out."""
+        self.forced = forced
+        """A branch's first action (#82), taken at the first battle menu or explore turn instead
+        of asking Jev, then cleared."""
+        self.forced_delay = forced_delay
+        """Idle frames ticked right after the forced decision is recorded: a branch's seed."""
+        self.stop = stop
+        """Asked after every step whether the run should end, and why; None never stops it."""
+        self.stop_reason: str | None = None
 
     @property
     def decision_count(self) -> int:
@@ -266,10 +284,13 @@ class Loop:
                 input_tokens=response.get("usage", {}).get("input_tokens", 0),
                 latency_ms=latency_ms,
             )
+            decision.cached = bool(response.get("cached"))
         await self._record(decision)
         return decision
 
     async def _record(self, decision: Decision) -> None:
+        if self.forced is not None and not decision.forced:
+            raise ForcedActionMissed(f"a {decision.kind} decision came before the forced action")
         self.decisions.append(decision)
         if self.run_dir is not None:
             self.run_dir.append(decision)
@@ -277,6 +298,25 @@ class Loop:
                 self.run_dir.set_model(decision.model)
         await self.broadcaster.publish(decision_event(decision))
         await self._maybe_checkpoint()
+
+    async def _take_forced(self, kind: str, sj: dict) -> Decision:
+        """The branch's forced action, recorded like any decision and never asked (#82)."""
+        action, self.forced = self.forced, None
+        decision = Decision(
+            id=uuid.uuid4().hex[:12],
+            ts=time.time(),
+            kind=kind,
+            state_summary=sj,
+            questions={},
+            answers={},
+            action=action.describe(),
+            forced=True,
+            action_value=action,
+        )
+        await self._record(decision)
+        if self.forced_delay:
+            self.emu.tick(self.forced_delay)
+        return decision
 
     async def _maybe_checkpoint(self) -> None:
         if self.run_dir is not None and self.decision_count % CHECKPOINT_EVERY == 0:
@@ -308,7 +348,12 @@ class Loop:
             return self.emu.tick(self.config.idle_frames)
         sj = battle_state(state, goal=goal_table.battle_goal(self.milestone, fallback=self.config.goal))
         questions = battle_questions(sj)
-        decision = await self._decide("battle", sj, questions, partial(decide_battle, supported=ALL_ACTIONS))
+        if isinstance(self.forced, BattleAction):
+            decision = await self._take_forced("battle", sj)
+        else:
+            decision = await self._decide(
+                "battle", sj, questions, partial(decide_battle, supported=ALL_ACTIONS)
+            )
         if decision is None:
             return 0
         # Before the macros, not after: the turn happens whether or not this decision's own
@@ -501,16 +546,23 @@ class Loop:
         sj = explore_state(state, options, self.milestone)
         questions = explore_questions(sj)
         offline = self._offline_option(options)
-        decision = await self._decide(
-            "explore",
-            sj,
-            questions,
-            partial(decide_explore, options=options),
-            offline=(
-                ExploreAction(option_id=offline.id, kind=offline.kind, text=offline.text),
-                f"no brain: {offline.text}",
-            ),
-        )
+        if isinstance(self.forced, ExploreAction):
+            decision = await self._take_forced("explore", sj)
+            if not any(o.id == decision.action_value.option_id for o in options):
+                raise ForcedActionMissed(
+                    f"forced option {decision.action_value.option_id} is not offered here"
+                )
+        else:
+            decision = await self._decide(
+                "explore",
+                sj,
+                questions,
+                partial(decide_explore, options=options),
+                offline=(
+                    ExploreAction(option_id=offline.id, kind=offline.kind, text=offline.text),
+                    f"no brain: {offline.text}",
+                ),
+            )
         if decision is None:
             return 0
         chosen = next(
@@ -967,6 +1019,11 @@ class Loop:
             else:
                 emulated += spent
                 self.game_frames = emulated
+            if self.stop is not None:
+                reason = self.stop(self, state)
+                if reason is not None:
+                    self.stop_reason = reason
+                    return
             captured = self._take_frames()
             if self.config.paced:
                 due = started + emulated / (FRAMES_PER_SECOND * self.config.speed)
