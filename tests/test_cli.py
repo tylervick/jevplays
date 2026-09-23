@@ -198,3 +198,23 @@ def test_snapshots_cannot_be_combined_with_resume_or_no_log(tmp_path, capsys):
         with pytest.raises(SystemExit):
             main(["run", "--snapshot-every-decision", *extra])
         assert "--snapshot-every-decision" in capsys.readouterr().err
+
+
+def test_branch_needs_at_least_two_seeds_and_one_worker(capsys):
+    import pytest
+
+    from jevplays.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(["branch", "run", "--seeds", "2", "--workers", "1"])
+    assert (args.seeds, args.workers) == (2, 1)
+    for bad in (
+        ["--seeds", "1"],
+        ["--seeds", "0"],
+        ["--workers", "0"],
+        ["--workers", "-3"],
+        ["--seeds", "x"],
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args(["branch", "run", *bad])
+        assert bad[0] in capsys.readouterr().err

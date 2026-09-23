@@ -283,6 +283,19 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _at_least(minimum: int, why: str):
+    def parse(text: str) -> int:
+        try:
+            value = int(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from None
+        if value < minimum:
+            raise argparse.ArgumentTypeError(f"must be at least {minimum} ({why}), not {value}")
+        return value
+
+    return parse
+
+
 def cmd_branch(args: argparse.Namespace) -> int:
     rom = args.rom or _rom_from_env()
     if rom is None:
@@ -409,9 +422,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     branch.add_argument("run_dir", type=Path)
     branch.add_argument("--rom", type=Path, help="Pokémon Red/Blue ROM (default: $JEVPLAYS_ROM)")
-    branch.add_argument("--seeds", type=int, default=8, help="random seeds per alternative")
+    branch.add_argument(
+        "--seeds",
+        type=_at_least(2, "half the seeds pick the best alternative, the other half score it"),
+        default=8,
+        help="random seeds per alternative (at least 2)",
+    )
     branch.add_argument("--sample", type=int, default=None, help="branch only N decisions, chosen at random")
-    branch.add_argument("--workers", type=int, default=os.cpu_count() or 1)
+    branch.add_argument(
+        "--workers", type=_at_least(1, "a branch needs a process to run in"), default=os.cpu_count() or 1
+    )
     branch.set_defaults(func=cmd_branch)
     return parser
 
