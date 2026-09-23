@@ -7,6 +7,7 @@ from jevplays.branch.score import (
     answer_spread,
     as_good_as_best,
     bootstrap_ci,
+    complete,
     headline,
     score_decision,
     seed_frames,
@@ -256,3 +257,17 @@ def test_random_counts_the_censored_alternatives_it_dropped_on_its_paired_decisi
     )
     assert h["battle"]["random_paired"] == 2
     assert h["battle"]["random_censored_alternatives"] == 3
+
+
+def test_a_decision_is_complete_only_when_every_alternative_finished_every_seed():
+    full = rows({"move:A": [300] * 4, "move:B": [None] * 4, "run": [300] * 4})
+    assert complete(INFO, full, seeds=4)
+    # an error row is finished too
+    errored = full[:-1] + [(BranchKey(1, "run", 3), BranchResult("error", None, 0, 0, 0, "boom"))]
+    assert complete(INFO, errored, seeds=4)
+    # one seed of one alternative still running
+    assert not complete(INFO, full[:-1], seeds=4)
+    # rows for more seeds than asked, or for an alternative not in the decision, do not make up for it
+    extra = full[:-1] + [(BranchKey(1, "run", 7), BranchResult("done", 1, 0, 0, 0))]
+    extra += [(BranchKey(1, "switch", 3), BranchResult("done", 1, 0, 0, 0))]
+    assert not complete(INFO, extra, seeds=4)

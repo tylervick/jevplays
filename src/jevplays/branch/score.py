@@ -49,6 +49,15 @@ def seed_frames(rows: list[tuple[BranchKey, BranchResult]]) -> dict[str, dict[in
     return out
 
 
+def complete(info: DecisionInfo, rows: list[tuple[BranchKey, BranchResult]], seeds: int) -> bool:
+    """Whether every alternative of the decision has a finished branch row (any outcome, error
+    included) for every seed. An incomplete decision -- a measurement interrupted or still
+    running -- stays out of the headline, so partial data does not pose as a result."""
+    wanted = set(info.alternatives)
+    finished = {(k.alternative, k.seed) for k, _ in rows if k.alternative in wanted and 0 <= k.seed < seeds}
+    return len(finished) == len(wanted) * seeds
+
+
 def _median(frames: dict[int, float], seeds: range) -> float:
     values = [frames[s] for s in seeds if s in frames]
     return statistics.median(values) if values else math.inf

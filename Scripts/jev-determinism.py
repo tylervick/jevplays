@@ -3,10 +3,13 @@
 so (spec: "The response cache").
 
     mise exec -- uv run Scripts/jev-determinism.py RUN_DIR [--inputs 20] [--repeats 5]
+    mise exec -- uv run Scripts/jev-determinism.py RUN_DIR --store RUN_DIR/branches/branches.sqlite
 
 Takes `--inputs` battle and explore decisions Jev made in RUN_DIR, spread evenly through the run,
 rebuilds each one's questions from its logged state summary, asks each `--repeats` times, and
-prints the spread of every input and the largest overall. Needs TYPESAFE_API_KEY.
+prints the spread of every input and the largest overall. `--store` also writes the largest
+spread into a branch measurement, where `Scripts/branch-report.py` prints it. Needs
+TYPESAFE_API_KEY.
 """
 
 import argparse
@@ -18,12 +21,13 @@ from jevplays.brain.battle import battle_questions
 from jevplays.brain.client import Brain
 from jevplays.brain.explore import explore_questions
 from jevplays.branch.score import answer_spread
+from jevplays.branch.store import BranchStore
 from jevplays.runlog import RunDir
 
 BUILDERS = {"battle": battle_questions, "explore": explore_questions}
 
 
-async def main_async(run: Path, inputs: int, repeats: int) -> int:
+async def main_async(run: Path, inputs: int, repeats: int, store: Path | None = None) -> int:
     logged = [
         d
         for d in RunDir.open(run).decisions()
@@ -47,6 +51,11 @@ async def main_async(run: Path, inputs: int, repeats: int) -> int:
     finally:
         await brain.close()
     print(f"inputs {len(picked)}, repeats {repeats}, largest spread {worst:.4f}")
+    if store is not None:
+        db = BranchStore(store)
+        db.set_meta("spread", f"{worst:.4f}")
+        db.close()
+        print(f"wrote spread {worst:.4f} to {store}")
     return 0
 
 
@@ -55,8 +64,16 @@ def main() -> int:
     ap.add_argument("run", type=Path)
     ap.add_argument("--inputs", type=int, default=20)
     ap.add_argument("--repeats", type=int, default=5)
+    ap.add_argument(
+        "--store",
+        type=Path,
+        help="a measurement's branches.sqlite: record the largest spread there for branch-report",
+    )
     args = ap.parse_args()
-    return asyncio.run(main_async(args.run, args.inputs, args.repeats))
+    if args.store is not None and not args.store.is_file():
+        print(f"{args.store} does not exist; run `jevplays branch` first", file=sys.stderr)
+        return 2
+    return asyncio.run(main_async(args.run, args.inputs, args.repeats, args.store))
 
 
 if __name__ == "__main__":

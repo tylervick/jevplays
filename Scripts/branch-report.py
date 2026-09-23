@@ -5,13 +5,15 @@
     uv run Scripts/branch-report.py RUN_DIR --decision N
     uv run Scripts/branch-report.py RUN_DIR --export N ALTERNATIVE SEED OUT_DIR
 
-Reads RUN_DIR/branches/branches.sqlite. The default prints the counts, then per decision kind the
-mean regret (seconds of game time Jev's choice cost against the best alternative) with its 95%
-interval, the share of decisions where Jev's choice was as good as the best (the rule is printed
-under the headline), and the same regret for three first-action rules -- a random alternative, the strongest move, and the offline
-milestone-first pick -- each paired with Jev on the decisions both have a regret for: n, both
-means, and (rule − Jev) with its 95% interval over decisions. `--decision` prints one decision's alternatives; `--export` writes one
-branch as a run directory for `jevplays replay`.
+Reads RUN_DIR/branches/branches.sqlite. The default prints the counts (a decision is incomplete
+until every alternative has a finished branch for every seed, and is left out of the headline),
+then per decision kind the mean regret (seconds of game time Jev's choice cost against the best
+alternative) with its 95% interval, the share of decisions where Jev's choice was as good as the
+best (the rule is printed under the headline), and three first-action rules -- a random
+alternative, the strongest move, and the offline milestone-first pick -- each paired with Jev on
+the decisions both have a regret for: n, both means, and (rule − Jev) with its 95% interval over
+decisions. `--decision` prints one decision's alternatives; `--export` writes one branch as a run
+directory for `jevplays replay`.
 """
 
 import argparse
@@ -22,7 +24,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from jevplays.branch.score import FRAMES_PER_SECOND, TIE_RULE, headline, score_decision, seed_frames
+from jevplays.branch.score import FRAMES_PER_SECOND, TIE_RULE, complete, headline, score_decision, seed_frames
 from jevplays.branch.store import BranchKey, BranchStore, export_branch
 
 
@@ -40,12 +42,15 @@ def summary(store: BranchStore) -> int:
     calls = sum(r.jev_calls for _, r in rows)
     hits = sum(r.cache_hits for _, r in rows)
     print(f"run {meta.get('run')}  model {meta.get('model')}  K={seeds}")
-    print(f"decisions {len(infos)}  skipped {dict(skipped)}")
+    by_decision = {i.decision: store.branches(i.decision) for i in infos}
+    whole = [i for i in infos if complete(i, by_decision[i.decision], seeds)]
+    print(f"decisions {len(infos)}  incomplete {len(infos) - len(whole)}  skipped {dict(skipped)}")
     print(f"branches {len(rows)}  {dict(outcomes)}  jev calls {calls}  cache hits {hits}")
     if "spread" in meta:
         print(f"determinism check: largest answer spread {meta['spread']}")
     rng = random.Random(0)
-    scores = [score_decision(i, store.branches(i.decision), seeds) for i in infos]
+    # an incomplete decision still shows with --decision, but no headline number counts it
+    scores = [score_decision(i, by_decision[i.decision], seeds) for i in whole]
     rules = {"random": "random", "strongest": "strongest move", "offline": "offline pick"}
     for kind, row in headline(scores, rng).items():
         ci = row["ci"]
