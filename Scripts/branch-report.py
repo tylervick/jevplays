@@ -14,6 +14,7 @@ branch as a run directory for `jevplays replay`.
 """
 
 import argparse
+import math
 import random
 import statistics
 import sys
@@ -49,10 +50,12 @@ def summary(store: BranchStore) -> int:
         interval = f" [{ci[0]:.1f}, {ci[1]:.1f}]" if ci else ""
         tied = "-" if row["best_or_tied"] is None else f"{row['best_or_tied']:.0%}"
         print(
-            f"{kind:<8} decisions {row['decisions']} scored {row['scored']}  "
+            f"{kind:<8} decisions {row['decisions']} scored {row['scored']} "
+            f"censored_chosen {row['censored_chosen']}  "
             f"regret {_s(row['mean_regret_s'])}{interval}  best or tied {tied}  "
-            f"random {_s(row['random_regret_s'])}  strongest {_s(row['strongest_regret_s'])}  "
-            f"offline {_s(row['offline_regret_s'])}"
+            f"random {_s(row['random_regret_s'])} ({row['random_missing']} missing)  "
+            f"strongest {_s(row['strongest_regret_s'])} ({row['strongest_missing']} missing)  "
+            f"offline {_s(row['offline_regret_s'])} ({row['offline_missing']} missing)"
         )
     return 0
 
@@ -69,11 +72,12 @@ def one_decision(store: BranchStore, n: int) -> int:
         values = sorted(frames.get(alt, {}).values())
         done = [v for v in values if v != float("inf")]
         median = statistics.median(values) / FRAMES_PER_SECOND if values else None
+        median_str = "censored" if median is not None and math.isinf(median) else _s(median)
         spread = (max(done) - min(done)) / FRAMES_PER_SECOND if len(done) > 1 else None
         blackouts = sum(r.blackouts for k, r in rows if k.alternative == alt)
         mark = "*" if alt == info.chosen else " "
         print(
-            f"{mark} {alt:<32} median {_s(median)}  spread {_s(spread)}  "
+            f"{mark} {alt:<32} median {median_str}  spread {_s(spread)}  "
             f"censored {len(values) - len(done)}/{len(values)}  blackouts {blackouts}"
         )
     return 0

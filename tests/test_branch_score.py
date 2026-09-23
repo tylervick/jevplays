@@ -99,3 +99,67 @@ def test_headline_splits_by_kind_and_counts_uncensored_decisions():
     assert h["battle"]["mean_regret_s"] == 0.0
     # `bad` chose an alternative that never finished while the best did: judged, and not tied
     assert h["battle"]["best_or_tied"] == 0.5
+
+
+def test_a_choice_better_than_best_on_the_scoring_seeds_still_counts_as_tied():
+    # chosen (A) beats the selection-half winner (B) on the scoring half: [400]*4+[300]*4 vs
+    # [350]*4+[360]*4. Best is still picked from the selection half (B, 350 < 400), but A's
+    # scoring-half advantage must count as "best or tied", not a miss.
+    r = rows({"move:A": [400] * 4 + [300] * 4, "move:B": [350] * 4 + [360] * 4, "run": [900] * 8})
+    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    assert s.best == "move:B"
+    assert s.regret_s == -1.0
+    assert s.tied is True
+
+
+def test_a_capped_best_on_one_scoring_seed_does_not_force_a_tie_to_false():
+    # move:B is picked as best from the selection half (300 < 600). On the scoring half it caps
+    # on seed 4 (frames None) while move:A finishes there instead; the two are equal (360) on
+    # seeds 5-7. Whatever the capped seed resamples to, move:A's bootstrap draws are never worse
+    # than 0 (a finished seed beating a capped one, or a tie), so a lone infinite pair must not,
+    # by itself, force `tied` to False.
+    r = rows(
+        {
+            "move:A": [600] * 4 + [500, 360, 360, 360],
+            "move:B": [300] * 4 + [None, 360, 360, 360],
+            "run": [900] * 8,
+        }
+    )
+    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    assert s.best == "move:B"
+    assert s.tied is True
+
+
+def test_all_alternatives_censored_reports_no_best_or_regret():
+    # The chosen alternative is deliberately not first in `alternatives`, so a fix that just
+    # picked the first alternative when every median ties at infinity would still pass a naive
+    # check; asserting `best is None` rules that out.
+    info = DecisionInfo(1, "battle", "move:B", ["move:A", "move:B", "run"], "move:B", None, 1000)
+    r = rows({"move:A": [None] * 8, "move:B": [None] * 8, "run": [None] * 8})
+    s = score_decision(info, r, seeds=8, rng=random.Random(0))
+    assert s.best is None
+    assert s.regret_s is None
+    assert s.tied is None
+
+
+def test_a_decision_with_only_error_rows_has_no_best_and_does_not_crash():
+    r = [
+        (BranchKey(1, alt, seed), BranchResult("error", None, 0, 0, 0, "boom"))
+        for alt in ("move:A", "move:B", "run")
+        for seed in range(8)
+    ]
+    s = score_decision(INFO, r, seeds=8, rng=random.Random(0))
+    assert s.best is None
+    assert s.regret_s is None
+    assert s.tied is None
+
+
+def test_headline_counts_a_decision_whose_chosen_alternative_never_finished():
+    good = score_decision(
+        INFO, rows({"move:A": [300] * 8, "move:B": [600] * 8, "run": [900] * 8}), 8, random.Random(0)
+    )
+    bad = score_decision(
+        INFO, rows({"move:A": [None] * 8, "move:B": [300] * 8, "run": [900] * 8}), 8, random.Random(0)
+    )
+    h = headline([good, bad], random.Random(0))
+    assert h["battle"]["censored_chosen"] == 1
