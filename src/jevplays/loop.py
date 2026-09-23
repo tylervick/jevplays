@@ -66,16 +66,21 @@ MACRO_BACKOUT_PRESSES = 3
 before giving up on the retry. The macros back out themselves, so this only covers a screen they
 could not close."""
 
-OPTION_BUDGET_S = 90.0
-"""How long one option's macro may hold the loop before Jev is asked again. Some options never
-complete on their own -- the grass is done only when a battle interrupts it -- so without a
-budget the first absorbing option picked would be the last decision Jev ever made. An option
-dropped this way is marked `tried`, which is what Jev is shown the next time it is offered.
+OPTION_BUDGET_FRAMES = 32_400
+"""How many game frames one option's macro may hold the loop before Jev is asked again. Some
+options never complete on their own -- the grass is done only when a battle interrupts it -- so
+without a budget the first absorbing option picked would be the last decision Jev ever made. An
+option dropped this way is marked `tried`, which is what Jev is shown the next time it is offered.
 
-The clock restarts when the legs finish, so this governs the macro phase only: a long walk is
-bounded by the navigator's own stuck detector instead. Paced, Route 1 to the Viridian Mart takes
-151 s, and a budget spanning the walk would cancel that option on the turn it arrived -- before
-its macro ever ran, and writing a `tried` that says nothing true about the option."""
+Game frames, not wall seconds (#61): the budget bounds what happens in the game, and 90 wall
+seconds meant 5,400 frames at real time, 32,400 at 6x and effectively no limit unpaced, so
+`--speed` changed how much one "train in the grass" decision trained. 32,400 is nine game minutes,
+what the 6x demo ran on while it took the badge in nearly every run.
+
+The count restarts when the legs finish, so this governs the macro phase only: a long walk is
+bounded by the navigator's own stuck detector instead. Route 1 to the Viridian Mart is about
+9,000 frames, and a budget spanning the walk would cancel options on the turn they arrived --
+before their macro ever ran, and writing a `tried` that says nothing true about the option."""
 GRASS_CANDIDATES = 40
 """How many of the nearest grass cells `wander` runs a path search to. Bounded so the search
 cannot grow with the map."""
@@ -163,11 +168,10 @@ class Loop:
         the last one is done, which is what finishes the run."""
         self.option: Option | None = None
         """The option Jev picked and the loop is carrying out, or None between decisions."""
-        self.option_started_at: float = 0.0
+        self.option_started_at: int = 0
+        """The game frame the option's budget counts from (`_game_clock`)."""
         self.finished = False
         """The last milestone is done. `run()` returns on the turn this is set."""
-        self.clock = monotonic
-        """Wall clock for the option budget. A test swaps it for one it controls."""
         self._announced_no_options = False
         """Whether the "nothing to do here" pause has already been published for this map."""
         self._option_map: int | None = None
@@ -430,13 +434,13 @@ class Loop:
                 # scripted teleport. `_walk` handles the same fact with `lost`, but only while
                 # the navigator is busy -- an option running its macro never looked again. A
                 # blackout mid-`wander` therefore kept stepping around Pallet Town, which has
-                # grass tiles but no encounter table, until the 90-second budget ran out. That
-                # budget is wall clock, so an unpaced run at ~18,000 fps spent 90 real seconds
-                # on it -- most of a run that otherwise takes twenty (#50).
+                # grass tiles but no encounter table, until the budget ran out. The budget was
+                # wall clock then, so an unpaced run at ~18,000 fps spent 90 real seconds on it
+                # -- most of a run that otherwise takes twenty (#50).
                 self._clear_option()
                 await self.broadcaster.publish(status_event("running", "re-planning after a map change"))
                 return self.emu.tick(self.config.idle_frames)
-            if self.clock() - self.option_started_at > OPTION_BUDGET_S:
+            if self._game_clock() - self.option_started_at > OPTION_BUDGET_FRAMES:
                 return await self._option_budget_spent()
             if self._arrived:
                 return await self._run_macro(state)
@@ -513,7 +517,7 @@ class Loop:
         """Take the option on: plan its legs, or count it arrived when it has none (the grass
         is `wander` from where we stand, so there is nowhere to walk to first)."""
         self.option = option
-        self.option_started_at = self.clock()
+        self.option_started_at = self._game_clock()
         self._option_map = state.map_id
         self._arrived = not option.legs
         self._arrived_map = state.map_id if self._arrived else None
@@ -544,10 +548,10 @@ class Loop:
         elif result == "done":
             # The macro waits for the next turn: a warp can land us mid-cutscene, and the turn
             # after this one re-reads the mode before pressing anything. The budget starts here,
-            # not where the legs did: see OPTION_BUDGET_S.
+            # not where the legs did: see OPTION_BUDGET_FRAMES.
             self._arrived = True
             self._arrived_map = self.emu.mem[ram.wCurMap]
-            self.option_started_at = self.clock()
+            self.option_started_at = self._game_clock()
             await self.broadcaster.publish(status_event("running", f"arrived: {self.option.text}"))
         return NAV_STEP_FRAMES
 
@@ -602,7 +606,7 @@ class Loop:
 
     def _clear_option(self) -> None:
         self.option = None
-        self.option_started_at = 0.0
+        self.option_started_at = 0
         self.navigator.clear()
         self._option_map, self._arrived, self._arrived_map = None, False, None
 
@@ -844,6 +848,12 @@ class Loop:
         take = getattr(self.emu, "take_frames", None)
         return take() if take is not None else []
 
+    def _game_clock(self) -> int:
+        """Frames the game has run, for the option budget: the emulator's own counter, or this
+        session's running total where a fake has none."""
+        counted = self._frame_count()
+        return counted if counted is not None else self.game_frames
+
     def _frame_count(self) -> int | None:
         counter = getattr(self.emu, "frame_count", None)
         return counter() if counter is not None else None
@@ -861,16 +871,15 @@ class Loop:
 
     async def _wait_while_unwatched(self) -> float:
         """Hold the run while nobody has had the page open for `pause_after` seconds. Returns how
-        long it held, in pacing seconds; the option being carried out is not charged for it."""
+        long it held, in pacing seconds. No game frames pass meanwhile, so the option being
+        carried out is charged nothing for it."""
         if self.config.pause_after is None or self.broadcaster.idle_for() < self.config.pause_after:
             return 0.0
         await self.broadcaster.publish(
             status_event("unwatched", "nobody is watching; it carries on when someone opens the page")
         )
-        began, began_budget = monotonic(), self.clock()
+        began = monotonic()
         await self.broadcaster.wait_for_viewer()
-        if self.option is not None:
-            self.option_started_at += self.clock() - began_budget
         await self.broadcaster.publish(status_event("running", "someone is watching"))
         return monotonic() - began
 
