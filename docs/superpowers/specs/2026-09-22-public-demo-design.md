@@ -5,8 +5,8 @@ Issue #72. Amends `Scripts/demo-loop.py` (#71).
 ## The decision
 
 #72 proposed moving the demo onto a Fly.io Machine, with `auto_stop_machines = "suspend"` as
-the cost control. It stays on the Mac mini instead, published through a Cloudflare Tunnel as an
-anyone-with-the-link URL. Why:
+the cost control. It stays on the machine it already runs on instead, shared through a tunnel as
+an anyone-with-the-link URL. Why:
 
 - **The ROM never leaves the machine.** No image, no registry, no cloud volume. That is stronger
   than #72's "never in the image" rule, and it holds without any build discipline.
@@ -14,19 +14,15 @@ anyone-with-the-link URL. Why:
   counting an open WebSocket as load, and on a suspend and resume not upsetting the stall
   watchdog's monotonic clock. A viewer-aware pause in our own code does the same job, and a unit
   test can pin it.
-- **Tailscale is already here but cannot publish.** The tailnet runs on headscale, which does not
-  support Funnel. Tailnet traffic would also bypass Fly's proxy, so Fly and Tailscale together
-  would lose Fly's one advantage.
-- `milo.cat` is already on Cloudflare, so a tunnel needs no open port and no new account.
 
 The demo is public: anyone with the URL can watch, with no login. Tyler will watch the TypeSafe
 spend himself; the limits below keep it bounded.
 
 ## What runs
 
-`mise run demo` (the supervisor), plus `cloudflared tunnel run --url http://localhost:8765` on
-the same machine. Tyler creates the tunnel and the DNS record. Nothing in this repository touches
-Cloudflare.
+`mise run demo` (the supervisor), with a tunnel to its local port on the same machine. The
+tunnel's setup is operational, not part of this repository, and nothing here depends on which
+one it is.
 
 ## Limits
 
@@ -76,6 +72,6 @@ days, and it keeps `Scripts/accuracy.py` working on recent demo runs.
 ## Not in this change
 
 - Starting the demo and the tunnel again after a reboot: #73.
-- Cloudflare Access in front of the link: #74.
+- A login in front of the link: #74.
 - Capture tracking `fps` exactly: #75.
 - Fly.io and a Dockerfile: dropped (see "The decision").

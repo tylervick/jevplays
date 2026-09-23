@@ -160,19 +160,12 @@ multiplies the game's clock: the pacing sleep is computed against it, and frames
 `speed` times further apart in game time, so the page still gets 15 a second. The same frames are
 emulated and the same decisions are made; they just arrive sooner.
 
-It serves the local network by default, and anyone on your tailnet can open it at this machine's
-tailnet address.
+It serves the local network by default.
 
 ### A public link
 
-The link is public: anyone who has the URL can watch, with no login. A Cloudflare Tunnel from
-the machine running `mise run demo` gives it a hostname without opening a port, and the ROM never
-leaves that machine. Once, with `cloudflared` installed and logged in to the account that holds
-the domain:
-
-    cloudflared tunnel create jevplays
-    cloudflared tunnel route dns jevplays jev.example.com
-    cloudflared tunnel run --url http://localhost:8765 jevplays
+Whatever you put in front of the local port to share it, anyone who has the URL can watch, with
+no login, and the ROM never leaves the machine running the demo.
 
 Nobody can steer anything from the page: it is read-only, and nothing a viewer sends is acted on.
 It does stream a commercial game to whoever has the link, and every decision a run makes is
