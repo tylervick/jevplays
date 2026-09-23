@@ -86,10 +86,10 @@ Explore: every option `executor.options.generate` returns for the snapshot's emu
 milestone.
 
 Fidelity check. A snapshot must rebuild the decision point exactly. For an explore decision, the
-generated option ids must equal the ids in the logged `state_summary`. For a battle decision, the
-rebuilt state summary must equal the logged one, and Jev's logged action must be among the
-alternatives. A decision that fails either check is skipped and counted as "not reproducible".
-Nothing is ever branched from a state that differs from the one Jev saw.
+rebuilt state summary, options and memory words included, must equal the logged one. For a battle
+decision, the rebuilt state summary must equal the logged one, and Jev's logged action must be
+among the alternatives. A decision that fails either check is skipped and counted as "not
+reproducible". Nothing is ever branched from a state that differs from the one Jev saw.
 
 Not branched: prompt and menu decisions (mostly yes/no boxes that policy settles), and decisions
 code made without Jev (`fallback=True`).
@@ -97,11 +97,12 @@ code made without Jev (`fallback=True`).
 ## Seeds
 
 The game's random numbers are fed by a hardware timer that ticks every frame, and PyBoy is
-deterministic. Loading a state and pressing the same buttons replays the same damage rolls,
-misses and critical hits. Seed `s` of a branch therefore ticks `s` idle frames after loading and
-before the forced action. Every alternative of a decision runs on the same seeds 0 to K−1,
-including the action Jev actually chose. The logged run is not counted as a branch, because its
-randomness was not controlled the same way.
+deterministic. Seed `s` of a branch therefore ticks `s` idle frames right after the forced
+decision is recorded and before its buttons are pressed or its legs are walked. Ticking before
+the decision would not do for the overworld: idle frames let NPCs walk, which can change the
+option list the decision was made from. Every alternative of a decision runs on the same seeds
+0 to K−1, including the action Jev actually chose. The logged run is not counted as a branch,
+because its randomness was not controlled the same way.
 
 ## When a branch stops
 
@@ -110,11 +111,14 @@ A branch stops at the first of:
 - **done**: the milestone that was active at the snapshot is complete, meaning
   `goals.active_milestone` no longer returns it.
 - **capped**: the branch has spent 3× the game frames the logged run took from that decision to
-  the same milestone. Game frames, not wall-clock time, so the #61 problem does not come back.
-  A decision whose logged run never finished that milestone is skipped and counted as "no
-  reference".
+  the same milestone, or one game minute (3,600 frames), whichever is larger. Game frames, not
+  wall-clock time, so the #61 problem does not come back. A decision whose logged run never
+  finished that milestone is skipped and counted as "no reference".
 - **stalled**: 20,000 game frames with no new decision, which is five and a half minutes of game
   time. This bounds the #67 hang, where the loop presses A in BATTLE_WAIT forever.
+- **error**: the forced action could not be taken, because another decision point came first or
+  the forced option was not offered. Recorded with its message, never scored, and counted in the
+  report.
 
 A branch's score is the game frames from the snapshot to **done**. A blackout is not given a
 penalty: it already costs real frames (the warp to the Pokémon Center, the walk back, the fights
