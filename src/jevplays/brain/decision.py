@@ -48,7 +48,16 @@ class MenuAction:
         return f"select {self.item}" if self.item is not None else "close the menu"
 
 
-Action = BattleAction | ExploreAction | PromptAction | MenuAction
+@dataclass(frozen=True)
+class StarterAction:
+    species: str
+    """BULBASAUR, CHARMANDER, or SQUIRTLE (#80)."""
+
+    def describe(self) -> str:
+        return f"take {self.species}"
+
+
+Action = BattleAction | ExploreAction | PromptAction | MenuAction | StarterAction
 
 
 @dataclass

@@ -97,6 +97,11 @@ keeps moving: `get_starter`, `get_pokedex` (deliver Oak's parcel and get the Pok
 `beat_brock`. The active one -- the first not yet done -- is always offered as an option, never
 forced; everything else Jev might do to get there is generated, not written down.
 
+Which starter to take is Jev's too. At Oak's table it is asked once -- BULBASAUR, CHARMANDER, or
+SQUIRTLE, each described by its type, with the Boulder Badge as the goal -- and code walks to that
+ball. It is never told which type beats which; whether it knows what Brock fields is its own
+judgment. A run without TypeSafe takes CHARMANDER, as every run did before.
+
 ## Quick start
 
 Tooling is managed by [mise](https://mise.jdx.dev) (uv, hk, and the linters) and
@@ -146,7 +151,9 @@ in CI. After changing a question's wording or the state fields Jev sees, re-reco
     mise run demo -- --speed 1     # real time
     mise run demo -- --host 127.0.0.1
 
-One run ends at the Boulder Badge, so an always-on demo needs something to start the next one.
+Each run starts from the intro, so the first decision a viewer sees is Jev choosing its starter
+(`--state` starts every run from a save instead). One run ends at the Boulder Badge, so an
+always-on demo needs something to start the next one.
 `Scripts/demo-loop.py` is that: it starts a run, restarts it when it finishes or dies, and kills
 and restarts one that has stopped making decisions (a run can hang in `BATTLE_WAIT` while the
 process stays up and the log ends on an ordinary battle turn, so nothing inside the run notices).

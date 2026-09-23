@@ -14,6 +14,7 @@ Jev sees changes; commit the result. One fixture per decision point:
     battle_switch   a wild battle with a hurt lead and a second Pokémon on the bench
     explore_viridian  which generated option to pick, standing near the old man in Viridian City
     prompt_starter  the "Do you want CHARMANDER?" YES/NO box
+    starter_choice  which of the three starters to take, at Oak's table (#80)
     menu_start      the START menu in Red's bedroom
 
 The fixture holds the state Jev was shown, the questions it was asked, and its raw response --
@@ -33,6 +34,7 @@ from jevplays.brain.battle import battle_questions, battle_state
 from jevplays.brain.client import Brain
 from jevplays.brain.explore import explore_questions, explore_state
 from jevplays.brain.prompt import menu_questions, menu_state, prompt_questions, prompt_state
+from jevplays.brain.starter import starter_questions, starter_state
 from jevplays.emulator import ram
 from jevplays.emulator.pyboy import Emulator
 from jevplays.executor.goals import MILESTONES, active_milestone, battle_goal
@@ -102,6 +104,12 @@ def starter_prompt_ask(state: GameState) -> tuple[dict, dict]:
     return sj, prompt_questions(sj)
 
 
+def starter_choice_ask(state: GameState) -> tuple[dict, dict]:
+    """What the loop asks at Oak's table: the goal is the last milestone, where the run is going."""
+    sj = starter_state(MILESTONES[-1].description)
+    return sj, starter_questions(sj)
+
+
 def start_menu_ask(state: GameState) -> tuple[dict, dict]:
     sj = menu_state(state, MILESTONES[0].description)
     return sj, menu_questions(sj)
@@ -121,6 +129,7 @@ FIXTURES: dict[str, tuple[str, Ask, Tweak]] = {
     "battle_switch": ("battle_two", battle_ask, hurt_the_active),
     "explore_viridian": ("viridian_oldman", explore_ask, None),
     "prompt_starter": ("prompt_starter", starter_prompt_ask, None),
+    "starter_choice": ("prompt_starter", starter_choice_ask, None),
     "menu_start": ("menu", start_menu_ask, None),
 }
 """fixture name -> (save state to load, what to ask about it, how to doctor the state first)."""

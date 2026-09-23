@@ -163,3 +163,13 @@ def test_switch_fixture_agrees_with_the_switch_noul():
         assert d.action_value.target == labels[0] and d.action_value.slot is None
     else:
         assert d.action_value.kind == "move"
+
+
+def test_starter_choice_fixture_decodes_to_one_of_the_three():
+    """#80. Recorded at Oak's table: the answer names a starter and code takes it."""
+    from jevplays.brain.starter import STARTERS, decide_starter
+
+    f, d = replay("starter_choice", decide_starter)
+    assert d.kind == "starter" and d.action_value.species in STARTERS
+    assert d.fallback is False and d.answers["starter"]["applied"] is True
+    assert set(f["questions"]["starter"]["criteria"]) == set(STARTERS)

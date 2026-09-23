@@ -140,3 +140,23 @@ def test_the_run_command_carries_the_demo_limits():
     assert flags["--pause-after"] == "60.0"
     assert flags["--max-viewers"] == "20"
     assert flags["--speed"] == "6.0"
+
+
+def test_with_no_state_the_run_starts_from_the_intro_so_viewers_see_jev_pick_the_starter():
+    """#80. From a save on Route 1 the starter was already chosen; from the intro, Jev chooses it
+    on screen. `--state` still starts somewhere else."""
+    import argparse
+
+    args = argparse.Namespace(
+        state=None,
+        host="0.0.0.0",
+        port=8765,
+        runs_dir=Path("runs/demo"),
+        speed=3.0,
+        pause_after=60.0,
+        max_viewers=20,
+    )
+    assert "--state" not in demo_loop.command(args, max_decisions=5)
+    args.state = "states/route1.state"
+    cmd = demo_loop.command(args, max_decisions=5)
+    assert cmd[cmd.index("--state") + 1] == "states/route1.state"

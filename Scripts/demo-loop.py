@@ -137,8 +137,6 @@ def command(args, *, max_decisions: int) -> list[str]:
         "run",
         "jevplays",
         "run",
-        "--state",
-        args.state,
         "--host",
         args.host,
         "--port",
@@ -152,6 +150,8 @@ def command(args, *, max_decisions: int) -> list[str]:
         "--pause-after",
         str(args.pause_after),
     ]
+    if args.state is not None:
+        cmd += ["--state", args.state]
     if args.max_viewers is not None:
         cmd += ["--max-viewers", str(args.max_viewers)]
     return cmd
@@ -226,7 +226,11 @@ def supervise(args) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--state", default="states/route1.state")
+    ap.add_argument(
+        "--state",
+        default=None,
+        help="start every run from this save state; by default a run walks the intro and Jev picks the starter",
+    )
     ap.add_argument("--host", default="0.0.0.0", help="0.0.0.0 serves the dashboard to the local network")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--runs-dir", type=Path, default=Path("runs/demo"))

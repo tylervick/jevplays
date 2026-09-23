@@ -23,7 +23,15 @@ from itertools import count
 from time import monotonic
 
 from jevplays.brain.battle import ALL_ACTIONS, battle_questions, battle_state, bench_slots, decide_battle
-from jevplays.brain.decision import Action, BattleAction, Decision, ExploreAction, MenuAction, PromptAction
+from jevplays.brain.decision import (
+    Action,
+    BattleAction,
+    Decision,
+    ExploreAction,
+    MenuAction,
+    PromptAction,
+    StarterAction,
+)
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.brain.explore import decide_explore, explore_questions, explore_state
 from jevplays.brain.policy import settled_prompt
@@ -35,6 +43,7 @@ from jevplays.brain.prompt import (
     prompt_questions,
     prompt_state,
 )
+from jevplays.brain.starter import DEFAULT_STARTER, decide_starter, starter_questions, starter_state
 from jevplays.calibration import QUESTION as FAINT
 from jevplays.calibration import Pending, observe, resolve_prediction
 from jevplays.dashboard.events import decision_event, frame_event, state_event, status_event
@@ -44,7 +53,7 @@ from jevplays.executor import goals as goal_table
 from jevplays.executor import maps, navigate, shop, world
 from jevplays.executor.battle import MacroError
 from jevplays.executor.dialog import answer_prompt, cursor_label, skip_dialog
-from jevplays.executor.goals import Goal
+from jevplays.executor.goals import STARTER_TILES, Goal
 from jevplays.executor.maps import VIRIDIAN_MART
 from jevplays.executor.navigate import Navigator, goto_far
 from jevplays.executor.options import Memory, Option, generate
@@ -644,8 +653,29 @@ class Loop:
             self._clear_option()
             return self.emu.tick(self.config.idle_frames)
         await self.broadcaster.publish(status_event("running", f"{option.id}: {macro}"))
+        if macro == "choose_starter":
+            # The one macro that asks Jev first: which ball (#80). Asking is async, so it is not
+            # one of `_apply_macro`'s scripts.
+            if self.emu.mem[ram.wCurMap] != maps.OAKS_LAB:
+                # The Pallet Town leg ends at the edge of town, where Oak stops us and walks us to
+                # the lab. The choice is made at the table: let go, and plan again from the lab.
+                return await self._option_tried("not at Oak's table yet")
+            sj = starter_state(goal_table.MILESTONES[-1].description)
+            decision = await self._decide(
+                "starter",
+                sj,
+                starter_questions(sj),
+                decide_starter,
+                offline=(StarterAction(species=DEFAULT_STARTER), "no brain: code's default starter"),
+            )
+            if decision is None:
+                return 0  # TypeSafe is down: nothing taken, and the table asks again next turn
+            species = decision.action_value.species
         try:
-            worked = self._apply_macro(macro, snapshot(self.emu))
+            if macro == "choose_starter":
+                worked = self._take_starter(species)
+            else:
+                worked = self._apply_macro(macro, snapshot(self.emu))
         except Exception as error:  # a macro is a script over a live game: never kill the run
             return await self._option_tried(f"{macro} raised {type(error).__name__}: {error}")
         if not worked:
@@ -690,8 +720,6 @@ class Loop:
             if not wanted:
                 return True
             return any(shop.restock(emu, state).values())
-        if macro == "choose_charmander":
-            return self._choose_charmander()
         if macro == "wander":
             return self._wander(state)
         if macro.startswith("talk_") and macro[len("talk_") :].isdigit():
@@ -701,15 +729,16 @@ class Loop:
             return talk_to(emu, *self.option.target, self.option.face)
         raise ValueError(f"unknown option macro {macro!r}")
 
-    def _choose_charmander(self) -> bool:
-        """The ball on Oak's table is not a sprite, so this is a walk-face-A, not a `talk_to`.
+    def _take_starter(self, species: str) -> bool:
+        """Take the ball Jev chose. The balls on Oak's table are not sprites, so this is a
+        walk-face-A, not a `talk_to`.
 
         Both YES/NO boxes on the way are answered in code, not by Jev. "So! You want CHARMANDER?"
         is answered YES because a NO puts the ball back and leaves the goal exactly where it
-        started -- Jev already chose to come here, and re-asking it at the confirmation box only
+        started -- Jev has just chosen this one, and re-asking it at the confirmation box only
         gives it a way to deadlock its own goal. The nickname box is answered NO by the same
         policy the PROMPT branch applies (`skip_dialog` is handed the one rule it needs)."""
-        if not goto_far(self.emu, 6, 4):
+        if not goto_far(self.emu, *STARTER_TILES[species]):
             return False
         self.emu.press("up", hold=4, settle=12)
         self.emu.press("a", settle=60)
