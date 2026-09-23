@@ -43,8 +43,10 @@ difference (a timeout, a changed prompt) silently moves the branch point.
 ## Snapshots
 
 `--snapshot-every-decision` writes `runs/<stamp>/snapshots/<n>.state` (the emulator,
-`Emulator.save`) and `runs/<stamp>/snapshots/<n>.memory.json` (the `Memory` as `_save_memory`
-writes it), where `n` is the decision's number in `decisions.jsonl`. A snapshot is 168 KB, so a run
+`Emulator.save`) and a sidecar `runs/<stamp>/snapshots/<n>.json` holding the game frame, the
+loop's milestone and the `Memory` (as `_save_memory` writes it), where `n` is the decision's number
+in `decisions.jsonl`. `runs/<stamp>/snapshots/milestones.jsonl` records the frame each milestone
+was first seen done, which is where a decision's reference time comes from. A snapshot is 168 KB, so a run
 to Brock with about 100 decisions costs about 17 MB. Snapshots stay files: PyBoy loads state
 from a file object and nothing searches them.
 
@@ -186,14 +188,26 @@ Pure functions in `src/jevplays/branch/score.py`, reported by `Scripts/branch-re
   the best alternative is *chosen* on the first half of the seeds and *scored* on the second half.
   With K=8, it is chosen on seeds 0–3 and scored on seeds 4–7.
 - **Headline:** mean regret over decisions with a 95% bootstrap confidence interval (fixed
-  bootstrap RNG), and the share of decisions where Jev's choice was the best or tied with it.
-  Tied means the 95% bootstrap interval of (chosen − best), taken over the scoring seeds,
-  includes zero. Battle and explore are reported separately.
+  bootstrap RNG), and the share of decisions where Jev's choice was as good as the best. As good
+  as the best means Jev's choice *is* the best alternative, or, paired seed by seed on the scoring
+  seeds both have (a capped or stalled branch counting as infinitely late), it reached the
+  milestone no later than the best on at least half of them. A seed where both capped counts as
+  no later. This is a countable rule rather than an interval because with K=8 there are only four
+  paired values, and a bootstrap of four values is degenerate: its lower bound is the minimum, so
+  one lucky seed would pass a choice that lost by minutes on the other three. The report prints
+  the rule. Battle and explore are reported separately.
+- A decision is **incomplete** until every alternative has a finished branch (any outcome,
+  error included) for every seed. The report counts incomplete decisions and leaves them out of
+  every headline number; `--decision` still shows them.
 - **Baselines** use the same data, with no extra runs. Every alternative was branched, so the
   regret of any rule for picking the *first* action can be read off: a uniformly random
   alternative, the highest-power move (battle), and `Loop._offline_option`, milestone first
   (explore). Like Jev's choice, a baseline differs only in the first action, and Jev plays
-  everything after it.
+  everything after it. Each baseline is compared with Jev on the same decisions: those where both
+  Jev's regret and the baseline's are finite. For each, the report prints how many decisions were
+  paired, both mean regrets on them, and the mean of (baseline − Jev) with a 95% bootstrap interval
+  over decisions. The random baseline's regret for a decision is the mean over its alternatives
+  that have a finite regret, and the report says how many censored alternatives it dropped.
 - `--decision <n>` prints one decision's table: each alternative's median, spread, blackouts and
   censored count, with Jev's choice marked.
 - Every report opens with its counts: decisions, K, not reproducible, no reference, capped,
