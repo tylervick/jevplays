@@ -34,3 +34,29 @@ def test_capture_is_off_by_default(rom, state_path):
         emu.load(state_path("route1"))
         emu.tick(30)
         assert emu.take_frames() == []
+
+
+def test_short_ticks_add_up_to_a_capture_instead_of_never_reaching_one(rom, state_path):
+    """#75: walking is an 8-frame press then 4-frame waits (`navigate.step`). With captures
+    counted inside each tick, a tick shorter than `capture_every` never captured -- at 6x, where
+    the interval is 24, the page never saw the player walk, only the doors at the end."""
+    with Emulator(rom) as emu:
+        emu.load(state_path("route1"))
+        emu.capture_every = 24
+        before = emu.frame_count()
+        for _ in range(12):
+            emu.tick(8)
+        assert emu.frame_count() - before == 96  # still no extra emulated frames
+        assert len(emu.take_frames()) == 4
+
+
+def test_a_batch_that_is_not_a_multiple_of_the_interval_carries_its_remainder(rom, state_path):
+    """A 30-frame tick at an interval of 24 captured twice (24, then the 6 left over), so the page
+    got more frames than `fps` asked for. Across two such ticks the game passed 60 frames: two
+    captures, not four."""
+    with Emulator(rom) as emu:
+        emu.load(state_path("route1"))
+        emu.capture_every = 24
+        emu.tick(30)
+        emu.tick(30)
+        assert len(emu.take_frames()) == 2

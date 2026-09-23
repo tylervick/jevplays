@@ -189,7 +189,7 @@ TypeSafe quota. Three limits keep that bounded, all flags on `Scripts/demo-loop.
   run starts after midnight UTC. The run enforces the number it was given, so a supervisor that
   dies does not leave a run spending past it.
 - `--max-viewers 20`: tabs served at once; the next one is told the demo is full and retries. Each
-  tab is its own frame stream, about 175 KiB/s (1.4 Mbit/s) at the demo's 6x, from this machine's
+  tab is its own frame stream, about 115 KiB/s (0.9 Mbit/s) at any speed, from this machine's
   upload.
 
 `GET /health` answers `{"status": ..., "viewers": n}`; the supervisor polls it so that a run

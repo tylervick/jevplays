@@ -31,6 +31,8 @@ class Emulator:
         run somebody is watching, so the page can be shown the frames a batch passed through
         rather than only the one it ended on (#31)."""
         self._captured: deque[bytes] = deque(maxlen=CAPTURE_BACKLOG)
+        self._since_capture = 0
+        """Frames ticked since the last capture, carried across calls (#75)."""
 
     def __enter__(self) -> "Emulator":
         return self
@@ -52,22 +54,29 @@ class Emulator:
     def tick(self, frames: int = 1, *, render: bool = False) -> int:
         """Advance `frames` frames. Returns the frames spent so the loop can pace wall time.
 
-        With `capture_every` set, the batch is ticked in chunks of that many frames and the last
-        frame of each chunk is rendered and kept. A capture never costs an emulated frame: the
-        render replaces the chunk's final tick rather than adding one, so the count this returns
-        stays the truth the pacing arithmetic depends on.
+        With `capture_every` set, a frame is rendered and kept every `capture_every` frames of the
+        game, counted across calls: walking is ticked 8 and 4 frames at a time, and counting only
+        within one call meant a tick shorter than the interval never captured, so a fast run
+        showed no walking at all (#75). A capture never costs an emulated frame: the render
+        replaces that frame's tick rather than adding one, so the count this returns stays the
+        truth the pacing arithmetic depends on.
         """
-        if self.capture_every > 0 and frames >= self.capture_every:
-            done = 0
-            while done < frames:
-                chunk = min(self.capture_every, frames - done)
-                if chunk > 1:
-                    self._py.tick(chunk - 1, False, False)
-                self._py.tick(1, True, False)
-                self._captured.append(self._encode())
-                done += chunk
+        if self.capture_every <= 0:
+            self._py.tick(frames, render, False)
             return frames
-        self._py.tick(frames, render, False)
+        done = 0
+        while done < frames:
+            due = max(1, self.capture_every - self._since_capture)  # the interval may have shrunk
+            if frames - done < due:
+                self._py.tick(frames - done, render, False)
+                self._since_capture += frames - done
+                break
+            if due > 1:
+                self._py.tick(due - 1, False, False)
+            self._py.tick(1, True, False)
+            self._captured.append(self._encode())
+            self._since_capture = 0
+            done += due
         return frames
 
     def take_frames(self) -> list[bytes]:
