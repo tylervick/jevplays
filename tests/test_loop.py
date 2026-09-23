@@ -1601,3 +1601,16 @@ def test_a_faster_run_captures_less_often_so_the_page_still_gets_fps_frames_a_se
     one = CapturingEmulator([])
     Loop(one, RecordingBroadcaster(), LoopConfig(paced=True, fps=15, speed=1.0))
     assert one.capture_every == 4
+
+
+def test_the_move_list_is_backed_out_of_with_b_and_never_pressed_through():
+    """#67: the loop only ever reaches the move list by accident -- the battle macros open and
+    leave it themselves -- so it goes back to the battle menu, where Jev is asked, rather than
+    pressing A on whatever move the cursor happens to be on."""
+    emu = FakeEmulator()
+    emu.mem[ram.wIsInBattle] = 1
+    emu.set_rows(MOVES)
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), brain=FakeBrain())
+    assert snapshot(emu).mode is Mode.MOVE_LIST
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert emu.presses == ["b"]

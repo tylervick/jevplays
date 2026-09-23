@@ -140,3 +140,45 @@ def test_is_blank_only_for_spaces_and_zeros():
 def test_a_yes_no_box_during_a_battle_is_a_prompt_not_battle_text():
     """The nickname box after a catch opens while the game still counts itself in battle."""
     assert detect(SAVE_PROMPT, in_battle=True, blank=False) is Mode.PROMPT
+
+
+# The FIGHT screen as the ROM draws it at the start of a battle, recorded while tracing #67.
+MOVE_LIST = rows_from(
+    [""] * 12
+    + [
+        "····················",
+        "·   ·▶SCRATCH      ·",
+        "·   · GROWL        ·",
+        "·   · EMBER        ·",
+        "·   · LEER         ·",
+        "····················",
+    ]
+)
+
+NO_PP = rows_from(
+    [""] * 12
+    + [
+        "····················",
+        "·                  ·",
+        "·No PP left for    ·",
+        "·                  ·",
+        "·this move!       ▼·",
+        "····················",
+    ]
+)
+
+
+def test_the_move_list_is_its_own_screen_not_battle_text():
+    """#67: an A press meant for battle text landed as the battle menu was drawn, chose FIGHT, and
+    opened this list. Read as BATTLE_WAIT, it got another A, which used whatever move the cursor
+    was on -- a move Jev never chose -- and, on a move with no PP left, "No PP left for this move!"
+    and back to this list with the cursor where it was, forever."""
+    assert detect(MOVE_LIST, in_battle=True, blank=False) is Mode.MOVE_LIST
+
+
+def test_the_no_pp_message_is_still_battle_text_to_press_through():
+    assert detect(NO_PP, in_battle=True, blank=False) is Mode.BATTLE_WAIT
+
+
+def test_a_move_list_outside_a_battle_is_not_one():
+    assert detect(MOVE_LIST, in_battle=False, blank=False) is Mode.MENU
