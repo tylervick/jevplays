@@ -340,9 +340,9 @@ A on whatever the cursor happens to be sitting on. Selecting the wrong thing in 
 costs money or a Pokémon, so a menu never guesses.
 
 The starter confirmation ("So! You want CHARMANDER?") is scripted YES rather than asked, for the
-same reason a menu never guesses: Jev already decided to come and take the ball, and re-asking it
-at the confirmation box only gives it a way to answer NO and leave its own goal exactly where it
-started. The nickname box in the same macro is scripted NO, by the policy above.
+same reason a menu never guesses: Jev has just chosen which ball to take (a question of its own
+since 2026-09-23, see `2026-09-23-starter-choice-design.md`), and re-asking it at the confirmation
+box only gives it a way to answer NO and leave its own goal exactly where it started. The nickname box in the same macro is scripted NO, by the policy above.
 
 The Pokémon Center nurse and the Mart clerk are not Jev-answered menus, even though their screens
 look like ones. Both are mechanical -- a HEAL confirmation, a BUY quantity box -- so

@@ -1671,3 +1671,68 @@ def test_a_grass_option_with_no_battle_yet_keeps_wandering():
     start_option(loop, grass_option(), maps.ROUTE_1)
     run(loop, 6)
     assert loop.option is not None and loop.option.id == "grass" and brain.calls == 0
+
+
+# --- #80: Jev picks the starter -------------------------------------------------------------
+
+
+def starter_option():
+    return Option(
+        id="milestone",
+        kind="milestone",
+        text="work on the milestone: Get a starter Pokémon from Professor Oak",
+        memory="new",
+        legs=(),
+        after="choose_starter",
+    )
+
+
+def starter_loop(brain):
+    emu, bc = overworld_emu(map_id=maps.OAKS_LAB), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    taken: list[str] = []
+    loop._take_starter = lambda species: taken.append(species) or True
+    start_option(loop, starter_option(), maps.OAKS_LAB)
+    return emu, bc, loop, taken
+
+
+def test_at_oaks_table_jev_is_asked_which_starter_and_code_takes_that_one():
+    emu, bc, loop, taken = starter_loop(
+        QuestionBrain(starter={"SQUIRTLE": 0.7, "BULBASAUR": 0.2, "CHARMANDER": 0.1})
+    )
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert taken == ["SQUIRTLE"]
+    decision = loop.decisions[-1]
+    assert decision.kind == "starter" and decision.action == "take SQUIRTLE"
+    assert any(e["type"] == "decision" and e["decision"]["kind"] == "starter" for e in bc.events)
+    assert loop.option is None  # done
+
+
+def test_a_run_without_a_brain_takes_charmander_as_it_always_did():
+    emu, bc, loop, taken = starter_loop(None)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert taken == ["CHARMANDER"]
+    assert loop.decisions[-1].fallback is True
+
+
+def test_with_the_api_down_nothing_is_taken_and_the_table_asks_again_next_turn():
+    class Down:
+        async def ask(self, state, questions):
+            raise BrainUnavailable("down")
+
+    emu, bc, loop, taken = starter_loop(Down())
+    loop.config = LoopConfig(paced=False, backoff_max=0.0)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert taken == [] and loop.option is not None and loop.memory.tried == set()
+
+
+def test_outside_oaks_lab_the_starter_is_not_asked_about_yet():
+    """The milestone's Pallet Town leg ends at the edge of town, where Oak stops us and walks us to
+    the lab -- and its macro runs there too. Asking which ball in Pallet Town wasted the question
+    and showed viewers a choice that was then thrown away; the choice is made at the table."""
+    emu, bc, loop, taken = starter_loop(QuestionBrain(starter={"SQUIRTLE": 1.0}))
+    emu.mem[ram.wCurMap] = maps.PALLET_TOWN
+    loop._arrived_map = loop._option_map = maps.PALLET_TOWN
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert taken == [] and not any(d.kind == "starter" for d in loop.decisions)
+    assert loop.option is None  # let go of, so the next turn plans from where the cutscene leaves us

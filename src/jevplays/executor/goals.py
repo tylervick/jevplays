@@ -75,12 +75,16 @@ def legs_to(state: GameState, dest_node: str, links: dict | None = None) -> list
     return legs
 
 
+STARTER_TILES = {"CHARMANDER": (6, 4), "SQUIRTLE": (7, 4), "BULBASAUR": (8, 4)}
+"""Where to stand, facing up, to take each ball on Oak's table (checked against the ROM)."""
+
+
 def _get_starter_legs(state: GameState, links: dict) -> list[Leg]:
     here = node(state)
     if here == "pallet_town":
         return [Leg(kind="walk", target=(10, 1), label="the edge of Pallet Town")]
     if here == "oaks_lab":
-        return [Leg(kind="walk", target=(6, 4), label="Charmander's ball")]
+        return [Leg(kind="walk", target=STARTER_TILES["SQUIRTLE"], label="Oak's table")]
     return legs_to(state, "pallet_town", links)
 
 
@@ -103,7 +107,7 @@ GET_STARTER = Goal(
     available=lambda s: True,
     done=lambda s: "got_starter" in s.flags,
     legs=_get_starter_legs,
-    after="choose_charmander",
+    after="choose_starter",
 )
 """The first of `MILESTONES`, kept as its own name because the fixture scripts reach for it."""
 
