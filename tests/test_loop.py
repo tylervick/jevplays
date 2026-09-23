@@ -1627,3 +1627,47 @@ def test_the_move_list_is_backed_out_of_with_b_and_never_pressed_through():
     assert snapshot(emu).mode is Mode.MOVE_LIST
     asyncio.run(loop.advance(snapshot(emu)))
     assert emu.presses == ["b"]
+
+
+BATTLE_TEXT = [""] * 12 + [
+    "····················",
+    "·                  ·",
+    "·Wild PIDGEY       ·",
+    "·                  ·",
+    "·appeared!        ▼·",
+    "····················",
+]
+
+
+def test_a_battle_finishes_the_grass_option_so_jev_chooses_again_and_can_go_heal():
+    """#81. The grass is for starting a battle, and was meant to be done when one interrupts it --
+    but nothing noticed, so `wander` went back into the grass after every fight until the budget
+    ran out: 25 battles to a "train" decision on the demo, with "go heal" never offered because
+    it is only offered when Jev chooses. A battle during the option finishes it, as done: nothing
+    is marked tried, and the next overworld turn asks."""
+    emu, bc = grass_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(explore="grass", needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    start_option(loop, grass_option(), maps.ROUTE_1)
+    run(loop, 2)
+    assert loop.option is not None and brain.calls == 0  # wandering, nothing asked yet
+
+    emu.mem[ram.wIsInBattle] = 1
+    emu.set_rows(BATTLE_TEXT)
+    run(loop, 1)  # a wild battle, pressed through
+    emu.mem[ram.wIsInBattle] = 0
+    emu.set_rows([])
+    run(loop, 2)
+
+    assert brain.calls >= 1  # back to Jev after the fight
+    assert loop.memory.tried == set()
+    assert any(e.get("message") == "done: train in the tall grass here" for e in bc.events)
+
+
+def test_a_grass_option_with_no_battle_yet_keeps_wandering():
+    emu, bc = grass_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(explore="grass", needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    start_option(loop, grass_option(), maps.ROUTE_1)
+    run(loop, 6)
+    assert loop.option is not None and loop.option.id == "grass" and brain.calls == 0
