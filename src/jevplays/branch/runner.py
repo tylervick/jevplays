@@ -3,6 +3,7 @@
 worker process with an emulator of its own."""
 
 import asyncio
+import contextlib
 import random
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -84,36 +85,42 @@ def check_seeds(store: BranchStore, seeds: int) -> None:
 
 
 def run_branch(job: Job, brain_factory=None) -> BranchResult:
-    """Play one branch to its end and record it. Runs in a worker process."""
-    from jevplays.brain.cache import CachedBrain
+    """Play one branch to its end and record it. Runs in a worker process.
+
+    Any failure other than `ModelDrift` is recorded as an "error" branch with the exception's
+    repr, so one bad branch does not stop a measurement of hours; `ModelDrift` propagates, since
+    every later branch would compare a different Jev. The brain and the store are closed however
+    the branch ends, and a failure to close never hides the error that ended it."""
+    from jevplays.brain.cache import CachedBrain, ModelDrift
     from jevplays.emulator.pyboy import Emulator
     from jevplays.executor.options import Memory
-    from jevplays.loop import ForcedActionMissed, Loop, LoopConfig
+    from jevplays.loop import Loop, LoopConfig
 
     if brain_factory is None:
         from jevplays.brain.client import Brain
 
         brain_factory = Brain
     store = BranchStore(job.db)
-    store.clear_partial(job.key)
-    brain = CachedBrain(brain_factory(), store, expected_model=job.model)
+    brain = None
     stopper = Stopper(job.milestone, job.cap_frames)
     try:
-        with Emulator(job.rom) as emu:
-            emu.load(job.state)
-            loop = Loop(
-                emu,
-                _Quiet(),
-                LoopConfig(paced=False, fps=1e-9, goal=job.battle_goal),
-                brain=brain,
-                run_dir=BranchSink(store, job.key),
-                memory=Memory.from_dict(job.memory),
-                forced=job.action,
-                forced_delay=job.key.seed,
-                stop=stopper,
-            )
-            loop.milestone = goal_by_id(job.milestone)
-            try:
+        try:
+            store.clear_partial(job.key)
+            brain = CachedBrain(brain_factory(), store, expected_model=job.model)
+            with Emulator(job.rom) as emu:
+                emu.load(job.state)
+                loop = Loop(
+                    emu,
+                    _Quiet(),
+                    LoopConfig(paced=False, fps=1e-9, goal=job.battle_goal),
+                    brain=brain,
+                    run_dir=BranchSink(store, job.key),
+                    memory=Memory.from_dict(job.memory),
+                    forced=job.action,
+                    forced_delay=job.key.seed,
+                    stop=stopper,
+                )
+                loop.milestone = goal_by_id(job.milestone)
                 asyncio.run(loop.run())
                 outcome = "done" if loop.finished else (loop.stop_reason or "stalled")
                 result = BranchResult(
@@ -123,13 +130,19 @@ def run_branch(job: Job, brain_factory=None) -> BranchResult:
                     brain.calls,
                     brain.hits,
                 )
-            except ForcedActionMissed as error:
-                result = BranchResult("error", None, stopper.blackouts, brain.calls, brain.hits, str(error))
+        except ModelDrift:
+            raise
+        except Exception as error:
+            calls, hits = (brain.calls, brain.hits) if brain is not None else (0, 0)
+            result = BranchResult("error", None, stopper.blackouts, calls, hits, repr(error))
+        store.finish_branch(job.key, result)
+        return result
     finally:
-        asyncio.run(brain.close())
-    store.finish_branch(job.key, result)
-    store.close()
-    return result
+        if brain is not None:
+            with contextlib.suppress(Exception):
+                asyncio.run(brain.close())
+        with contextlib.suppress(Exception):
+            store.close()
 
 
 def measure(run_path: Path, *, rom: Path, seeds: int, sample: int | None, workers: int) -> int:
@@ -208,7 +221,8 @@ def measure(run_path: Path, *, rom: Path, seeds: int, sample: int | None, worker
             try:
                 result = future.result()
             except Exception as error:
-                print(f"jevplays branch: {job.key} failed: {error}", file=sys.stderr)
+                cause = f" (caused by {error.__cause__!r})" if error.__cause__ is not None else ""
+                print(f"jevplays branch: {job.key} failed: {error!r}{cause}", file=sys.stderr)
                 pool.shutdown(wait=True, cancel_futures=True)
                 return 1
             print(

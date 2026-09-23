@@ -2,6 +2,9 @@
 
 import asyncio
 
+import pytest
+
+from jevplays.brain.cache import ModelDrift
 from jevplays.brain.decision import BattleAction
 from jevplays.branch.alternatives import prepare
 from jevplays.branch.runner import Job, run_branch
@@ -77,6 +80,7 @@ def battle_outcome_for_seed(rom, state, seed):
         )
         asyncio.run(loop.run(max_iterations=2000))
         assert loop.decisions[0].forced
+        assert loop.decisions[0].action == f"use {move}"
         return (len(loop.decisions), tuple(m.hp for m in snapshot(emu).party), loop.game_frames)
 
 
@@ -117,3 +121,44 @@ def test_run_branch_records_a_finished_branch_and_its_decisions(rom, state_path,
     assert store.done() == {key}
     assert result.outcome in ("done", "capped", "stalled")
     assert store.branch_decisions(key)[0]["forced"] is True
+    assert store.branch_decisions(key)[0]["action"] == f"use {move}"
+
+
+def battle_job(rom, state, db, model=""):
+    with Emulator(rom) as emu:
+        emu.load(state)
+        move = snapshot(emu).active.moves[0].name
+    key = BranchKey(1, f"move:{move}", 0)
+    return Job(
+        rom, state, {}, "get_pokedex", key, BattleAction(kind="move", move=move), 20_000, db, model, GOAL
+    )
+
+
+class BrokenBrain:
+    async def ask(self, state, questions):
+        raise RuntimeError("the brain broke")
+
+
+def test_a_branch_that_raises_is_recorded_as_an_error_and_does_not_stop_the_measurement(
+    rom, state_path, tmp_path
+):
+    """The forced move is pressed without asking; the next battle decision asks the brain, which
+    raises. That branch must end as an "error" row with the exception's repr, not kill the worker."""
+    db = tmp_path / "b.sqlite"
+    job = battle_job(rom, state_path("battle_wild"), db)
+    result = run_branch(job, brain_factory=BrokenBrain)
+    assert result.outcome == "error"
+    assert "RuntimeError" in result.error and "the brain broke" in result.error
+    [(key, stored)] = BranchStore(db).branches()
+    assert key == job.key
+    assert stored.outcome == "error" and "RuntimeError" in stored.error
+
+
+def test_model_drift_still_stops_the_measurement(rom, state_path, tmp_path):
+    """FirstChoiceBrain reports the model "first-choice"; a run recorded with another model must
+    stop the measurement, not record an error branch."""
+    db = tmp_path / "b.sqlite"
+    job = battle_job(rom, state_path("battle_wild"), db, model="jev-1.13.0")
+    with pytest.raises(ModelDrift, match="first-choice"):
+        run_branch(job, brain_factory=FirstChoiceBrain)
+    assert BranchStore(db).done() == set()
