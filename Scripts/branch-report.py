@@ -14,8 +14,11 @@ alternative) with its 95% interval, the share of decisions where Jev's choice wa
 best (the rule is printed under the headline), and three first-action rules -- a random
 alternative, the strongest move, and the offline milestone-first pick -- each paired with Jev on
 the decisions both have a regret for: n, both means, and (rule − Jev) with its 95% interval over
-decisions. `--decision` prints one decision's alternatives; `--export` writes one branch as a run
-directory for `jevplays replay`.
+decisions. `--by-choice` prints, after the headline, one line per kind of alternative Jev chose
+within each decision kind (move, switch, heal, run, catch for battle; exit, door, npc, grass,
+milestone, heal for explore) -- n decisions, mean regret with its 95% interval, and the as-good-
+as-best share -- sorted by n descending. `--decision` prints one decision's alternatives;
+`--export` writes one branch as a run directory for `jevplays replay`.
 """
 
 import argparse
@@ -26,7 +29,15 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from jevplays.branch.score import FRAMES_PER_SECOND, TIE_RULE, complete, headline, score_decision, seed_frames
+from jevplays.branch.score import (
+    FRAMES_PER_SECOND,
+    TIE_RULE,
+    choice_kind_of,
+    complete,
+    headline,
+    score_decision,
+    seed_frames,
+)
 from jevplays.branch.store import BranchKey, BranchStore, export_branch
 
 
@@ -68,7 +79,30 @@ def _unpoolable(stores: list[BranchStore]) -> str | None:
     return None
 
 
-def summary(stores: list[BranchStore]) -> int:
+def _print_by_choice(scores: list, rng: random.Random) -> None:
+    """Per decision kind, one line per choice kind Jev's chosen alternative fell into
+    (`choice_kind_of`): n decisions, mean regret with its 95% interval, and the as-good-as-best
+    share -- reusing `headline` on the subset rather than duplicating its math. Sorted by n
+    decisions descending."""
+    for kind in sorted({s.kind for s in scores}):
+        mine = [s for s in scores if s.kind == kind]
+        groups: dict[str, list] = {}
+        for s in mine:
+            groups.setdefault(choice_kind_of(s.chosen), []).append(s)
+        rows = [(ck, headline(group, rng)[kind]) for ck, group in groups.items()]
+        rows.sort(key=lambda kv: kv[1]["decisions"], reverse=True)
+        print(f"{kind} by choice:")
+        for choice_kind, row in rows:
+            ci = row["ci"]
+            interval = f" [{ci[0]:.1f}, {ci[1]:.1f}]" if ci else ""
+            tied = "-" if row["best_or_tied"] is None else f"{row['best_or_tied']:.0%}"
+            print(
+                f"  {choice_kind:<10} n {row['decisions']:>4}  regret {_s(row['mean_regret_s'])}{interval}  "
+                f"as good as best {tied}"
+            )
+
+
+def summary(stores: list[BranchStore], by_choice: bool = False) -> int:
     why = _unpoolable(stores)
     if why is not None:
         print(f"branch-report: cannot pool: {why}", file=sys.stderr)
@@ -109,6 +143,8 @@ def summary(stores: list[BranchStore]) -> int:
                 f"  ({row[f'{name}_missing']} missing{extra})"
             )
     print(TIE_RULE)
+    if by_choice:
+        _print_by_choice(scores, rng)
     return 0
 
 
@@ -140,6 +176,11 @@ def main() -> int:
     ap.add_argument("runs", type=Path, nargs="+", metavar="RUN_DIR")
     ap.add_argument("--decision", type=int)
     ap.add_argument("--export", nargs=4, metavar=("N", "ALTERNATIVE", "SEED", "OUT_DIR"))
+    ap.add_argument(
+        "--by-choice",
+        action="store_true",
+        help="after the headline, break each decision kind's regret down by what Jev chose",
+    )
     args = ap.parse_args()
     if (args.export or args.decision is not None) and len(args.runs) != 1:
         ap.error("--decision and --export take exactly one RUN_DIR")
@@ -156,7 +197,7 @@ def main() -> int:
         return 0
     if args.decision is not None:
         return one_decision(stores[0], args.decision)
-    return summary(stores)
+    return summary(stores, by_choice=args.by_choice)
 
 
 if __name__ == "__main__":

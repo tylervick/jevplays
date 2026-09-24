@@ -7,6 +7,7 @@ from jevplays.branch.score import (
     answer_spread,
     as_good_as_best,
     bootstrap_ci,
+    choice_kind_of,
     complete,
     headline,
     score_decision,
@@ -257,6 +258,23 @@ def test_random_counts_the_censored_alternatives_it_dropped_on_its_paired_decisi
     )
     assert h["battle"]["random_paired"] == 2
     assert h["battle"]["random_censored_alternatives"] == 3
+
+
+def test_choice_kind_of_battle_keys():
+    assert choice_kind_of("move:Tackle") == "move"
+    assert choice_kind_of("switch:Charmander") == "switch"
+    assert choice_kind_of("heal") == "heal"
+    assert choice_kind_of("run") == "run"
+    assert choice_kind_of("catch") == "catch"
+
+
+def test_choice_kind_of_explore_keys():
+    assert choice_kind_of("explore:exit_north") == "exit"
+    assert choice_kind_of("explore:door_41") == "door"
+    assert choice_kind_of("explore:npc_3") == "npc"
+    assert choice_kind_of("explore:grass") == "grass"
+    assert choice_kind_of("explore:milestone") == "milestone"
+    assert choice_kind_of("explore:heal") == "heal"
 
 
 def test_a_decision_is_complete_only_when_every_alternative_finished_every_seed():
