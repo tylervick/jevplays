@@ -161,3 +161,53 @@ def test_a_leg_that_cannot_name_its_destination_map_still_finishes_on_any_change
         nav.plan(emu, snapshot(emu), [leg])
         emu.mem[ram.wCurMap] = 7
         assert nav.step(emu, snapshot(emu)) == "done"
+
+
+def carried_off(emu):
+    """Every press moves the player one tile, but never the way it pressed: a script (Pewter City's
+    youngster before the Boulder Badge) walking them somewhere else while the navigator steps."""
+    original = emu.press
+    away = {
+        "right": ["left", "up", "down"],
+        "left": ["right", "up", "down"],
+        "up": ["down", "left", "right"],
+        "down": ["up", "left", "right"],
+    }
+
+    def press(button, **kw):
+        emu.presses.append(button)
+        x, y = emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]
+        for d in away.get(button, []):
+            dx, dy = emu.step_effects[d]
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < 6 and 0 <= ny < 6 and ROWS[ny][nx] == ".":
+                emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = nx, ny
+                break
+        return emu.tick(kw.get("hold", 8) + kw.get("settle", 8))
+
+    emu.press = press
+    return original
+
+
+def test_a_player_carried_off_by_a_script_gives_the_leg_up_instead_of_walking_it_forever():
+    """Every press moved the player, so every step used to count as progress, and the walk east
+    out of Pewter City looped for good (#88). A step that lands anywhere but the tile it aimed
+    at was not our step."""
+    emu = walker()
+    carried_off(emu)
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="walk", target=(5, 5))])
+    results = [nav.step(emu, snapshot(emu)) for _ in range(40)]
+    assert "stuck" in results
+    assert not nav.busy
+
+
+def test_one_step_that_lands_short_of_its_tile_does_not_fail_the_leg():
+    emu = walker()
+    original = carried_off(emu)
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="walk", target=(5, 5))])
+    assert nav.step(emu, snapshot(emu)) == "moving"  # carried once
+    emu.press = original  # then left alone
+    results = [nav.step(emu, snapshot(emu)) for _ in range(12)]
+    assert "stuck" not in results and results[-1] == "done"

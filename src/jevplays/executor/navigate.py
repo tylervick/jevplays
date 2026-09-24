@@ -202,17 +202,20 @@ class Navigator:
             return self._fail_leg(emu)
         nxt = path[0]
         if step(emu, world.direction_to(here, nxt)):
-            self.blocked.clear()
-            self.failed_steps = 0
             if mem[ram.wCurMap] != self.start_map:
                 landed = self._after_map_change(emu, leg, mem[ram.wCurMap])
                 if landed is not None:
                     return landed
+            landed = (mem[ram.wXCoord], mem[ram.wYCoord])
+            if landed != nxt:
+                return self._carried_off(emu)
+            self.blocked.clear()
+            self.failed_steps = 0
             from jevplays.state.snapshot import snapshot as _snapshot
 
             if _snapshot(emu).mode is not Mode.OVERWORLD:
                 return "interrupted"
-            if leg.kind == "walk" and (mem[ram.wXCoord], mem[ram.wYCoord]) == target:
+            if leg.kind == "walk" and landed == target:
                 return self._advance(emu)
             return "moving"
         return self._fail_step(emu, state, nxt)
@@ -273,6 +276,17 @@ class Navigator:
             return "interrupted"
         if cell is not None:
             self.blocked.add(cell)
+        self.failed_steps += 1
+        if self.failed_steps >= STUCK_STEPS:
+            return self._fail_leg(emu)
+        return "moving"
+
+    def _carried_off(self, emu) -> str:
+        """The step moved the player, but not to the tile it aimed at: something else is walking
+        them. Pewter City's youngster walks the player back to the gym before the Boulder Badge,
+        and the game reads as the overworld the whole way, so each step of ours "moved" and the
+        walk east was taken again forever (#88). Count it like a blocked step -- without marking
+        the tile, which is still walkable -- so a script that keeps winning gives the leg up."""
         self.failed_steps += 1
         if self.failed_steps >= STUCK_STEPS:
             return self._fail_leg(emu)
