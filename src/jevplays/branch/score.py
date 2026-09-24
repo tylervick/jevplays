@@ -23,6 +23,35 @@ def _values(response: dict) -> dict[str, float]:
     return out
 
 
+def choice_kind_of(key: str) -> str:
+    """What kind of alternative an alternative key names, for the by-choice breakdown (#82). Pure
+    over the key string -- a `DecisionScore`'s `chosen` already carries everything needed, so no
+    field is added to hold it.
+
+    Battle keys (`battle_alternatives`, unprefixed) are `move:<name>`, `switch:<label>`, `heal`,
+    `run`, `catch`. Explore keys (`explore_alternatives`) are `explore:<option id>`, where the
+    option id is `Option.id`/`kind` from `executor/options.py`: `exit_<dir>`, `door_<n>`,
+    `npc_<n>`, `grass`, `milestone`, or `heal`."""
+    if key.startswith("move:"):
+        return "move"
+    if key.startswith("switch:"):
+        return "switch"
+    if key in ("heal", "run", "catch"):
+        return key
+    if key.startswith("explore:"):
+        option_id = key.removeprefix("explore:")
+        if option_id.startswith("exit_"):
+            return "exit"
+        if option_id.startswith("door_"):
+            return "door"
+        if option_id.startswith("npc_"):
+            return "npc"
+        if option_id in ("grass", "milestone", "heal"):
+            return option_id
+        raise ValueError(f"choice_kind_of: unrecognized explore option id {option_id!r} in key {key!r}")
+    raise ValueError(f"choice_kind_of: unrecognized alternative key {key!r}")
+
+
 def answer_spread(responses: list[dict]) -> float:
     """The largest absolute difference, across `responses` to one input, of any probability or
     noul. An answer one response has and another lacks counts as a spread of 1.0."""
