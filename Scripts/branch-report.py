@@ -1,11 +1,13 @@
 #!/usr/bin/env -S uv run
 """Score a branch measurement (#82).
 
-    uv run Scripts/branch-report.py RUN_DIR
+    uv run Scripts/branch-report.py RUN_DIR [RUN_DIR ...]
     uv run Scripts/branch-report.py RUN_DIR --decision N
     uv run Scripts/branch-report.py RUN_DIR --export N ALTERNATIVE SEED OUT_DIR
 
-Reads RUN_DIR/branches/branches.sqlite. The default prints the counts (a decision is incomplete
+Reads RUN_DIR/branches/branches.sqlite. With several RUN_DIRs the measurements are pooled: each
+run's counts print first, then one headline over all their decisions; runs measured with a
+different model or K are refused. The default prints the counts (a decision is incomplete
 until every alternative has a finished branch for every seed, and is left out of the headline),
 then per decision kind the mean regret (seconds of game time Jev's choice cost against the best
 alternative) with its 95% interval, the share of decisions where Jev's choice was as good as the
@@ -32,7 +34,9 @@ def _s(value) -> str:
     return "-" if value is None else f"{value:.1f}s"
 
 
-def summary(store: BranchStore) -> int:
+def _measured(store: BranchStore) -> tuple[dict, list]:
+    """Print one measurement's counts and return its meta and the scores of its complete
+    decisions. An incomplete decision still shows with --decision, but no headline counts it."""
     meta = store.meta()
     seeds = int(meta.get("seeds", "8"))
     infos = store.decision_infos()
@@ -48,9 +52,38 @@ def summary(store: BranchStore) -> int:
     print(f"branches {len(rows)}  {dict(outcomes)}  jev calls {calls}  cache hits {hits}")
     if "spread" in meta:
         print(f"determinism check: largest answer spread {meta['spread']}")
+    return meta, [score_decision(i, by_decision[i.decision], seeds) for i in whole]
+
+
+def _unpoolable(stores: list[BranchStore]) -> str | None:
+    """Why these measurements cannot be pooled, or None. A different model is a different Jev,
+    and a different K splits the seeds differently, so either would mix two measurements."""
+    metas = [s.meta() for s in stores]
+    models = {m.get("model") for m in metas}
+    if len(models) > 1:
+        return f"the runs were measured with different models: {', '.join(sorted(map(str, models)))}"
+    ks = {m.get("seeds") for m in metas}
+    if len(ks) > 1:
+        return f"the runs were branched with different K: {', '.join(sorted(map(str, ks)))}"
+    return None
+
+
+def summary(stores: list[BranchStore]) -> int:
+    why = _unpoolable(stores)
+    if why is not None:
+        print(f"branch-report: cannot pool: {why}", file=sys.stderr)
+        return 2
+    scores = []
+    for store in stores:
+        _meta, run_scores = _measured(store)
+        scores += run_scores
+    if len(stores) > 1:
+        print(
+            f"pooled {len(stores)} runs, {len(scores)} complete decisions. The intervals resample "
+            "decisions as if independent; decisions in one run share a trajectory, so the true "
+            "uncertainty is somewhat wider."
+        )
     rng = random.Random(0)
-    # an incomplete decision still shows with --decision, but no headline number counts it
-    scores = [score_decision(i, by_decision[i.decision], seeds) for i in whole]
     rules = {"random": "random", "strongest": "strongest move", "offline": "offline pick"}
     for kind, row in headline(scores, rng).items():
         ci = row["ci"]
@@ -104,22 +137,26 @@ def one_decision(store: BranchStore, n: int) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("run", type=Path)
+    ap.add_argument("runs", type=Path, nargs="+", metavar="RUN_DIR")
     ap.add_argument("--decision", type=int)
     ap.add_argument("--export", nargs=4, metavar=("N", "ALTERNATIVE", "SEED", "OUT_DIR"))
     args = ap.parse_args()
-    db = args.run / "branches" / "branches.sqlite"
-    if not db.is_file():
-        print(f"{db} does not exist; run `jevplays branch {args.run}` first", file=sys.stderr)
-        return 2
-    store = BranchStore(db)
+    if (args.export or args.decision is not None) and len(args.runs) != 1:
+        ap.error("--decision and --export take exactly one RUN_DIR")
+    stores = []
+    for run in args.runs:
+        db = run / "branches" / "branches.sqlite"
+        if not db.is_file():
+            print(f"{db} does not exist; run `jevplays branch {run}` first", file=sys.stderr)
+            return 2
+        stores.append(BranchStore(db))
     if args.export:
         n, alt, seed, out = args.export
-        print(export_branch(store, BranchKey(int(n), alt, int(seed)), Path(out)))
+        print(export_branch(stores[0], BranchKey(int(n), alt, int(seed)), Path(out)))
         return 0
     if args.decision is not None:
-        return one_decision(store, args.decision)
-    return summary(store)
+        return one_decision(stores[0], args.decision)
+    return summary(stores)
 
 
 if __name__ == "__main__":
