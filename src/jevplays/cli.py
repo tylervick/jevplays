@@ -113,6 +113,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "unpaced": args.unpaced,
                 "no_brain": args.no_brain,
                 "battle_goal": args.battle_goal,
+                "snapshot_every_decision": args.snapshot_every_decision,
             },
         )
 
@@ -165,6 +166,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     speed=args.speed,
                     pause_after=args.pause_after,
                     max_decisions=args.max_decisions,
+                    snapshot_every_decision=args.snapshot_every_decision,
                 )
                 loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir, memory=memory)
                 watcher = asyncio.create_task(_print_progress(loop))
@@ -281,6 +283,32 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return 0
 
 
+def _at_least(minimum: int, why: str):
+    def parse(text: str) -> int:
+        try:
+            value = int(text)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from None
+        if value < minimum:
+            raise argparse.ArgumentTypeError(f"must be at least {minimum} ({why}), not {value}")
+        return value
+
+    return parse
+
+
+def cmd_branch(args: argparse.Namespace) -> int:
+    rom = args.rom or _rom_from_env()
+    if rom is None:
+        print("no ROM: pass --rom or set JEVPLAYS_ROM", file=sys.stderr)
+        return 2
+    if not os.environ.get("TYPESAFE_API_KEY"):
+        print("jevplays branch: TYPESAFE_API_KEY is not set; every branch asks Jev", file=sys.stderr)
+        return 2
+    from jevplays.branch.runner import measure
+
+    return measure(args.run_dir, rom=rom, seeds=args.seeds, sample=args.sample, workers=args.workers)
+
+
 def _lan_address() -> str:
     """This machine's address on the network it routes through, or loopback if it has none. The
     UDP socket is never sent on: connect() only picks the interface the route would use."""
@@ -319,6 +347,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--runs-dir", type=Path, default=Path("runs"), help="where new run directories go")
     run.add_argument("--no-log", action="store_true", help="keep no run directory (no log, no checkpoints)")
+    run.add_argument(
+        "--snapshot-every-decision",
+        action="store_true",
+        help="save the game at every decision so `jevplays branch` can replay it (about 170 KB each)",
+    )
     run.add_argument("--port", type=int, default=8765)
     run.add_argument(
         "--host",
@@ -383,6 +416,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="hold the first decision until a browser connects, at most this long (0: start at once)",
     )
     replay.set_defaults(func=cmd_replay)
+
+    branch = sub.add_parser(
+        "branch", help="replay every alternative of each decision in a recorded run (#82)"
+    )
+    branch.add_argument("run_dir", type=Path)
+    branch.add_argument("--rom", type=Path, help="Pokémon Red/Blue ROM (default: $JEVPLAYS_ROM)")
+    branch.add_argument(
+        "--seeds",
+        type=_at_least(2, "half the seeds pick the best alternative, the other half score it"),
+        default=8,
+        help="random seeds per alternative (at least 2)",
+    )
+    branch.add_argument("--sample", type=int, default=None, help="branch only N decisions, chosen at random")
+    branch.add_argument(
+        "--workers", type=_at_least(1, "a branch needs a process to run in"), default=os.cpu_count() or 1
+    )
+    branch.set_defaults(func=cmd_branch)
     return parser
 
 
@@ -394,6 +444,10 @@ def main(argv: list[str] | None = None) -> int:
     # cannot express that with --state already in a mutually exclusive group, so check it here.
     if getattr(args, "resume", None) is not None and getattr(args, "no_log", False):
         parser.error("--no-log cannot be combined with --resume")
+    if getattr(args, "snapshot_every_decision", False) and (
+        getattr(args, "resume", None) is not None or getattr(args, "no_log", False)
+    ):
+        parser.error("--snapshot-every-decision needs a fresh, logged run (no --resume, no --no-log)")
     return args.func(args)
 
 

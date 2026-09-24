@@ -74,6 +74,10 @@ class Decision:
     model: str = ""
     input_tokens: int = 0
     latency_ms: int = 0
+    forced: bool = False
+    """Set on a branch's first action (#82): code pressed it without asking Jev."""
+    cached: bool = False
+    """The answers came from a branch measurement's response cache, not a live request."""
     action_value: Action | None = field(default=None, compare=False)
 
     def to_dict(self) -> dict:
