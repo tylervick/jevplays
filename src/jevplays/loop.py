@@ -491,6 +491,7 @@ class Loop:
         `wander` keeps the option "arrived" turn after turn on purpose: checked the other way
         round, a grass option would never give the decision back.
         """
+        new_map = self._seen_map is not None and state.map_id != self._seen_map
         if self._note_map(state.map_id):
             self._save_memory()
         ended = await self._refresh_milestone(state)
@@ -517,6 +518,13 @@ class Loop:
             # The plan ended without arriving (a leg gave up quietly). Nothing is charged
             # against the option; the next turn generates the list again from where we stand.
             self._clear_option()
+        if new_map:
+            # A blackout sets the map id before it loads the map: for one turn the id says Pallet
+            # Town while the warps, connections and grass in RAM are still the route's, and the
+            # options generated from them are the route's exits and grass under Pallet Town's
+            # name. Jev once took that grass and wandered Pallet Town, which has no encounters,
+            # until the budget ran out (#94). The next turn sees the loaded map.
+            return self.emu.tick(self.config.idle_frames)
         return await self._choose_option(state)
 
     def _note_map(self, map_id: int) -> bool:

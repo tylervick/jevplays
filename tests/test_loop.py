@@ -1736,3 +1736,20 @@ def test_outside_oaks_lab_the_starter_is_not_asked_about_yet():
     asyncio.run(loop._run_macro(snapshot(emu)))
     assert taken == [] and not any(d.kind == "starter" for d in loop.decisions)
     assert loop.option is None  # let go of, so the next turn plans from where the cutscene leaves us
+
+
+def test_the_first_turn_on_a_new_map_waits_before_generating_options():
+    """A blackout sets the map id before the new map is loaded: for one turn the id says Pallet
+    Town while the warps, connections and grass are still the old route's, and options generated
+    then name the old map's exits and grass (#94). So the first turn after the id changes waits."""
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    brain = QuestionBrain(explore="exit_north", needs_heal=0.1)
+    loop = Loop(emu, bc, LoopConfig(paced=False), brain=brain)
+    run(loop, 1)
+    assert brain.calls == 1  # the run's first map: no wait
+    loop._clear_option()
+    emu.mem[ram.wCurMap] = emu.mem[ram.wCurMap] + 1  # the id moves; the loaded map has not yet
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert brain.calls == 1
+    asyncio.run(loop.advance(snapshot(emu)))
+    assert brain.calls == 2
