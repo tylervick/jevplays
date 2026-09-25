@@ -58,8 +58,10 @@ No save states: the demo starts from the intro (#80).
 
 **Process.** The Machine runs `Scripts/demo-loop.py --host 0.0.0.0 --runs-dir /data/runs` with
 `JEVPLAYS_ROM=/data/rom/pokemon-red.gb`, and the speed and daily budget the Mac mini uses today
-(`--speed 3 --daily-decisions 3000`). If the ROM file is missing, the supervisor exits with a
-message naming the `fly ssh sftp put` command, instead of starting runs that die at once.
+(`--speed 3 --daily-decisions 3000`). If the ROM file is missing, the supervisor says so once,
+naming the `fly ssh sftp put` command (to stdout and ntfy), and checks again every 30 seconds
+instead of starting runs that die at once. It waits rather than exits because the upload needs a
+running Machine: an exit would have Fly restart it until it gave up and stopped it.
 
 **Secrets**, in `fly secrets`, never in the repo: `TYPESAFE_API_KEY`, `NTFY_URL` (server and
 topic; on ntfy a topic name works like a password) and `NTFY_TOKEN` if the server requires one.
@@ -71,14 +73,17 @@ three things.
 
 **A deploy does not lose the run.** Fly stops a Machine with SIGTERM before a deploy or a stop.
 - The supervisor handles SIGTERM by forwarding it to the run's process group, waiting for it to
-  exit (the run already writes an exit checkpoint on SIGTERM), then exiting 0.
-- A run records `finished_at` in `run.json` when it finishes at the badge.
-- When the supervisor starts, if the newest run under `--runs-dir` has no `finished_at` and has a
+  exit (the run already writes an exit checkpoint on SIGTERM), writing an `interrupted` marker
+  file into that run's directory, then exiting 0. A SIGTERM between runs, or before a new run has
+  made its directory, stops nothing and marks nothing.
+- When the supervisor starts, if the newest run under `--runs-dir` holds the marker and a
   checkpoint, its first run is `jevplays run --resume <dir>` instead of a new one, with the same
   budget arithmetic (`--max-decisions` counts the decisions this process makes, and the day's
-  total is still read from every `decisions.jsonl`). Only the first run of a supervisor's life resumes. A run the supervisor
-  itself killed as stalled, or one that died, is replaced by a fresh run as now: resuming a hang
-  from the checkpoint before it would likely hang again.
+  total is still read from every `decisions.jsonl`). It deletes the marker as it resumes.
+- So only a run a SIGTERM cut short is ever resumed, and once per SIGTERM. A run that finished at
+  the badge exited by itself; a run killed as stalled, or one that died, was never marked. Each of
+  those is replaced by a fresh run as now: resuming a hang or a crash from the checkpoint before
+  it would likely repeat it.
 
 **A wedged demo gets restarted by Fly.** A failing health check on Fly takes the Machine out of
 routing but does not restart it; Fly restarts a Machine only when its main process exits. Today
@@ -97,9 +102,14 @@ posts once per event, not once per poll:
 
 ## Deploys
 
-`.github/workflows/deploy.yml`:
-- Runs on push to `main`, and only after the `ci` workflow's tests pass for that commit
-  (`workflow_run` on `ci` completing successfully on `main`).
+A `deploy` job in `.github/workflows/ci.yml`:
+- Runs after the `test` and `image` jobs pass, on a push to `main` only, and only when the
+  repository variable `FLY_DEPLOY` is `true`. Tyler sets that once the Fly app, volume and secrets
+  exist, so until then `main` does not fail on a deploy that cannot work. It is a job in `ci.yml`
+  rather than a `workflow_run` workflow, which zizmor flags as a dangerous trigger.
+- The `image` job builds the `Dockerfile` on every push and pull request and checks that the image
+  holds no game data, imports PyBoy headless, and, started with no ROM, waits naming the upload
+  command.
 - Uses `superfly/flyctl-actions/setup-flyctl`, SHA-pinned like every other action here, and runs
   `flyctl deploy --remote-only`, so the image is built on Fly's builder from the checkout. A clean
   checkout contains no game data, so neither does the image.
@@ -116,7 +126,9 @@ itself; the run resumes from its exit checkpoint.
 The supervisor cannot report its own Machine being down, so `.github/workflows/uptime.yml` does:
 - Runs every 10 minutes on a schedule. GitHub runs scheduled workflows late at times, so an
   outage can take 10-30 minutes to be noticed. Accepted for a demo.
-- Fetches `https://<app>.fly.dev/health` with a short timeout. Any non-2xx response or a failed
+- Runs only when the repository variable `DEMO_URL` is set (`https://<app>.fly.dev` now, the custom
+  domain after #97), so it is inert until the demo exists.
+- Fetches `$DEMO_URL/health` with a short timeout. Any non-2xx response or a failed
   request is down. Every `status` value counts as up, including `unwatched` and `resting`: those
   mean the process is answering.
 - Posts to ntfy only when the answer differs from the previous scheduled run's conclusion (down
@@ -125,9 +137,10 @@ The supervisor cannot report its own Machine being down, so `.github/workflows/u
 
 ## Rollout
 
-Tyler does the account steps: `fly launch --no-deploy` against the committed `fly.toml`,
-`fly volumes create`, `fly ssh sftp put` the ROM, `fly secrets set`, the GitHub secrets, and the
-first deploy. Then:
+Tyler does the account steps: `fly apps create`, `fly volumes create`, `fly secrets set`, the
+GitHub secrets (`FLY_API_TOKEN`, `NTFY_URL`, `NTFY_TOKEN`), a first `fly deploy` (whose Machine waits,
+naming the upload command, until the ROM is there), `fly ssh sftp put` the ROM, and then the
+repository variables `FLY_DEPLOY=true` and `DEMO_URL`. Then:
 
 1. Check the page, `/health`, a deploy that resumes a run, and an ntfy post for each event.
 2. Measure CPU as in "Sizing"; resize if needed.
