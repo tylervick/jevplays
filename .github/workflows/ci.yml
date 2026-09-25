@@ -34,3 +34,22 @@ jobs:
       - run: hk check --all
       # A runner has no ROM: tests/rom/ skip themselves when JEVPLAYS_ROM is unset.
       - run: uv run pytest -q
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: {persist-credentials: false}
+      - run: docker build -t jevplays .
+      - name: The image holds no game data
+        run: |
+          docker run --rm jevplays sh -c \
+            'test ! -e /data && ! find /app \( -name "*.gb" -o -name "*.gbc" -o -name "*.state" -o -name "*.ram" \) | grep .'
+      - name: The emulator imports headless
+        run: docker run --rm jevplays uv run python -c "import pyboy, jevplays.cli"
+      - name: With no ROM it waits and says how to upload one
+        run: |
+          set +e
+          out=$(timeout 20 docker run --rm -e JEVPLAYS_ROM=/data/rom/pokemon-red.gb jevplays 2>&1)
+          code=$?
+          echo "$out"
+          test "$code" -eq 124 && grep -q "fly ssh sftp put" <<<"$out"
