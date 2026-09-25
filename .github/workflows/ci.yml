@@ -53,3 +53,29 @@ jobs:
           code=$?
           echo "$out"
           test "$code" -eq 124 && grep -q "fly ssh sftp put" <<<"$out"
+  # Deploys main to Fly once the tests and the image check pass. Off until Tyler sets the repository
+  # variable FLY_DEPLOY to "true" (after the app, volume, ROM and secrets exist), so main does not
+  # fail on a deploy that cannot work yet. The build runs on Fly's builder from this checkout, which
+  # holds no game data; the ROM stays on the volume.
+  deploy:
+    needs: [test, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.FLY_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    concurrency: {group: deploy, cancel-in-progress: false}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: {persist-credentials: false}
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        with: {version: 0.4.107}
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Tell ntfy
+        if: always()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          RESULT: ${{ job.status }}
+          SHA: ${{ github.sha }}
+        run: |
+          Scripts/ntfy.sh "deploy ${RESULT}: ${SHA:0:7}"

@@ -1,0 +1,37 @@
+name: uptime
+# The demo cannot report its own Machine being down, so this does. Inert until the repository
+# variable DEMO_URL is set. GitHub runs schedules late at times: an outage can take 10-30 minutes
+# to be noticed. Posts to ntfy only on a change, reading the last run's conclusion as the state:
+# this job fails while the demo is down.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  check:
+    if: vars.DEMO_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with: {persist-credentials: false}
+      - name: Check /health and post on a change
+        env:
+          DEMO_URL: ${{ vars.DEMO_URL }}
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if curl -fsS -m 15 -o /dev/null "$DEMO_URL/health"; then now=up; else now=down; fi
+          last=$(gh run list -R "$REPO" --workflow uptime.yml --status completed --limit 1 \
+            --json conclusion -q '.[0].conclusion // "success"')
+          if [ "$last" = failure ]; then was=down; else was=up; fi
+          echo "demo is $now (was $was)"
+          if [ "$now" != "$was" ]; then
+            if [ "$now" = down ]; then Scripts/ntfy.sh "demo is down: $DEMO_URL/health is not answering"
+            else Scripts/ntfy.sh "demo is back up"; fi
+          fi
+          test "$now" = up
