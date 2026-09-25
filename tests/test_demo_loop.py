@@ -1,7 +1,10 @@
 import argparse
+import contextlib
 import importlib.util
 import json
 from pathlib import Path
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "Scripts" / "demo-loop.py"
 spec = importlib.util.spec_from_file_location("demo_loop", SCRIPT)
@@ -360,3 +363,100 @@ def test_sigterm_while_waiting_for_the_rom_exits_cleanly(tmp_path, monkeypatch):
 
     assert h.supervise(sleep=sleep) == 0
     assert h.started == []
+
+
+def test_notify_posts_the_message_to_ntfy_with_the_token():
+    sent = []
+
+    def urlopen(request, timeout):
+        sent.append(request)
+        return contextlib.nullcontext()
+
+    env = {"NTFY_URL": "https://ntfy.example/demo", "NTFY_TOKEN": "tk"}
+    assert demo_loop.notify("hello", env=env, urlopen=urlopen) is True
+    [request] = sent
+    assert request.full_url == "https://ntfy.example/demo"
+    assert request.data == b"hello" and request.get_method() == "POST"
+    assert request.get_header("Authorization") == "Bearer tk"
+
+
+def test_notify_without_a_url_does_nothing_so_a_laptop_demo_is_unchanged():
+    def urlopen(request, timeout):
+        pytest.fail("posted without NTFY_URL")
+
+    assert demo_loop.notify("hello", env={}, urlopen=urlopen) is False
+
+
+def test_a_failed_post_never_stops_the_demo(capsys):
+    def urlopen(request, timeout):
+        raise OSError("connection refused")
+
+    assert demo_loop.notify("hello", env={"NTFY_URL": "https://ntfy.example/demo"}, urlopen=urlopen) is False
+    assert "ntfy post failed" in capsys.readouterr().err
+
+
+def test_the_supervisor_says_when_it_starts_and_whether_it_resumed(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [])
+    run = make_interrupted(h.runs_dir, "20260101-000000")
+    h.supervise()
+    assert h.said == [f"demo started, resuming run {run.name}"]
+
+
+def test_a_fresh_start_says_so(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [])
+    h.supervise()
+    assert h.said == ["demo started, new run"]
+
+
+def test_a_missing_rom_is_announced_once(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [])
+    rom = tmp_path / "nowhere.gb"
+    monkeypatch.setenv("JEVPLAYS_ROM", str(rom))
+    slept = []
+
+    def sleep(_):
+        slept.append(1)
+        if len(slept) == 2:
+            rom.write_bytes(b"uploaded")
+
+    h.supervise(sleep=sleep)
+    assert h.said[0] == demo_loop.missing_rom_message(str(rom))
+    assert h.said.count(demo_loop.missing_rom_message(str(rom))) == 1
+
+
+def test_a_run_killed_as_stalled_is_announced(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None)])
+    monkeypatch.setattr(demo_loop, "stalled", lambda **_: True)
+    h.supervise()
+    assert "run 1 made no decision for 300s; restarting it" in h.said
+    assert len(h.stopped) == 1
+
+
+def test_a_spent_budget_is_announced_once_per_run(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None, None, None, 0)])
+    h.supervise(health=lambda host, port: "resting")
+    assert [m for m in h.said if "budget" in m] == [
+        "daily budget of 3000 decisions spent; resting until 00:00 UTC"
+    ]
+
+
+def test_a_new_day_is_announced(tmp_path, monkeypatch):
+    from datetime import date
+
+    days = iter([date(2026, 9, 24)] + [date(2026, 9, 25)] * 20)
+    monkeypatch.setattr(demo_loop, "utc_today", lambda: next(days))
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None)])
+    h.supervise(health=lambda host, port: "resting")
+    assert "new UTC day; starting a run with today's budget" in h.said
+
+
+def test_a_crash_loop_is_announced_before_the_exit(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(1) for _ in range(10)])
+    assert h.supervise() == 1
+    assert h.said[-1] == "5 runs in a row died within 30s; exiting so the machine restarts"
+
+
+def test_the_default_announcer_is_notify():
+    import inspect
+
+    assert inspect.signature(demo_loop.supervise).parameters["say"].default is demo_loop.notify

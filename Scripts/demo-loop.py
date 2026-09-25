@@ -40,7 +40,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -71,8 +71,25 @@ def _shutdown(signum, frame) -> None:
     raise Shutdown
 
 
-def _quiet(message: str) -> None:
-    """What `supervise` announces events to when nobody asked to hear about them."""
+def notify(message: str, *, env: Mapping[str, str] = os.environ, urlopen=urllib.request.urlopen) -> bool:
+    """Post `message` to ntfy at $NTFY_URL, with $NTFY_TOKEN as a bearer token when set. Without
+    NTFY_URL it does nothing, so a demo on a laptop behaves as it always has. A failed post is
+    printed and dropped: an alert must never be what stops the demo."""
+    url = env.get("NTFY_URL")
+    if not url:
+        return False
+    request = urllib.request.Request(
+        url, data=message.encode("utf-8"), method="POST", headers={"Title": "jevplays demo"}
+    )
+    if env.get("NTFY_TOKEN"):
+        request.add_header("Authorization", f"Bearer {env['NTFY_TOKEN']}")
+    try:
+        with urlopen(request, timeout=10):
+            pass
+    except OSError as error:
+        print(f"[demo] ntfy post failed: {error}", file=sys.stderr, flush=True)
+        return False
+    return True
 
 
 def _runs(runs_dir: Path) -> list[Path]:
@@ -220,7 +237,7 @@ def supervise(
     stop_run=stop,
     sleep: Callable[[float], None] = time.sleep,
     health=status,
-    say: Callable[[str], None] = _quiet,
+    say: Callable[[str], None] = notify,
 ) -> int:
     if shutil.which("uv") is None:
         print("uv is not on PATH; run this through `mise run demo`", file=sys.stderr)
@@ -237,10 +254,12 @@ def supervise(
         rom = os.environ["JEVPLAYS_ROM"]
         if not Path(rom).is_file():
             print(f"[demo] {missing_rom_message(rom)}", flush=True)
+            say(missing_rom_message(rom))
             while not Path(rom).is_file():
                 sleep(ROM_POLL_S)
             print(f"[demo] found the ROM at {rom}", flush=True)
         resume = resumable(args.runs_dir)
+        say(f"demo started, resuming run {resume.name}" if resume else "demo started, new run")
         failures = 0
         runs = 0
         while True:
@@ -263,25 +282,33 @@ def supervise(
 
             seen = progress(args.runs_dir)
             moved_at = time.monotonic()
+            told_resting = False
             while proc.poll() is None:
                 sleep(POLL_S)
                 now = progress(args.runs_dir)
                 said = health(args.host, args.port)
                 if now != seen or waiting_on_purpose(said):
                     seen, moved_at = now, time.monotonic()
+                if said == "resting" and not told_resting:
+                    told_resting = True
+                    say(f"daily budget of {args.daily_decisions} decisions spent; resting until 00:00 UTC")
                 if said == "resting" and utc_today() != day:
                     print(
                         f"[demo] run {runs} rested into a new day; starting one with today's budget",
                         flush=True,
                     )
+                    say("new UTC day; starting a run with today's budget")
                     stop_run(proc)
+                    proc = None
                     break
                 if stalled(idle_for=time.monotonic() - moved_at, stall_after=args.stall_after):
                     print(
                         f"[demo] run {runs} made no decision for {args.stall_after:.0f}s; restarting it",
                         flush=True,
                     )
+                    say(f"run {runs} made no decision for {args.stall_after:.0f}s; restarting it")
                     stop_run(proc)
+                    proc = None
                     break
 
             lasted = time.monotonic() - started
@@ -289,11 +316,9 @@ def supervise(
             # port is the usual reason. Back off on those; come straight back from a finished run.
             failures = failures + 1 if lasted < 30 else 0
             if failures >= CRASH_LOOP_AFTER:
-                print(
-                    f"[demo] {failures} runs in a row died within 30s; exiting so the machine restarts",
-                    file=sys.stderr,
-                    flush=True,
-                )
+                message = f"{failures} runs in a row died within 30s; exiting so the machine restarts"
+                print(f"[demo] {message}", file=sys.stderr, flush=True)
+                say(message)
                 return 1
             wait = backoff(failures) if failures else 2
             print(f"[demo] run {runs} ended after {lasted:.0f}s; next in {wait}s", flush=True)
