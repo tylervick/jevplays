@@ -1,3 +1,4 @@
+import argparse
 import importlib.util
 import json
 from pathlib import Path
@@ -160,3 +161,161 @@ def test_with_no_state_the_run_starts_from_the_intro_so_viewers_see_jev_pick_the
     args.state = "states/route1.state"
     cmd = demo_loop.command(args, max_decisions=5)
     assert cmd[cmd.index("--state") + 1] == "states/route1.state"
+
+
+class FakeProc:
+    """A run process the supervisor can poll. `polls` are what poll() answers in turn, the last
+    repeating: None is still running, an int is the exit code."""
+
+    def __init__(self, *polls):
+        self.polls = list(polls) or [None]
+
+    def poll(self):
+        return self.polls.pop(0) if len(self.polls) > 1 else self.polls[0]
+
+
+def demo_args(runs_dir: Path) -> argparse.Namespace:
+    return argparse.Namespace(
+        state=None,
+        host="127.0.0.1",
+        port=8765,
+        runs_dir=runs_dir,
+        speed=3.0,
+        stall_after=300.0,
+        daily_decisions=3000,
+        pause_after=60.0,
+        max_viewers=20,
+    )
+
+
+class Harness:
+    """`supervise` with the process, the clock and the page replaced. Starting a run once the
+    scripted processes have run out raises Shutdown, as a SIGTERM would, so every test ends."""
+
+    def __init__(self, tmp_path: Path, monkeypatch, procs):
+        rom = tmp_path / "rom.gb"
+        rom.write_bytes(b"not a real rom")
+        monkeypatch.setenv("JEVPLAYS_ROM", str(rom))
+        monkeypatch.delenv("NTFY_URL", raising=False)
+        monkeypatch.setattr(demo_loop.shutil, "which", lambda _: "/usr/bin/uv")
+        self.runs_dir = tmp_path / "runs"
+        self.procs = list(procs)
+        self.started: list[Path | None] = []
+        self.stopped: list[FakeProc] = []
+        self.said: list[str] = []
+
+    def start(self, args, *, max_decisions, resume=None):
+        self.started.append(resume)
+        if not self.procs:
+            raise demo_loop.Shutdown
+        return self.procs.pop(0)
+
+    def stop(self, proc):
+        self.stopped.append(proc)
+
+    def supervise(self, *, sleep=lambda s: None, health=lambda host, port: None) -> int:
+        return demo_loop.supervise(
+            demo_args(self.runs_dir),
+            start_run=self.start,
+            stop_run=self.stop,
+            sleep=sleep,
+            health=health,
+            say=self.said.append,
+        )
+
+
+def make_interrupted(root: Path, name: str, *, checkpoint: bool = True, marker: bool = True) -> Path:
+    run = make_run(root, name, 30)
+    if checkpoint:
+        (run / "checkpoint-25.state").write_bytes(b"")
+    if marker:
+        (run / demo_loop.INTERRUPTED).write_text("")
+    return run
+
+
+def test_the_newest_run_a_sigterm_stopped_is_the_one_to_resume(tmp_path):
+    make_interrupted(tmp_path, "20260101-000000")
+    newest = make_interrupted(tmp_path, "20260101-010000")
+    assert demo_loop.resumable(tmp_path) == newest
+
+
+def test_a_run_that_ended_any_other_way_starts_over(tmp_path):
+    """Finished at the badge, died, or killed as stalled: none was marked, and resuming a hang or
+    a crash from the checkpoint before it would likely repeat it."""
+    make_interrupted(tmp_path, "20260101-000000", marker=False)
+    assert demo_loop.resumable(tmp_path) is None
+    assert demo_loop.resumable(tmp_path / "missing") is None
+
+
+def test_a_marked_run_with_no_checkpoint_starts_over(tmp_path):
+    """A `kill -9` after the marker leaves nothing for --resume, which would refuse the directory."""
+    make_interrupted(tmp_path, "20260101-000000", checkpoint=False)
+    assert demo_loop.resumable(tmp_path) is None
+
+
+def test_only_the_newest_run_is_considered(tmp_path):
+    make_interrupted(tmp_path, "20260101-000000")
+    make_run(tmp_path, "20260101-010000", 3)
+    assert demo_loop.resumable(tmp_path) is None
+
+
+def test_the_resume_command_continues_the_run_instead_of_starting_one(tmp_path):
+    args = demo_args(tmp_path)
+    args.state = "states/route1.state"
+    cmd = demo_loop.command(args, max_decisions=9, resume=tmp_path / "20260101-000000")
+    assert cmd[cmd.index("--resume") + 1] == str(tmp_path / "20260101-000000")
+    assert "--state" not in cmd  # the CLI refuses --state with --resume
+    assert cmd[cmd.index("--max-decisions") + 1] == "9"
+
+
+def test_sigterm_stops_the_run_marks_it_and_exits_cleanly(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None)])
+
+    def sleep(_):
+        make_run(h.runs_dir, "20260101-000000", 4)  # the run has made its directory by now
+        raise demo_loop.Shutdown
+
+    assert h.supervise(sleep=sleep) == 0
+    assert len(h.stopped) == 1
+    assert (h.runs_dir / "20260101-000000" / demo_loop.INTERRUPTED).is_file()
+
+
+def test_sigterm_between_runs_stops_nothing_and_marks_nothing(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(0)])  # one run that ends; the next start is the SIGTERM
+    make_run(h.runs_dir, "20260101-000000", 4)
+    assert h.supervise() == 0
+    assert h.stopped == []
+    assert not list(h.runs_dir.rglob(demo_loop.INTERRUPTED))
+
+
+def test_sigterm_before_the_new_run_has_a_directory_leaves_the_previous_run_alone(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None)])
+    old = make_run(h.runs_dir, "20260101-000000", 4)  # the last run, which ended at the badge
+
+    def sleep(_):
+        raise demo_loop.Shutdown  # the new run has not written its run.json yet
+
+    assert h.supervise(sleep=sleep) == 0
+    assert len(h.stopped) == 1
+    assert not (old / demo_loop.INTERRUPTED).exists()
+
+
+def test_the_first_run_after_a_restart_resumes_and_only_the_first(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(0), FakeProc(0)])
+    run = make_interrupted(h.runs_dir, "20260101-000000")
+    assert h.supervise() == 0
+    assert h.started == [run, None, None]
+    # Resumed once: if the resumed run now crashes, the next restart does not resume it again.
+    assert not (run / demo_loop.INTERRUPTED).exists()
+
+
+def test_sigterm_during_a_resumed_run_marks_that_run_again(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None)])
+    run = make_interrupted(h.runs_dir, "20260101-000000")
+
+    def sleep(_):
+        raise demo_loop.Shutdown
+
+    assert h.supervise(sleep=sleep) == 0
+    assert h.started == [run]
+    assert (run / demo_loop.INTERRUPTED).is_file()

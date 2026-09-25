@@ -40,6 +40,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -52,6 +53,22 @@ KEEP_RUNS_S = 2 * 86400
 WAITING_ON_PURPOSE = frozenset({"unwatched", "resting"})
 """Dashboard statuses of a run that has stopped deciding by design, not because it hung."""
 
+INTERRUPTED = "interrupted"
+"""Written into a run directory when a SIGTERM made the supervisor stop that run. Fly sends SIGTERM
+before every deploy and every stop; the next supervisor resumes the run that holds this, once."""
+
+
+class Shutdown(Exception):
+    """SIGTERM arrived: the machine is being stopped or redeployed."""
+
+
+def _shutdown(signum, frame) -> None:
+    raise Shutdown
+
+
+def _quiet(message: str) -> None:
+    """What `supervise` announces events to when nobody asked to hear about them."""
+
 
 def _runs(runs_dir: Path) -> list[Path]:
     if not runs_dir.is_dir():
@@ -59,17 +76,30 @@ def _runs(runs_dir: Path) -> list[Path]:
     return [p for p in runs_dir.iterdir() if (p / "run.json").is_file()]
 
 
+def _newest(runs_dir: Path) -> Path | None:
+    runs = _runs(runs_dir)
+    return max(runs, key=lambda p: p.name) if runs else None
+
+
 def progress(runs_dir: Path) -> int:
     """Decisions made by the newest run under `runs_dir`, or 0 when there is not one yet."""
-    runs = _runs(runs_dir)
-    if not runs:
+    newest = _newest(runs_dir)
+    if newest is None:
         return 0
-    newest = max(runs, key=lambda p: p.name)
     log = newest / "decisions.jsonl"
     if not log.is_file():
         return 0
     with log.open(encoding="utf-8") as f:
         return sum(1 for line in f if line.strip())
+
+
+def resumable(runs_dir: Path) -> Path | None:
+    """The newest run, when a SIGTERM stopped it and it has a checkpoint to go on from. A run that
+    finished, died, or was killed as stalled was never marked, and is replaced by a new one."""
+    newest = _newest(runs_dir)
+    if newest is None or not (newest / INTERRUPTED).is_file():
+        return None
+    return newest if any(newest.glob("checkpoint-*.state")) else None
 
 
 def utc_today() -> date:
@@ -131,7 +161,7 @@ def backoff(consecutive_failures: int) -> int:
     return min(MAX_BACKOFF_S, 2 ** (consecutive_failures + 1))
 
 
-def command(args, *, max_decisions: int) -> list[str]:
+def command(args, *, max_decisions: int, resume: Path | None = None) -> list[str]:
     cmd = [
         "uv",
         "run",
@@ -150,15 +180,17 @@ def command(args, *, max_decisions: int) -> list[str]:
         "--pause-after",
         str(args.pause_after),
     ]
-    if args.state is not None:
+    if resume is not None:
+        cmd += ["--resume", str(resume)]
+    elif args.state is not None:
         cmd += ["--state", args.state]
     if args.max_viewers is not None:
         cmd += ["--max-viewers", str(args.max_viewers)]
     return cmd
 
 
-def start(args, *, max_decisions: int) -> subprocess.Popen:
-    return subprocess.Popen(command(args, max_decisions=max_decisions), start_new_session=True)
+def start(args, *, max_decisions: int, resume: Path | None = None) -> subprocess.Popen:
+    return subprocess.Popen(command(args, max_decisions=max_decisions, resume=resume), start_new_session=True)
 
 
 def stop(proc: subprocess.Popen) -> None:
@@ -169,7 +201,15 @@ def stop(proc: subprocess.Popen) -> None:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
 
 
-def supervise(args) -> int:
+def supervise(
+    args,
+    *,
+    start_run=start,
+    stop_run=stop,
+    sleep: Callable[[float], None] = time.sleep,
+    health=status,
+    say: Callable[[str], None] = _quiet,
+) -> int:
     if shutil.which("uv") is None:
         print("uv is not on PATH; run this through `mise run demo`", file=sys.stderr)
         return 2
@@ -177,51 +217,73 @@ def supervise(args) -> int:
         print("JEVPLAYS_ROM is not set; run this through `mise run demo`", file=sys.stderr)
         return 2
 
+    resume = resumable(args.runs_dir)
     failures = 0
     runs = 0
-    while True:
-        runs += 1
-        for gone in prune(args.runs_dir, now=time.time()):
-            print(f"[demo] pruned {gone}", flush=True)
-        day = utc_today()
-        left = max(0, args.daily_decisions - decisions_on(args.runs_dir, day))
-        started = time.monotonic()
-        proc = start(args, max_decisions=left)
-        print(
-            f"[demo] run {runs} started (pid {proc.pid}, speed {args.speed}x, "
-            f"{left} of {args.daily_decisions} decisions left today)",
-            flush=True,
-        )
+    proc = None
+    current: Path | None = None
+    before: Path | None = None
+    previous_handler = signal.signal(signal.SIGTERM, _shutdown)
+    try:
+        while True:
+            runs += 1
+            for gone in prune(args.runs_dir, now=time.time()):
+                print(f"[demo] pruned {gone}", flush=True)
+            day = utc_today()
+            left = max(0, args.daily_decisions - decisions_on(args.runs_dir, day))
+            started = time.monotonic()
+            before = _newest(args.runs_dir)
+            if resume is not None:
+                (resume / INTERRUPTED).unlink()
+            proc = start_run(args, max_decisions=left, resume=resume)
+            current, resume = resume, None
+            print(
+                f"[demo] run {runs} {'resumed ' + current.name if current else 'started'} "
+                f"(speed {args.speed}x, {left} of {args.daily_decisions} decisions left today)",
+                flush=True,
+            )
 
-        seen = progress(args.runs_dir)
-        moved_at = time.monotonic()
-        while proc.poll() is None:
-            time.sleep(POLL_S)
-            now = progress(args.runs_dir)
-            said = status(args.host, args.port)
-            if now != seen or waiting_on_purpose(said):
-                seen, moved_at = now, time.monotonic()
-            if said == "resting" and utc_today() != day:
-                print(
-                    f"[demo] run {runs} rested into a new day; starting one with today's budget", flush=True
-                )
-                stop(proc)
-                break
-            if stalled(idle_for=time.monotonic() - moved_at, stall_after=args.stall_after):
-                print(
-                    f"[demo] run {runs} made no decision for {args.stall_after:.0f}s; restarting it",
-                    flush=True,
-                )
-                stop(proc)
-                break
+            seen = progress(args.runs_dir)
+            moved_at = time.monotonic()
+            while proc.poll() is None:
+                sleep(POLL_S)
+                now = progress(args.runs_dir)
+                said = health(args.host, args.port)
+                if now != seen or waiting_on_purpose(said):
+                    seen, moved_at = now, time.monotonic()
+                if said == "resting" and utc_today() != day:
+                    print(
+                        f"[demo] run {runs} rested into a new day; starting one with today's budget",
+                        flush=True,
+                    )
+                    stop_run(proc)
+                    break
+                if stalled(idle_for=time.monotonic() - moved_at, stall_after=args.stall_after):
+                    print(
+                        f"[demo] run {runs} made no decision for {args.stall_after:.0f}s; restarting it",
+                        flush=True,
+                    )
+                    stop_run(proc)
+                    break
 
-        lasted = time.monotonic() - started
-        # A run that barely lived did not fail at playing the game -- it failed to start, and the
-        # port is the usual reason. Back off on those; come straight back from a finished run.
-        failures = failures + 1 if lasted < 30 else 0
-        wait = backoff(failures) if failures else 2
-        print(f"[demo] run {runs} ended after {lasted:.0f}s; next in {wait}s", flush=True)
-        time.sleep(wait)
+            lasted = time.monotonic() - started
+            # A run that barely lived did not fail at playing the game -- it failed to start, and the
+            # port is the usual reason. Back off on those; come straight back from a finished run.
+            failures = failures + 1 if lasted < 30 else 0
+            wait = backoff(failures) if failures else 2
+            print(f"[demo] run {runs} ended after {lasted:.0f}s; next in {wait}s", flush=True)
+            sleep(wait)
+    except Shutdown:
+        if proc is not None and proc.poll() is None:
+            print("[demo] SIGTERM: stopping the run so it writes its exit checkpoint", flush=True)
+            stop_run(proc)
+            newest = _newest(args.runs_dir)
+            run_dir = current or (newest if newest != before else None)
+            if run_dir is not None:
+                (run_dir / INTERRUPTED).write_text(datetime.now(UTC).isoformat(timespec="seconds") + "\n")
+        return 0
+    finally:
+        signal.signal(signal.SIGTERM, previous_handler)
 
 
 def main() -> int:
