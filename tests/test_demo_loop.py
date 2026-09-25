@@ -319,3 +319,44 @@ def test_sigterm_during_a_resumed_run_marks_that_run_again(tmp_path, monkeypatch
     assert h.supervise(sleep=sleep) == 0
     assert h.started == [run]
     assert (run / demo_loop.INTERRUPTED).is_file()
+
+
+def test_a_demo_whose_runs_keep_dying_at_once_exits_so_fly_restarts_the_machine(tmp_path, monkeypatch):
+    """Fly restarts a Machine only when its main process exits; a failing health check alone just
+    takes it out of routing. Backing off forever would leave the demo down and the Machine up."""
+    h = Harness(tmp_path, monkeypatch, [FakeProc(1) for _ in range(10)])
+    assert h.supervise() == 1
+    assert len(h.started) == demo_loop.CRASH_LOOP_AFTER
+
+
+def test_a_missing_rom_is_waited_for_so_the_machine_stays_up_for_the_upload(tmp_path, monkeypatch, capsys):
+    """The upload is `fly ssh sftp put`, which needs a running Machine. Exiting instead would have
+    Fly restart it until it gave up and stopped it."""
+    h = Harness(tmp_path, monkeypatch, [])
+    rom = tmp_path / "data" / "pokemon-red.gb"
+    monkeypatch.setenv("JEVPLAYS_ROM", str(rom))
+    slept = []
+
+    def sleep(s):
+        slept.append(s)
+        if len(slept) == 3:
+            rom.parent.mkdir(parents=True)
+            rom.write_bytes(b"uploaded")
+
+    assert h.supervise(sleep=sleep) == 0  # the ROM arrives, the first run starts, then SIGTERM
+    assert slept[:3] == [demo_loop.ROM_POLL_S] * 3
+    assert h.started == [None]
+    out = capsys.readouterr().out
+    assert out.count("fly ssh sftp put") == 1  # said once, not every 30 seconds
+    assert str(rom) in out
+
+
+def test_sigterm_while_waiting_for_the_rom_exits_cleanly(tmp_path, monkeypatch):
+    h = Harness(tmp_path, monkeypatch, [])
+    monkeypatch.setenv("JEVPLAYS_ROM", str(tmp_path / "nowhere.gb"))
+
+    def sleep(_):
+        raise demo_loop.Shutdown
+
+    assert h.supervise(sleep=sleep) == 0
+    assert h.started == []

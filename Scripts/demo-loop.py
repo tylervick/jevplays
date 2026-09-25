@@ -47,6 +47,11 @@ from pathlib import Path
 STALL_AFTER_S = 300.0
 """Seconds without a new decision before a run is treated as hung (#67)."""
 MAX_BACKOFF_S = 60
+CRASH_LOOP_AFTER = 5
+"""Runs in a row that each died inside 30s before the supervisor exits, so that Fly's restart
+policy restarts the Machine: Fly restarts on a process exit, never on a failing health check."""
+ROM_POLL_S = 30.0
+"""How often a supervisor with no ROM yet looks again."""
 POLL_S = 5.0
 KEEP_RUNS_S = 2 * 86400
 """Run directories last written longer ago than this are pruned before each start."""
@@ -161,6 +166,13 @@ def backoff(consecutive_failures: int) -> int:
     return min(MAX_BACKOFF_S, 2 ** (consecutive_failures + 1))
 
 
+def missing_rom_message(rom: str) -> str:
+    return (
+        f"no ROM at {rom}; waiting for it. Upload your own dump with: "
+        f"fly ssh sftp put <path/to/pokemon-red.gb> {rom}"
+    )
+
+
 def command(args, *, max_decisions: int, resume: Path | None = None) -> list[str]:
     cmd = [
         "uv",
@@ -217,14 +229,20 @@ def supervise(
         print("JEVPLAYS_ROM is not set; run this through `mise run demo`", file=sys.stderr)
         return 2
 
-    resume = resumable(args.runs_dir)
-    failures = 0
-    runs = 0
+    previous_handler = signal.signal(signal.SIGTERM, _shutdown)
     proc = None
     current: Path | None = None
     before: Path | None = None
-    previous_handler = signal.signal(signal.SIGTERM, _shutdown)
     try:
+        rom = os.environ["JEVPLAYS_ROM"]
+        if not Path(rom).is_file():
+            print(f"[demo] {missing_rom_message(rom)}", flush=True)
+            while not Path(rom).is_file():
+                sleep(ROM_POLL_S)
+            print(f"[demo] found the ROM at {rom}", flush=True)
+        resume = resumable(args.runs_dir)
+        failures = 0
+        runs = 0
         while True:
             runs += 1
             for gone in prune(args.runs_dir, now=time.time()):
@@ -270,6 +288,13 @@ def supervise(
             # A run that barely lived did not fail at playing the game -- it failed to start, and the
             # port is the usual reason. Back off on those; come straight back from a finished run.
             failures = failures + 1 if lasted < 30 else 0
+            if failures >= CRASH_LOOP_AFTER:
+                print(
+                    f"[demo] {failures} runs in a row died within 30s; exiting so the machine restarts",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return 1
             wait = backoff(failures) if failures else 2
             print(f"[demo] run {runs} ended after {lasted:.0f}s; next in {wait}s", flush=True)
             sleep(wait)
