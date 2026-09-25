@@ -17,7 +17,11 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src ./src
 COPY Scripts/demo-loop.py ./Scripts/demo-loop.py
-RUN uv sync --frozen --no-dev
+# pyboy ships its own tiny placeholder ROM (used only when a caller gives it no path of its
+# own); jevplays always passes JEVPLAYS_ROM, so it is dead weight here and the one thing that
+# would otherwise make "no *.gb in the image" false by an accident of a dependency, not of this
+# Dockerfile.
+RUN uv sync --frozen --no-dev && find /app/.venv -name '*.gb' -delete
 
 EXPOSE 8765
 CMD ["uv", "run", "python", "Scripts/demo-loop.py", "--host", "0.0.0.0", "--runs-dir", "/data/runs", "--speed", "3", "--daily-decisions", "3000"]
