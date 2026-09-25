@@ -13,15 +13,19 @@ WORKDIR /app
 
 # Dependencies first, so a change to src/ does not reinstall them.
 COPY pyproject.toml uv.lock README.md .python-version ./
-RUN uv sync --frozen --no-dev --no-install-project
+# pyboy ships its own tiny placeholder ROM (used only when a caller gives it no path of its own);
+# jevplays always passes JEVPLAYS_ROM, so it is dead weight here and the one thing that would
+# otherwise put a *.gb file in the image by an accident of a dependency, not of this Dockerfile.
+# The delete has to run in this same layer: a later RUN's delete only whiteouts the file in the
+# final filesystem view, but flyctl deploy pushes every layer, bytes and all, to the registry.
+RUN uv sync --frozen --no-dev --no-install-project && \
+    find /app/.venv \( -name '*.gb' -o -name '*.gbc' -o -name '*.state' -o -name '*.ram' \) -delete
 
 COPY src ./src
 COPY Scripts/demo-loop.py ./Scripts/demo-loop.py
-# pyboy ships its own tiny placeholder ROM (used only when a caller gives it no path of its
-# own); jevplays always passes JEVPLAYS_ROM, so it is dead weight here and the one thing that
-# would otherwise make "no *.gb in the image" false by an accident of a dependency, not of this
-# Dockerfile.
-RUN uv sync --frozen --no-dev && find /app/.venv -name '*.gb' -delete
+# Only the project itself installs here, no new third-party packages, so nothing in this layer
+# can reintroduce game data; no second delete needed.
+RUN uv sync --frozen --no-dev
 
 EXPOSE 8765
 CMD ["uv", "run", "python", "Scripts/demo-loop.py", "--host", "0.0.0.0", "--runs-dir", "/data/runs", "--speed", "3", "--daily-decisions", "3000"]
