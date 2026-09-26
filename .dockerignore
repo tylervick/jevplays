@@ -1,0 +1,23 @@
+# The build context. Game data must never reach it: the ROM is the owner's own dump and lives only
+# on the Fly volume; save states, .ram files and runs/ are copies of its memory. The **/ patterns
+# match at any depth, the bare directory names at the root of the context only; tests/test_container.py
+# checks they stay here.
+roms
+states
+runs
+.worktrees
+**/*.gb
+**/*.gbc
+**/*.state
+**/*.ram
+mise.local.toml
+.mise.local.toml
+
+# Not needed to build, and large.
+.git
+.venv
+**/__pycache__
+.pytest_cache
+.ruff_cache
+docs
+tests

@@ -1,0 +1,39 @@
+# The public demo: one Machine running Scripts/demo-loop.py. Design:
+# docs/superpowers/specs/2026-09-24-fly-deploy-design.md. Deployed by ci.yml's `deploy` job.
+app = "jevplays"
+primary_region = "sjc"
+
+# The supervisor forwards SIGTERM to the run, which writes its exit checkpoint; stop() allows it
+# 15s before SIGKILL, so Fly must wait longer than that.
+kill_signal = "SIGTERM"
+kill_timeout = 30
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  JEVPLAYS_ROM = "/data/rom/pokemon-red.gb"
+
+# Holds the ROM (uploaded once with `fly ssh sftp put`) and runs/. Never in the image.
+[mounts]
+  source = "jevplays_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8765
+  force_https = true
+  # The demo pauses itself when nobody is watching; Fly stopping the Machine would fight that.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "60s"
+    interval = "30s"
+    timeout = "5s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
