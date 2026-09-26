@@ -26,8 +26,13 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           if curl -fsS -m 15 -o /dev/null "$DEMO_URL/health"; then now=up; else now=down; fi
+          # set -e is on: an API hiccup here must not abort the script before the ntfy post and
+          # the final check, so an unreadable history counts as "was up" -- worst case a repeated
+          # down alert next time, which is the safe direction.
           last=$(gh run list -R "$REPO" --workflow uptime.yml --status completed --limit 1 \
-            --json conclusion -q '.[0].conclusion // "success"')
+            --json conclusion -q '.[0].conclusion // "success"') || last=success
+          # Any conclusion other than "failure" (cancelled, skipped, timed_out, success, ...)
+          # counts as "was up": only a failure run means the demo was down.
           if [ "$last" = failure ]; then was=down; else was=up; fi
           echo "demo is $now (was $was)"
           if [ "$now" != "$was" ]; then
