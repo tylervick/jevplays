@@ -40,10 +40,12 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with: {persist-credentials: false}
       - run: docker build -t jevplays .
+      # The whole filesystem, not just /app: a dependency or a cache could leave a copy anywhere.
+      # /var/lib/shells.state is Debian's (debianutils' update-shells), not game data.
       - name: The image holds no game data
         run: |
           docker run --rm jevplays sh -c \
-            'test ! -e /data && ! find / -xdev \( -name "*.gb" -o -name "*.gbc" -o -name "*.state" -o -name "*.ram" \) 2>/dev/null | grep .'
+            'test ! -e /data && ! find / -xdev \( -name "*.gb" -o -name "*.gbc" -o -name "*.state" -o -name "*.ram" \) ! -path /var/lib/shells.state 2>/dev/null | grep .'
       - name: The emulator imports headless
         run: docker run --rm jevplays uv run python -c "import pyboy, jevplays.cli"
       - name: With no ROM it waits and says how to upload one
