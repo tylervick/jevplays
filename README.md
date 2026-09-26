@@ -211,11 +211,13 @@ below by its short name `fly`):
 fly apps create jevplays
 fly volumes create jevplays_data --region sjc --size 1
 fly secrets set TYPESAFE_API_KEY=... NTFY_URL=https://<ntfy server>/<topic> NTFY_TOKEN=...
-fly deploy                        # the Machine starts and waits for its ROM
+fly deploy --detach               # the Machine starts and waits for its ROM
 fly ssh sftp put /path/to/your/pokemon-red.gb /data/rom/pokemon-red.gb
 ```
 
-(`sftp put` does not create directories: first `fly ssh console -C "mkdir -p /data/rom"`.)
+(`--detach` because nothing answers the health check on 8765 until the ROM is there, so waiting
+on it would fail the first deploy. `sftp put` does not create directories: first
+`fly ssh console -C "mkdir -p /data/rom"`.)
 
 Then in the GitHub repository settings: secrets `FLY_API_TOKEN` (`fly tokens create deploy`),
 `NTFY_URL` and `NTFY_TOKEN`; variables `FLY_DEPLOY=true` and `DEMO_URL=https://jevplays.fly.dev`.
@@ -232,10 +234,12 @@ What ntfy says, and what it means:
 - `daily budget of 3000 decisions spent; resting until 00:00 UTC`, then
   `new UTC day; starting a run with today's budget`.
 - `5 runs in a row died within 30s; exiting so the machine restarts`: runs cannot start; Fly
-  restarts the Machine, and after ten tries stops it. `fly logs` says why.
+  restarts the Machine, and after ten tries stops it; with `auto_start_machines = true` Fly's
+  proxy starts it again on the next request to the page. `fly logs` says why.
 - `deploy success: <sha>` / `deploy failure: <sha>`: from CI.
 - `demo is down: ...` / `demo is back up`: from the `uptime` workflow, every 10 minutes (GitHub
-  runs it late at times).
+  runs it late at times). GitHub disables scheduled workflows in a public repository after 60 days
+  without repository activity; if these go quiet, re-enable `uptime` from the Actions tab.
 
 ## Runs
 
