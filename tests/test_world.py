@@ -1,3 +1,4 @@
+from jevplays.emulator import ram
 from jevplays.executor.world import (
     Warp,
     astar,
@@ -103,3 +104,35 @@ def test_a_map_without_grass_has_no_grass_cells():
     emu = FakeEmulator()
     install_map(emu, ROWS)
     assert build_grid(emu).grass() == frozenset()
+
+
+def _grass_block_with(emu, tiles: dict[int, int]) -> None:
+    """Overwrite tiles of install_map's grass block (block 2) by index within the 4x4 block."""
+    bank, blocks = emu.mem[ram.wTilesetBank], ram.read_u16le(emu.mem, ram.wTilesetBlocksPtr)
+    for i, tile in tiles.items():
+        emu.mem.rom[(bank, blocks + 32 + i)] = tile
+
+
+def _bottom(qx: int, qy: int, right: bool) -> int:
+    return (qy * 2 + 1) * 4 + qx * 2 + (1 if right else 0)
+
+
+def test_a_cell_is_grass_only_when_its_bottom_right_tile_is():
+    """The wild-encounter check reads the bottom-right tile of the player's cell; a cell whose
+    bottom-left tile is grass and bottom-right is not can never start a battle (#100)."""
+    emu = FakeEmulator()
+    install_map(emu, ["~~", "~~"])
+    _grass_block_with(emu, {_bottom(qx, qy, right=True): 1 for qx in range(2) for qy in range(2)})
+    grid = build_grid(emu)
+    assert grid.grass() == frozenset()
+    assert all(grid.walkable(x, y) for x in range(2) for y in range(2))
+
+
+def test_a_cell_whose_bottom_right_tile_is_grass_is_grass():
+    emu = FakeEmulator()
+    install_map(emu, ["..", ".."])
+    bank, blocks = emu.mem[ram.wTilesetBank], ram.read_u16le(emu.mem, ram.wTilesetBlocksPtr)
+    for qx in range(2):
+        for qy in range(2):
+            emu.mem.rom[(bank, blocks + _bottom(qx, qy, right=True))] = emu.mem[ram.wGrassTile]
+    assert build_grid(emu).grass() == frozenset({(0, 0), (1, 0), (0, 1), (1, 1)})

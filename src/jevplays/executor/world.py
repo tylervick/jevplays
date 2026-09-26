@@ -101,13 +101,17 @@ def build_grid(emu) -> MapGrid:
             base = blocks + block * 16
             for qy in range(2):
                 for qx in range(2):
-                    tile = _rom_byte(
-                        emu, bank, base + (qy * 2 + 1) * 4 + qx * 2
-                    )  # bottom-left tile of the quadrant
-                    if tile == grass and grass != 0xFF:
+                    # Collision reads the quadrant's bottom-left tile; the wild-encounter check
+                    # reads its bottom-right one. A cell whose bottom-left is grass and
+                    # bottom-right is not can be walked forever without a battle (#100).
+                    bottom = base + (qy * 2 + 1) * 4 + qx * 2
+                    left, right = _rom_byte(emu, bank, bottom), _rom_byte(emu, bank, bottom + 1)
+                    if left not in walkable:
+                        cells[by * 2 + qy][bx * 2 + qx] = BLOCKED
+                    elif right == grass and grass != 0xFF:
                         cells[by * 2 + qy][bx * 2 + qx] = GRASS
                     else:
-                        cells[by * 2 + qy][bx * 2 + qx] = WALKABLE if tile in walkable else BLOCKED
+                        cells[by * 2 + qy][bx * 2 + qx] = WALKABLE
     return MapGrid(cells)
 
 
