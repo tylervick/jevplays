@@ -78,15 +78,17 @@ def notify(message: str, *, env: Mapping[str, str] = os.environ, urlopen=urllib.
     url = env.get("NTFY_URL")
     if not url:
         return False
-    request = urllib.request.Request(
-        url, data=message.encode("utf-8"), method="POST", headers={"Title": "jevplays demo"}
-    )
-    if env.get("NTFY_TOKEN"):
-        request.add_header("Authorization", f"Bearer {env['NTFY_TOKEN']}")
     try:
+        # Built inside the try: a URL with no scheme fails here, and http.client's protocol
+        # errors are not OSErrors. Whatever it is, the demo goes on.
+        request = urllib.request.Request(
+            url, data=message.encode("utf-8"), method="POST", headers={"Title": "jevplays demo"}
+        )
+        if env.get("NTFY_TOKEN"):
+            request.add_header("Authorization", f"Bearer {env['NTFY_TOKEN']}")
         with urlopen(request, timeout=10):
             pass
-    except OSError as error:
+    except Exception as error:
         print(f"[demo] ntfy post failed: {error}", file=sys.stderr, flush=True)
         return False
     return True
@@ -298,8 +300,10 @@ def supervise(
                         flush=True,
                     )
                     say("new UTC day; starting a run with today's budget")
-                    stop_run(proc)
-                    proc = None
+                    # Out of `proc` before the stop: a SIGTERM during its 15s wait must not mark
+                    # this run for resuming. It is being replaced, not interrupted.
+                    victim, proc = proc, None
+                    stop_run(victim)
                     break
                 if stalled(idle_for=time.monotonic() - moved_at, stall_after=args.stall_after):
                     print(
@@ -307,8 +311,10 @@ def supervise(
                         flush=True,
                     )
                     say(f"run {runs} made no decision for {args.stall_after:.0f}s; restarting it")
-                    stop_run(proc)
-                    proc = None
+                    # Out of `proc` before the stop: a SIGTERM during its 15s wait must not mark
+                    # this run for resuming. It is being replaced, not interrupted.
+                    victim, proc = proc, None
+                    stop_run(victim)
                     break
 
             lasted = time.monotonic() - started
@@ -324,6 +330,9 @@ def supervise(
             print(f"[demo] run {runs} ended after {lasted:.0f}s; next in {wait}s", flush=True)
             sleep(wait)
     except Shutdown:
+        # uv forwards SIGTERM to its child while killpg delivers one too; a second Shutdown here
+        # would skip the marker and orphan the run. The finally puts the handler back.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         if proc is not None and proc.poll() is None:
             print("[demo] SIGTERM: stopping the run so it writes its exit checkpoint", flush=True)
             stop_run(proc)

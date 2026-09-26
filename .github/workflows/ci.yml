@@ -43,7 +43,7 @@ jobs:
       - name: The image holds no game data
         run: |
           docker run --rm jevplays sh -c \
-            'test ! -e /data && ! find /app \( -name "*.gb" -o -name "*.gbc" -o -name "*.state" -o -name "*.ram" \) | grep .'
+            'test ! -e /data && ! find / -xdev \( -name "*.gb" -o -name "*.gbc" -o -name "*.state" -o -name "*.ram" \) 2>/dev/null | grep .'
       - name: The emulator imports headless
         run: docker run --rm jevplays uv run python -c "import pyboy, jevplays.cli"
       - name: With no ROM it waits and says how to upload one

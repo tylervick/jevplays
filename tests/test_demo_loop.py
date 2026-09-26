@@ -460,3 +460,87 @@ def test_the_default_announcer_is_notify():
     import inspect
 
     assert inspect.signature(demo_loop.supervise).parameters["say"].default is demo_loop.notify
+
+
+def test_a_url_ntfy_cannot_even_parse_never_stops_the_demo(capsys):
+    """A scheme-less NTFY_URL fails when the request is built, before anything is sent."""
+
+    def urlopen(request, timeout):
+        pytest.fail("a request that cannot be built was sent")
+
+    assert demo_loop.notify("hello", env={"NTFY_URL": "ntfy.sh/topic"}, urlopen=urlopen) is False
+    assert "ntfy post failed" in capsys.readouterr().err
+
+
+def test_a_garbled_answer_from_ntfy_never_stops_the_demo(capsys):
+    """http.client's protocol errors are not OSErrors."""
+    import http.client
+
+    def urlopen(request, timeout):
+        raise http.client.BadStatusLine("garbage")
+
+    assert demo_loop.notify("hello", env={"NTFY_URL": "https://ntfy.example/demo"}, urlopen=urlopen) is False
+    assert "ntfy post failed" in capsys.readouterr().err
+
+
+class ShutdownDuringStop(Harness):
+    """A SIGTERM that arrives while the supervisor is already stopping a run for its own reasons."""
+
+    def stop(self, proc):
+        super().stop(proc)
+        if len(self.stopped) == 1:
+            raise demo_loop.Shutdown
+
+
+def test_sigterm_while_a_stalled_run_is_being_killed_does_not_mark_it_for_resume(tmp_path, monkeypatch):
+    """The spec: a run killed as stalled starts over. Resuming it would likely hang again."""
+    h = ShutdownDuringStop(tmp_path, monkeypatch, [FakeProc(None)])
+    monkeypatch.setattr(demo_loop, "stalled", lambda **_: True)
+
+    def sleep(_):
+        if not h.runs_dir.exists():
+            make_run(h.runs_dir, "20260101-000000", 4)
+
+    assert h.supervise(sleep=sleep) == 0
+    assert len(h.stopped) == 1
+    assert not list(h.runs_dir.rglob(demo_loop.INTERRUPTED))
+
+
+def test_sigterm_while_a_rested_run_is_replaced_for_a_new_day_does_not_mark_it(tmp_path, monkeypatch):
+    from datetime import date
+
+    days = iter([date(2026, 9, 24)] + [date(2026, 9, 25)] * 20)
+    monkeypatch.setattr(demo_loop, "utc_today", lambda: next(days))
+    h = ShutdownDuringStop(tmp_path, monkeypatch, [FakeProc(None)])
+
+    def sleep(_):
+        if not h.runs_dir.exists():
+            make_run(h.runs_dir, "20260101-000000", 4)
+
+    assert h.supervise(sleep=sleep, health=lambda host, port: "resting") == 0
+    assert len(h.stopped) == 1
+    assert not list(h.runs_dir.rglob(demo_loop.INTERRUPTED))
+
+
+def test_a_second_sigterm_while_the_run_is_being_stopped_is_ignored(tmp_path, monkeypatch):
+    """uv forwards SIGTERM to its child while killpg delivers one too; a second Shutdown raised
+    inside the handler would skip the marker and orphan the run."""
+    import signal
+
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None)])
+    ignored = []
+
+    def stop(proc):
+        ignored.append(signal.getsignal(signal.SIGTERM) is signal.SIG_IGN)
+        h.stopped.append(proc)
+
+    h.stop = stop
+
+    def sleep(_):
+        make_run(h.runs_dir, "20260101-000000", 4)
+        raise demo_loop.Shutdown
+
+    assert h.supervise(sleep=sleep) == 0
+    assert ignored == [True]
+    assert (h.runs_dir / "20260101-000000" / demo_loop.INTERRUPTED).is_file()
+    assert signal.getsignal(signal.SIGTERM) is not signal.SIG_IGN  # the previous handler is back

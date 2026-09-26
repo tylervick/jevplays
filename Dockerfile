@@ -7,6 +7,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_NO_SYNC=1 \
     UV_PYTHON_DOWNLOADS=never \
+    UV_NO_CACHE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
@@ -18,6 +19,7 @@ COPY pyproject.toml uv.lock README.md .python-version ./
 # otherwise put a *.gb file in the image by an accident of a dependency, not of this Dockerfile.
 # The delete has to run in this same layer: a later RUN's delete only whiteouts the file in the
 # final filesystem view, but flyctl deploy pushes every layer, bytes and all, to the registry.
+# UV_NO_CACHE (above) keeps uv's cache, which would hold a second copy of it, out of every layer.
 RUN uv sync --frozen --no-dev --no-install-project && \
     find /app/.venv \( -name '*.gb' -o -name '*.gbc' -o -name '*.state' -o -name '*.ram' \) -delete
 
