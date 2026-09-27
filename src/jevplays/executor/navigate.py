@@ -137,6 +137,7 @@ class Navigator:
 
     def plan(self, emu, state, legs: list[Leg]) -> None:
         self.legs, self.index, self.failed_legs = list(legs), 0, 0
+        self._turned_back, self._turned_back_at = 0, None
         self.plan_map = emu.mem[ram.wCurMap]
         self._begin_leg(emu)
 
@@ -155,6 +156,32 @@ class Navigator:
         self.legs, self.index = [], 0
 
     def step(self, emu, state) -> str:
+        """One tile, one crossing, or a verdict. A dialog that stops the leg at the same tile as
+        the last one did is not progress: the Viridian Gym's doors say they are locked and turn
+        the player back, each attempt reaches the door tile first, and the leg was walked again
+        until the option budget ran out (#91). Repeated there `STUCK_STEPS // 2` times, it counts
+        as a failed attempt at the leg, so three of them give up as "stuck". Trainers stop the
+        player at different tiles, and a battle is not a dialog, so neither counts."""
+        result = self._step(emu, state)
+        if result != "interrupted" or not self.busy:
+            return result
+        from jevplays.state.snapshot import snapshot as _snapshot
+
+        if _snapshot(emu).mode is not Mode.DIALOG:
+            return result
+        mem = emu.mem
+        here = (mem[ram.wCurMap], mem[ram.wXCoord], mem[ram.wYCoord])
+        self._turned_back = self._turned_back + 1 if here == self._turned_back_at else 1
+        self._turned_back_at = here
+        if self._turned_back >= STUCK_STEPS // 2:
+            self._turned_back, self._turned_back_at = 0, None
+            return self._fail_leg(emu)
+        return result
+
+    _turned_back: int = 0
+    _turned_back_at: tuple[int, int, int] | None = None
+
+    def _step(self, emu, state) -> str:
         leg = self.current
         if leg is None:
             return "done"

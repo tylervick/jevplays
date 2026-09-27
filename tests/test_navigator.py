@@ -1,5 +1,6 @@
 from jevplays.emulator import ram
 from jevplays.executor.navigate import STUCK_STEPS, Leg, Navigator
+from jevplays.state.modes import Mode
 from jevplays.state.snapshot import snapshot
 from tests.support import FakeEmulator, install_map
 
@@ -210,4 +211,79 @@ def test_one_step_that_lands_short_of_its_tile_does_not_fail_the_leg():
     assert nav.step(emu, snapshot(emu)) == "moving"  # carried once
     emu.press = original  # then left alone
     results = [nav.step(emu, snapshot(emu)) for _ in range(12)]
+    assert "stuck" not in results and results[-1] == "done"
+
+
+LOCKED = [""] * 12 + [
+    "····················",
+    "·                  ·",
+    "·The GYM's doors   ·",
+    "·are locked...     ·",
+    "·                  ·",
+]
+
+
+def locked_door(emu, door):
+    """Stepping onto `door` shows a dialog; clearing it puts the player back where they came
+    from, like the Viridian Gym before the seventh badge (#91)."""
+    original = emu.press
+    came_from = {}
+
+    def press(button, **kw):
+        before = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
+        r = original(button, **kw)
+        if (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == door:
+            came_from["tile"] = before
+            emu.set_rows(LOCKED)
+        return r
+
+    emu.press = press
+    return came_from
+
+
+def clear_dialog(emu, came_from):
+    if snapshot(emu).mode is not Mode.OVERWORLD:
+        emu.set_rows([])
+        if "tile" in came_from:
+            emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = came_from.pop("tile")
+
+
+def test_a_locked_door_that_turns_the_player_back_every_time_gives_the_leg_up():
+    """Each attempt reached the door, so the step counted as progress, and the dialog was an
+    interruption like any other: the navigator walked into the Viridian Gym's locked doors until
+    the option budget ran out (#91). The same dialog at the same tile, again, is not progress."""
+    emu = walker()
+    came_from = locked_door(emu, (2, 5))
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="walk", target=(3, 5))])
+    results = []
+    for _ in range(60):
+        clear_dialog(emu, came_from)
+        results.append(nav.step(emu, snapshot(emu)))
+        if results[-1] == "stuck":
+            break
+    assert results[-1] == "stuck"
+    assert not nav.busy
+
+
+def test_dialogs_at_different_tiles_do_not_fail_the_leg():
+    """Trainers along a route stop the player at different tiles; that is a busy walk, not a
+    locked door."""
+    emu = walker()
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="walk", target=(5, 5))])
+    original = emu.press
+
+    def press(button, **kw):
+        r = original(button, **kw)
+        emu.set_rows(LOCKED)  # every step is interrupted, each at a new tile
+        return r
+
+    emu.press = press
+    results = []
+    for _ in range(20):
+        emu.set_rows([])
+        results.append(nav.step(emu, snapshot(emu)))
+        if results[-1] == "done":
+            break
     assert "stuck" not in results and results[-1] == "done"
