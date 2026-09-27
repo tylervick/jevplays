@@ -281,30 +281,29 @@ stopped on.
 
 ### Did Jev choose well?
 
-One run of 123 decisions, branched with K=8 seeds per alternative -- see `Scripts/branch-report.py`
-and `docs/superpowers/specs/2026-09-23-counterfactual-branching-design.md` for how this measures a
-decision and what each number means. Of 4848 branches, 4764 finished; 68 hit the frame cap and 16
-stalled (all 16 on one alternative, across two decisions), and those 84 are left out of every mean
-below rather than counted as at least the cap -- which does not make the means unbiased, only
-honest about what was measured. The determinism check found a largest answer spread of 0.0900
-across 20 repeated questions; the branch store caches Jev's calls, so every distinct question gets
-one sampled answer, not a fresh one per branch.
+`jevplays branch` replays every alternative Jev didn't take from the same saved state, 8 seeds
+each, and measures game time to the active milestone; `Scripts/branch-report.py` scores it
+(`--by-choice` splits it by what Jev chose). Five runs from `route1.state` to the Boulder Badge --
+792 decisions, 30,720 branches -- after the navigator and map fixes the measurement turned up
+(#88, #94, #100):
 
-Per decision kind, mean regret (seconds of game time against the best alternative, scored on
-held-out seeds) and the share "as good as best" -- the held-out best, or no later than it on at
-least half the scoring seeds, paired by seed, with a seed where both capped counting as no later:
+- **Battles: Jev's move choice beats simple rules.** Choosing the first action the way Jev did
+  saved 17.6s [3.5, 32.4] of game time against a random move and 30.3s [8.7, 52.2] against always
+  using the strongest move. Against the best alternative in hindsight it is indistinguishable
+  (-11.5s [-32.2, 10.8]), and it never chose to switch, heal, run or catch.
+- **Overworld: Jev trains far more than the fastest path needs.** It chose the tall grass on 158
+  of 249 overworld decisions, each costing 264s [206, 322] against the best alternative; overall,
+  heading straight for the milestone would have been 218s [173, 259] faster, and even a random
+  option 59s [29, 89] faster. This metric counts every minute of training as lost, so it cannot
+  say whether the training paid off later -- a stronger party, fewer blackouts (#103). It says
+  Jev's detours are not needed to reach the next milestone.
 
-- battle (89 decisions, 87 scored): regret 3.1s [-42.8, 46.7], as good as best 69%. The interval
-  crosses zero, so this measurement cannot tell Jev's choice apart from the best move, from a
-  random move (rule − Jev +11.1s [-23.0, 48.1]), or from the strongest move by power (+4.5s
-  [-44.5, 52.7]).
-- explore (34 decisions, all scored): regret -13.1s [-96.2, 67.0], as good as best 79%. Against a
-  random option the interval again crosses zero (+39.0s [-5.5, 89.9]), so that comparison is also
-  a wash; against the offline milestone-first pick, though, Jev's choice measurably cost less
-  (rule − Jev +114.6s [11.5, 220.1], an interval that excludes zero).
-
-#88 -- a navigator loop at Pewter's east exit -- was found by the first branching measurement and
-fixed before this one.
+Caveats: the intervals treat decisions as independent, while decisions in one run share a
+trajectory, so the true uncertainty is somewhat wider. 3.5% of branches hit the frame cap and 0.6%
+stalled at the Viridian Gym's locked door (#91, fixed after this series); both are left out of the
+means rather than counted. Jev is not deterministic -- the same question's probabilities vary by
+up to 0.15 across repeats -- so each distinct question was answered once and cached. Design:
+`docs/superpowers/specs/2026-09-23-counterfactual-branching-design.md`.
 
 `--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
 directory entirely -- no log, no checkpoints -- for a throwaway run you don't want to keep.
