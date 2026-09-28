@@ -27,6 +27,8 @@ Behind a public link, three limits keep it from spending while nobody is there. 
 once no dashboard has been open for `--pause-after` seconds and carries on when one opens. Each
 run is started with what is left of `--daily-decisions` for the UTC day, counted from the logs
 on disk; a run that reaches it rests with the page up, and is replaced once the day turns over.
+`--topup N` adds N decisions to today's budget only: a resting run is replaced with the extra, and
+tomorrow starts at `--daily-decisions` again.
 Past `--max-viewers` tabs, the page is told the demo is full. Old run directories are pruned,
 since they are save-state data and the watchdog and the budget both need logging kept on.
 """
@@ -55,6 +57,9 @@ ROM_POLL_S = 30.0
 POLL_S = 5.0
 KEEP_RUNS_S = 2 * 86400
 """Run directories last written longer ago than this are pruned before each start."""
+TOPUP = "topup.json"
+"""Extra decisions for one UTC day, in the runs directory: `{"day": "YYYY-MM-DD", "decisions": N}`.
+Written by `--topup`, read at every budget computation, worth nothing on any other day."""
 WAITING_ON_PURPOSE = frozenset({"unwatched", "resting"})
 """Dashboard statuses of a run that has stopped deciding by design, not because it hung."""
 
@@ -145,6 +150,26 @@ def decisions_on(runs_dir: Path, day: date) -> int:
                     continue  # a line torn by a kill mid-append
                 if datetime.fromtimestamp(ts, UTC).date() == day:
                     total += 1
+    return total
+
+
+def topup_on(runs_dir: Path, day: date) -> int:
+    """The decisions topped up for UTC `day`, or 0: no file, another day's, or unreadable."""
+    try:
+        topup = json.loads((runs_dir / TOPUP).read_text(encoding="utf-8"))
+        return int(topup["decisions"]) if topup["day"] == day.isoformat() else 0
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0
+
+
+def add_topup(runs_dir: Path, decisions: int, day: date) -> int:
+    """Add `decisions` to UTC `day`'s top-up and return the day's total. A file from another day is
+    replaced, never added to, so a top-up cannot outlive its day."""
+    total = topup_on(runs_dir, day) + decisions
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    tmp = runs_dir / (TOPUP + ".tmp")
+    tmp.write_text(json.dumps({"day": day.isoformat(), "decisions": total}) + "\n", encoding="utf-8")
+    os.replace(tmp, runs_dir / TOPUP)
     return total
 
 
@@ -269,7 +294,9 @@ def supervise(
             for gone in prune(args.runs_dir, now=time.time()):
                 print(f"[demo] pruned {gone}", flush=True)
             day = utc_today()
-            left = max(0, args.daily_decisions - decisions_on(args.runs_dir, day))
+            granted = topup_on(args.runs_dir, day)
+            budget = args.daily_decisions + granted
+            left = max(0, budget - decisions_on(args.runs_dir, day))
             started = time.monotonic()
             before = _newest(args.runs_dir)
             if resume is not None:
@@ -278,7 +305,7 @@ def supervise(
             current, resume = resume, None
             print(
                 f"[demo] run {runs} {'resumed ' + current.name if current else 'started'} "
-                f"(speed {args.speed}x, {left} of {args.daily_decisions} decisions left today)",
+                f"(speed {args.speed}x, {left} of {budget} decisions left today)",
                 flush=True,
             )
 
@@ -293,7 +320,18 @@ def supervise(
                     seen, moved_at = now, time.monotonic()
                 if said == "resting" and not told_resting:
                     told_resting = True
-                    say(f"daily budget of {args.daily_decisions} decisions spent; resting until 00:00 UTC")
+                    say(f"daily budget of {budget} decisions spent; resting until 00:00 UTC")
+                if said == "resting" and topup_on(args.runs_dir, day) != granted:
+                    extra = topup_on(args.runs_dir, day) - granted
+                    print(
+                        f"[demo] run {runs} topped up by {extra}; starting one with the extra budget",
+                        flush=True,
+                    )
+                    say(f"topped up by {extra}; starting a run with the extra budget")
+                    # Replaced, not interrupted: out of `proc` before the stop, as below.
+                    victim, proc = proc, None
+                    stop_run(victim)
+                    break
                 if said == "resting" and utc_today() != day:
                     print(
                         f"[demo] run {runs} rested into a new day; starting one with today's budget",
@@ -364,7 +402,20 @@ def main() -> int:
         "--pause-after", type=float, default=60.0, help="seconds with no viewer before a run pauses"
     )
     ap.add_argument("--max-viewers", type=int, default=20, help="dashboard tabs served at once")
+    ap.add_argument(
+        "--topup",
+        type=int,
+        metavar="N",
+        help="add N decisions to today's (UTC) budget of the running demo, then exit; "
+        "a resting run is restarted with them, and they do not carry over to the next day",
+    )
     args = ap.parse_args()
+    if args.topup is not None:
+        if args.topup < 1:
+            ap.error("--topup must be at least 1")
+        total = add_topup(args.runs_dir, args.topup, utc_today())
+        print(f"[demo] today's top-up is now {total} decisions (on top of --daily-decisions)", flush=True)
+        return 0
     try:
         return supervise(args)
     except KeyboardInterrupt:
