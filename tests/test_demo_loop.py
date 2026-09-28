@@ -544,3 +544,50 @@ def test_a_second_sigterm_while_the_run_is_being_stopped_is_ignored(tmp_path, mo
     assert ignored == [True]
     assert (h.runs_dir / "20260101-000000" / demo_loop.INTERRUPTED).is_file()
     assert signal.getsignal(signal.SIGTERM) is not signal.SIG_IGN  # the previous handler is back
+
+
+def test_a_top_up_counts_only_on_its_own_utc_day(tmp_path):
+    from datetime import date
+
+    today, yesterday = date(2026, 9, 28), date(2026, 9, 27)
+    assert demo_loop.topup_on(tmp_path, today) == 0  # no file yet
+    demo_loop.add_topup(tmp_path, 3000, today)
+    assert demo_loop.topup_on(tmp_path, today) == 3000
+    assert demo_loop.topup_on(tmp_path, date(2026, 9, 29)) == 0  # never carries into the next day
+    demo_loop.add_topup(tmp_path, 500, today)
+    assert demo_loop.topup_on(tmp_path, today) == 3500  # the same day adds up
+    demo_loop.add_topup(tmp_path, 700, yesterday)  # a top-up for another day replaces, not adds
+    assert demo_loop.topup_on(tmp_path, today) == 0
+    assert demo_loop.topup_on(tmp_path, yesterday) == 700
+
+
+def test_an_unreadable_top_up_is_no_top_up(tmp_path):
+    from datetime import date
+
+    (tmp_path / demo_loop.TOPUP).write_text("{not json")
+    assert demo_loop.topup_on(tmp_path, date(2026, 9, 28)) == 0
+
+
+def test_a_top_up_restarts_a_resting_run_with_the_extra_budget(tmp_path, monkeypatch):
+    """The run was started with what was left of the day; it only learns of more by being
+    replaced, the same way a run that rests into a new day is."""
+    h = Harness(tmp_path, monkeypatch, [FakeProc(None), FakeProc(0)])
+    limits = []
+    original = h.start
+
+    def start(args, *, max_decisions, resume=None):
+        limits.append(max_decisions)
+        return original(args, max_decisions=max_decisions, resume=resume)
+
+    h.start = start
+    topped = []
+
+    def sleep(seconds):
+        if not topped:
+            topped.append(demo_loop.add_topup(h.runs_dir, 500, demo_loop.utc_today()))
+
+    h.runs_dir.mkdir(parents=True, exist_ok=True)
+    h.supervise(sleep=sleep, health=lambda host, port: "resting")
+    assert limits[:2] == [3000, 3500]
+    assert len(h.stopped) == 1
+    assert "topped up by 500; starting a run with the extra budget" in h.said

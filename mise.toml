@@ -86,6 +86,10 @@ description = "Keep a run going on 0.0.0.0:8765 so the dashboard is always worth
 # Arguments after `--` are appended by mise, so `mise run demo -- --speed 20` works.
 run = "uv run Scripts/demo-loop.py"
 
+[tasks.demo-topup]
+description = "Add decisions to today's (UTC) demo budget without restarting it: mise run demo-topup -- 3000"
+run = "uv run Scripts/demo-loop.py --topup"
+
 [tasks.states]
 description = "Regenerate the save states tests/rom/ load (needs JEVPLAYS_ROM; writes states/)"
 run = "uv run Scripts/make-states.py"

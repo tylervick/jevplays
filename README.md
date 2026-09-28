@@ -188,7 +188,9 @@ TypeSafe quota. Three limits keep that bounded, all flags on `Scripts/demo-loop.
   from `decisions.jsonl` across every run, so a restart does not reset it, and each run is started
   with only what is left. A run that reaches it rests with the page up and says so; the next day's
   run starts after midnight UTC. The run enforces the number it was given, so a supervisor that
-  dies does not leave a run spending past it.
+  dies does not leave a run spending past it. To give today a little more without touching the
+  supervisor, `mise run demo-topup -- 3000` adds 3,000 decisions to the current UTC day only: a
+  resting run is replaced with the extra, and the next day starts at `--daily-decisions` again.
 - `--max-viewers 20`: tabs served at once; the next one is told the demo is full and retries. Each
   tab is its own frame stream, about 115 KiB/s (0.9 Mbit/s) at any speed, from this machine's
   upload.
