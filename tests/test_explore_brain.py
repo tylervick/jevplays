@@ -160,3 +160,9 @@ def test_the_explore_state_carries_the_standing_goal_and_the_question_names_it()
     sj = explore_state(state, [], milestone=None)
     assert sj["standing_goal"] == STANDING_CLAUSE
     assert '"standing_goal"' in explore_questions(sj)["explore"]["instructions"]
+
+
+def test_the_explore_state_counts_the_party_against_the_standing_goal():
+    sj = explore_state(overworld_state(), [], milestone=None)
+    assert sj["party_size"] == "one of three"
+    assert '"party_size"' in explore_questions(sj)["explore"]["instructions"]

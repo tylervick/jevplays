@@ -52,3 +52,15 @@ def test_readiness_bucket_compares_the_lead_with_what_the_milestone_expects():
 
 def test_readiness_bucket_has_no_opinion_without_an_expectation():
     assert readiness_bucket(9, None) is None
+
+
+def test_party_size_bucket_counts_the_party_against_the_standing_goal():
+    """#110: every run reached Brock with one Pokémon while the goal asked for three; the count is
+    arithmetic, so code says it, as a fact rather than a verdict."""
+    from jevplays.brain.buckets import party_size_bucket
+
+    assert party_size_bucket(1) == "one of three"
+    assert party_size_bucket(2) == "two of three"
+    assert party_size_bucket(3) == "three of three"
+    assert party_size_bucket(6) == "three of three"
+    assert party_size_bucket(0) is None

@@ -8,7 +8,13 @@ done each one before.
 import time
 import uuid
 
-from jevplays.brain.buckets import hp_bucket, money_bucket, quantity_bucket, readiness_bucket
+from jevplays.brain.buckets import (
+    hp_bucket,
+    money_bucket,
+    party_size_bucket,
+    quantity_bucket,
+    readiness_bucket,
+)
 from jevplays.brain.decision import Decision, ExploreAction
 from jevplays.brain.policy import choose_explore
 from jevplays.brain.record import answer_record, question_record
@@ -52,6 +58,9 @@ def explore_state(state: GameState, options: list[Option], milestone: Goal | Non
     )
     if readiness is not None:
         sj["readiness"] = readiness
+    party_size = party_size_bucket(len(state.party))
+    if party_size is not None:
+        sj["party_size"] = party_size
     return sj
 
 
@@ -68,7 +77,8 @@ def explore_questions(sj: dict) -> dict[str, dict]:
                 "before from here and nothing came of it, so repeat it only if nothing else is "
                 'worth doing. "readiness", when present, says how the lead measures up to the '
                 "fight the milestone walks into: training first is worth more than a milestone "
-                "the party is outmatched for."
+                'the party is outmatched for. "party_size" says how many of the three Pokémon '
+                "the standing goal asks for the party has; catching one takes a Poké Ball."
             ),
             "criteria": dict(sj["options"]),
         },
