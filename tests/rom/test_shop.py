@@ -51,3 +51,22 @@ def test_restocking_at_viridian_buys_balls_and_finds_no_potion(rom, state_path):
         assert bought["POKE BALL"] >= 1 and bought.get("POTION", 0) == 0
         after = snapshot(emu)
         assert after.money < before.money and after.mode is Mode.OVERWORLD
+
+
+def test_the_mart_inventories_in_the_rom_match_the_shelves_at_the_counter(rom):
+    """`ram.MART_INVENTORIES` names the ROM's own table (#110); these are the shelves the clerk
+    tests above read off the screen."""
+    from jevplays.emulator.pyboy import Emulator
+    from jevplays.executor.world import mart_inventory
+
+    with Emulator(rom) as emu:
+        assert mart_inventory(emu, 42) == ("POKE BALL", "ANTIDOTE", "PARLYZ HEAL", "BURN HEAL")
+        assert mart_inventory(emu, 56) == (
+            "POKE BALL",
+            "POTION",
+            "ESCAPE ROPE",
+            "ANTIDOTE",
+            "BURN HEAL",
+            "AWAKENING",
+            "PARLYZ HEAL",
+        )

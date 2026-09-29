@@ -149,3 +149,14 @@ def test_the_question_tells_jev_what_readiness_is_for():
     state = overworld_state(party=(replace(OVERWORLD_LEAD, level=9),))
     sj = explore_state(state, [], milestone=BROCK)
     assert "readiness" in explore_questions(sj)["explore"]["instructions"]
+
+
+def test_the_explore_state_carries_the_standing_goal_and_the_question_names_it():
+    """Battles were told to build a party of three; the overworld, where catching starts (buying
+    Poké Balls), was not (#110)."""
+    from jevplays.executor.goals import STANDING_CLAUSE
+
+    state = overworld_state()
+    sj = explore_state(state, [], milestone=None)
+    assert sj["standing_goal"] == STANDING_CLAUSE
+    assert '"standing_goal"' in explore_questions(sj)["explore"]["instructions"]
