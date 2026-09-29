@@ -79,10 +79,9 @@ def battle(name):
 
 
 def test_catch_fixture_agrees_with_the_catch_noul():
-    """The recorded answer is catch 0.32, under CATCH_THRESHOLD, so this turn stays a move:
-    Jev was shown a PIDGEY at `low` hp with balls in the bag and judged the ball not worth the
-    turn. What is pinned is that the noul and the action say the same thing, so a re-recording
-    that clears the threshold has to come with a thrown ball."""
+    """Jev was shown a weakened PIDGEY with balls in the bag; the recorded catch noul (0.58 when
+    re-recorded for #110) clears CATCH_THRESHOLD, so the ball is thrown. What is pinned is that the
+    noul and the action say the same thing, whichever side of the threshold a re-recording lands."""
     f, d = battle("battle_catch")
     assert f["state_json"]["enemy_pokemon"]["hp"] in ("low", "critical")
     assert f["state_json"]["bag"]["poke_balls"] is True and "catch" in f["questions"]
