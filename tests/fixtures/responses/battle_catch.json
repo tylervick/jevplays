@@ -184,7 +184,7 @@
   "questions": {
     "move": {
       "type": "choice",
-      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon?",
+      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon? If we want to catch `enemy_pokemon` instead -- it is worth having for a party of three -- pick a move that will weaken it without knocking it out.",
       "criteria": {
         "SCRATCH": "Normal-type attack, weak power",
         "GROWL": "Normal-type status, none power"
@@ -218,36 +218,36 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 824,
+      "input_tokens": 859,
       "output_tokens": 103
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.98,
+        "confidence": 0.79,
         "probabilities": {
-          "GROWL": 0.01,
-          "SCRATCH": 0.99
+          "SCRATCH": 0.89,
+          "GROWL": 0.11
         }
       },
       "heal": {
         "type": "noul",
-        "noul": 0.04
+        "noul": 0.05
       },
       "run": {
         "type": "noul",
-        "noul": 0.13
+        "noul": 0.12
       },
       "catch": {
         "type": "noul",
-        "noul": 0.56
+        "noul": 0.58
       },
       "faint": {
         "type": "noul",
-        "noul": 0.07
+        "noul": 0.08
       }
     }
   },
-  "latency_ms": 126
+  "latency_ms": 235
 }

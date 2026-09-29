@@ -91,14 +91,30 @@ def battle_state(state: GameState, goal: str) -> dict:
     }
 
 
+MOVE_INSTRUCTIONS = (
+    "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as "
+    "possible, given the types of both Pokémon?"
+)
+MOVE_CATCH_CLAUSE = (
+    " If we want to catch `enemy_pokemon` instead -- it is worth having for a party of three -- "
+    "pick a move that will weaken it without knocking it out."
+)
+"""Added only when a catch is possible (a wild battle with a Poké Ball in the bag). Winning as
+quickly as possible is the opposite of what catching needs: EMBER knocked out every level 3-5 wild
+Pokémon in one hit, so the catch question only ever met a full-HP target (#110)."""
+
+
 def battle_questions(sj: dict) -> dict[str, dict]:
     usable = [m for m in sj["our_pokemon"]["moves"] if m["pp"] != "out"]
     if not usable:
         usable = sj["our_pokemon"]["moves"]
+    instructions = MOVE_INSTRUCTIONS
+    if sj["battle"]["kind"] == "wild" and sj["bag"]["poke_balls"]:
+        instructions += MOVE_CATCH_CLAUSE
     qs: dict[str, dict] = {
         "move": {
             "type": "choice",
-            "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon?",
+            "instructions": instructions,
             "criteria": {m["name"]: f"{m['type']}-type {m['kind']}, {m['power']} power" for m in usable},
         }
     }

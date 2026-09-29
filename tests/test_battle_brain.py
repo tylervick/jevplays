@@ -294,3 +294,26 @@ def test_the_faint_prediction_is_recorded_but_never_acted_on():
     )
     assert d.action == "use SCRATCH"
     assert d.answers["faint"] == {"primitive": "noul", "noul": 0.95, "applied": False}
+
+
+def test_the_move_question_offers_weakening_only_when_a_catch_is_possible():
+    """With a ball in a wild battle, "win as quickly as possible" is the opposite of what catching
+    needs: EMBER knocked out every level 3-5 wild Pokémon in one hit, so the catch question only
+    ever met a full-HP target (#110). Everywhere else the question is unchanged."""
+    ball = (BagItem("POKE BALL", 5),)
+    catchable = battle_questions(battle_state(make_state(bag=ball), goal="g"))["move"]["instructions"]
+    assert "weaken" in catchable and "without knocking it out" in catchable
+    plain = battle_questions(battle_state(make_state(), goal="g"))["move"]["instructions"]
+    trainer = battle_questions(battle_state(make_state(kind="trainer", bag=ball), goal="g"))["move"][
+        "instructions"
+    ]
+    assert plain == trainer == MOVE_INSTRUCTIONS
+    assert "weaken" not in plain
+
+
+MOVE_INSTRUCTIONS = (
+    "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as "
+    "possible, given the types of both Pokémon?"
+)
+"""The move question as it was measured for the published battle result (#104); unchanged
+wherever a catch is not possible."""
