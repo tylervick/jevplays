@@ -374,3 +374,18 @@ def test_walking_a_warp_both_ways_keeps_one_link_with_a_destination_to_check():
     memory.note_crossing("map_59", "map_15", dest_map=15)  # and back out
     assert [(x.kind, x.dest_node, x.dest_map) for x in memory.links["map_15"]] == [("warp", "map_59", 59)]
     assert [(x.kind, x.dest_node, x.dest_map) for x in memory.links["map_59"]] == [("warp", "map_15", 15)]
+
+
+def test_a_mart_door_and_its_clerk_say_what_the_shop_sells():
+    """Jev passed the Mart 25 times with an empty bag: nothing said a Mart sells Poké Balls (#110)."""
+    from tests.test_world import VIRIDIAN_SHELF, _shelf
+
+    emu, state, memory = town()
+    _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
+    door = next(o for o in generate(emu, snapshot(emu), memory, None) if o.id == "door_42")
+    assert door.text == "enter Viridian Mart, which sells POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL"
+
+    emu, state, memory = town(sprites=((1, 0x26, 6, 1),), map_id=42)  # the clerk, in the Mart
+    _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
+    clerk = next(o for o in generate(emu, snapshot(emu), memory, None) if o.after == "shop")
+    assert clerk.text.endswith("to buy POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL")

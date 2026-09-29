@@ -128,6 +128,7 @@
     "money": "comfortable",
     "bag": {},
     "milestone": "Challenge Brock at the Pewter Gym and earn the Boulder Badge",
+    "standing_goal": "Build a party of three and keep them healthy.",
     "options": {
       "milestone": "work on the milestone: Challenge Brock at the Pewter Gym and earn the Boulder Badge (new)",
       "heal": "go heal at Viridian Pokémon Center (new)",
@@ -135,7 +136,7 @@
       "exit_south": "go south to Route 1 (new)",
       "exit_west": "go west to Route 22 (new)",
       "door_41": "enter Viridian Pokémon Center (new)",
-      "door_42": "enter Viridian Mart (new)",
+      "door_42": "enter Viridian Mart, which sells POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL (new)",
       "door_43": "enter Viridian School (new)",
       "door_44": "enter Viridian Nickname House (new)",
       "door_45": "enter Viridian Gym (new)",
@@ -151,7 +152,7 @@
   "questions": {
     "explore": {
       "type": "choice",
-      "instructions": "Which of \"options\" should we do next to make progress in the game, given \"progress\" and the \"milestone\"? Each option ends with a word in parentheses: \"new\" means we have never done it from here; \"visited\" or \"talked already\" means we have done it before and may not need to again; \"tried\" means we chose it before from here and nothing came of it, so repeat it only if nothing else is worth doing. \"readiness\", when present, says how the lead measures up to the fight the milestone walks into: training first is worth more than a milestone the party is outmatched for.",
+      "instructions": "Which of \"options\" should we do next to make progress in the game, given \"progress\", the \"milestone\" and the \"standing_goal\"? Each option ends with a word in parentheses: \"new\" means we have never done it from here; \"visited\" or \"talked already\" means we have done it before and may not need to again; \"tried\" means we chose it before from here and nothing came of it, so repeat it only if nothing else is worth doing. \"readiness\", when present, says how the lead measures up to the fight the milestone walks into: training first is worth more than a milestone the party is outmatched for.",
       "criteria": {
         "milestone": "work on the milestone: Challenge Brock at the Pewter Gym and earn the Boulder Badge (new)",
         "heal": "go heal at Viridian Pokémon Center (new)",
@@ -159,7 +160,7 @@
         "exit_south": "go south to Route 1 (new)",
         "exit_west": "go west to Route 22 (new)",
         "door_41": "enter Viridian Pokémon Center (new)",
-        "door_42": "enter Viridian Mart (new)",
+        "door_42": "enter Viridian Mart, which sells POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL (new)",
         "door_43": "enter Viridian School (new)",
         "door_44": "enter Viridian Nickname House (new)",
         "door_45": "enter Viridian Gym (new)",
@@ -183,31 +184,31 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 1289,
+      "input_tokens": 1354,
       "output_tokens": 184
     },
     "answers": {
       "explore": {
         "type": "choice",
         "choice": "heal",
-        "confidence": 0.63,
+        "confidence": 0.66,
         "probabilities": {
-          "npc_1": 0.0,
-          "door_44": 0.0,
-          "npc_5": 0.0,
           "npc_7": 0.0,
-          "npc_2": 0.0,
-          "milestone": 0.01,
-          "npc_3": 0.0,
+          "exit_north": 0.07,
           "npc_4": 0.0,
-          "exit_west": 0.01,
-          "heal": 0.66,
+          "npc_2": 0.0,
+          "milestone": 0.0,
+          "door_41": 0.19,
+          "npc_1": 0.0,
           "door_45": 0.0,
-          "door_41": 0.25,
+          "npc_3": 0.0,
+          "exit_west": 0.01,
+          "heal": 0.6900000000000001,
           "door_43": 0.0,
-          "exit_south": 0.0,
-          "door_42": 0.0,
-          "exit_north": 0.07
+          "npc_5": 0.0,
+          "door_42": 0.02,
+          "exit_south": 0.01,
+          "door_44": 0.0
         }
       },
       "needs_heal": {
@@ -216,5 +217,5 @@
       }
     }
   },
-  "latency_ms": 279
+  "latency_ms": 206
 }

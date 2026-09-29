@@ -12,7 +12,7 @@ from jevplays.brain.buckets import hp_bucket, money_bucket, quantity_bucket, rea
 from jevplays.brain.decision import Decision, ExploreAction
 from jevplays.brain.policy import choose_explore
 from jevplays.brain.record import answer_record, question_record
-from jevplays.executor.goals import Goal
+from jevplays.executor.goals import STANDING_CLAUSE, Goal
 from jevplays.executor.options import Option
 from jevplays.state.events import TRACKED_FLAGS
 from jevplays.state.snapshot import GameState
@@ -40,6 +40,9 @@ def explore_state(state: GameState, options: list[Option], milestone: Goal | Non
         "money": money_bucket(state.money),
         "bag": {item.name: quantity_bucket(item.quantity) for item in state.bag},
         "milestone": milestone.description if milestone is not None else "none yet",
+        # What the run is for besides the next milestone. Battles already carried it; the
+        # overworld, where a party of three starts (buying Poké Balls), did not (#110).
+        "standing_goal": STANDING_CLAUSE,
         "options": {option.id: option.labelled() for option in options},
     }
     # Only when there is a fight to measure against and a lead to measure: an absent key says
@@ -58,7 +61,8 @@ def explore_questions(sj: dict) -> dict[str, dict]:
             "type": "choice",
             "instructions": (
                 'Which of "options" should we do next to make progress in the game, given '
-                '"progress" and the "milestone"? Each option ends with a word in parentheses: '
+                '"progress", the "milestone" and the "standing_goal"? Each option ends with a word '
+                "in parentheses: "
                 '"new" means we have never done it from here; "visited" or "talked already" means '
                 'we have done it before and may not need to again; "tried" means we chose it '
                 "before from here and nothing came of it, so repeat it only if nothing else is "

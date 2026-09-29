@@ -51,6 +51,21 @@ class MapGrid:
         )
 
 
+def mart_inventory(emu, map_id: int) -> tuple[str, ...] | None:
+    """What the Mart on `map_id` sells, in the game's item names, read from its inventory in the
+    ROM; None for a map with no known inventory or bytes that are not one."""
+    from jevplays.state.names import item_name
+
+    addr = ram.MART_INVENTORIES.get(map_id)
+    if addr is None or emu.rom(0, addr) != ram.MART_SCRIPT:
+        return None
+    count = emu.rom(0, addr + 1)
+    items = [emu.rom(0, addr + 2 + i) for i in range(count)]
+    if not 0 < count < 16 or emu.rom(0, addr + 2 + count) != 0xFF:
+        return None
+    return tuple(item_name(i) for i in items)
+
+
 def read_warps(mem: ram.Memory) -> tuple[Warp, ...]:
     out = []
     for i in range(mem[ram.wNumberOfWarps]):

@@ -136,3 +136,30 @@ def test_a_cell_whose_bottom_right_tile_is_grass_is_grass():
         for qy in range(2):
             emu.mem.rom[(bank, blocks + _bottom(qx, qy, right=True))] = emu.mem[ram.wGrassTile]
     assert build_grid(emu).grass() == frozenset({(0, 0), (1, 0), (0, 1), (1, 1)})
+
+
+VIRIDIAN_SHELF = [0xFE, 4, 0x04, 0x0B, 0x0F, 0x0C, 0xFF]
+"""The Viridian Mart's inventory as the ROM stores it: `script_mart`'s 0xFE, a count, item ids."""
+
+
+def _shelf(emu, addr, data):
+    for i, b in enumerate(data):
+        emu.mem.rom[(0, addr + i)] = b
+
+
+def test_a_marts_inventory_is_read_from_the_rom_in_the_games_item_names():
+    from jevplays.executor.world import mart_inventory
+
+    emu = FakeEmulator()
+    _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
+    assert mart_inventory(emu, 42) == ("POKE BALL", "ANTIDOTE", "PARLYZ HEAL", "BURN HEAL")
+
+
+def test_a_map_with_no_known_inventory_or_a_malformed_one_has_none():
+    from jevplays.executor.world import mart_inventory
+
+    emu = FakeEmulator()
+    assert mart_inventory(emu, 1) is None  # not a Mart
+    assert mart_inventory(emu, 42) is None  # zeros where the table should be
+    _shelf(emu, ram.MART_INVENTORIES[42], [0xFE, 4, 0x04, 0x0B, 0x0F, 0x0C, 0x00])  # no 0xFF end
+    assert mart_inventory(emu, 42) is None

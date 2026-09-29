@@ -240,13 +240,18 @@ def _exit_options(
     return options
 
 
-def _door_options(warps: tuple[world.Warp, ...]) -> list[Option]:
+def _door_options(emu, warps: tuple[world.Warp, ...]) -> list[Option]:
     options = []
     for dest in sorted({w.dest for w in warps}):
         # WARP_LAST_MAP means "back out the way you came in", whose map id is only in `wLastMap`,
         # which nothing here reads: so this door is always `(new)` and its leg has no destination
         # for the navigator to check. Reading `wLastMap` would fix both; deferred with #8.
         text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
+        stock = world.mart_inventory(emu, dest)
+        if stock:
+            # What a Mart is for, in the game's own words: nothing else Jev saw said so, and a
+            # run passed the Mart 25 times with an empty bag and never caught anything (#110).
+            text += f", which sells {', '.join(stock)}"
         options.append(
             Option(
                 id=f"door_{dest}",
@@ -308,7 +313,7 @@ def _npc_target(
     return best
 
 
-def _npc_options(grid: world.MapGrid, state: GameState) -> list[Option]:
+def _npc_options(emu, grid: world.MapGrid, state: GameState) -> list[Option]:
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
     candidates: list[tuple[int, Sprite, tuple[int, int], str]] = []
     for sprite in state.sprites:
@@ -327,6 +332,9 @@ def _npc_options(grid: world.MapGrid, state: GameState) -> list[Option]:
             after = "heal"
         elif sprite.picture == CLERK_PICTURE:
             after = "shop"
+            stock = world.mart_inventory(emu, state.map_id)
+            if stock:
+                text += f" to buy {', '.join(stock)}"
         options.append(
             Option(
                 id=f"npc_{sprite.slot}",
@@ -411,8 +419,8 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
         drafts.append(heal_option)
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
     drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
-    drafts.extend(_door_options(world.read_warps(mem)))
-    drafts.extend(_npc_options(grid, state))
+    drafts.extend(_door_options(emu, world.read_warps(mem)))
+    drafts.extend(_npc_options(emu, grid, state))
     # Grass tiles are not the same thing as wild Pokémon: Pallet Town and Viridian City both
     # have patches with no encounter table, and standing in one waits out the whole option
     # budget for a battle that cannot start (#44). wGrassRate is the game's own answer.
