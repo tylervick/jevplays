@@ -68,3 +68,18 @@ def readiness_bucket(level: int, expects: int | None) -> str | None:
     if level >= expects - 2:
         return "close"
     return "outmatched"
+
+
+PARTY_GOAL = 3
+"""The party the standing goal asks for (`goals.STANDING_CLAUSE`: "Build a party of three")."""
+_COUNT_WORDS = {1: "one", 2: "two", 3: "three"}
+
+
+def party_size_bucket(size: int) -> str | None:
+    """How far the party is towards the standing goal's three, as a fact ("one of three"), or None
+    with no party. Counting against the goal is arithmetic, so code says it: every measured run
+    reached Brock with one Pokémon while the goal asked for three, and nothing Jev saw put the two
+    side by side (#110)."""
+    if size <= 0:
+        return None
+    return f"{_COUNT_WORDS[min(size, PARTY_GOAL)]} of {_COUNT_WORDS[PARTY_GOAL]}"
