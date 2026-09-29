@@ -4,7 +4,10 @@ change never needs a new request."""
 from jevplays.brain.decision import BattleAction
 
 HEAL_THRESHOLD = 0.7
-CATCH_THRESHOLD = 0.6
+CATCH_THRESHOLD = 0.5
+"""Throw when Jev says a catch is more likely right than not. At 0.6 its own answers on a
+critical-HP target (0.55, 0.58) never cleared it, so a run that had balls and had weakened the
+enemy still threw nothing (#110)."""
 RUN_THRESHOLD = 0.7
 SWITCH_THRESHOLD = 0.7
 HEAL_FIRST_THRESHOLD = 0.7
