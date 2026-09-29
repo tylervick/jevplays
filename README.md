@@ -296,9 +296,12 @@ each, and measures game time to the active milestone; `Scripts/branch-report.py`
 - **Overworld: Jev trains far more than the fastest path needs.** It chose the tall grass on 158
   of 249 overworld decisions, each costing 264s [206, 322] against the best alternative; overall,
   heading straight for the milestone would have been 218s [173, 259] faster, and even a random
-  option 59s [29, 89] faster. This metric counts every minute of training as lost, so it cannot
-  say whether the training paid off later -- a stronger party, fewer blackouts (#103). It says
-  Jev's detours are not needed to reach the next milestone.
+  option 59s [29, 89] faster. Every one of those training decisions was on the way to Brock, so
+  the Brock fight is inside the timed stretch. Training does buy safety: paired by seed against
+  heading for the milestone, it went into the gym half a level higher, fought Brock in 10.5
+  decisions instead of 14.2, and blacked out on 83% of branches instead of 91% -- but the
+  blackouts it prevents save less time than it costs (#103). Blackouts are that common because
+  every run fights to Brock with a single Pokémon; Jev never catches a second one (#110).
 
 Caveats: the intervals treat decisions as independent, while decisions in one run share a
 trajectory, so the true uncertainty is somewhat wider. 3.5% of branches hit the frame cap and 0.6%
