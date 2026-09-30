@@ -184,6 +184,21 @@ def switch_to(emu, slot: int) -> None:
     emu.press("a", settle=40)
 
 
+BRING_OUT = "Bring out which"
+"""The party list the game opens after a faint when there is someone left to send in."""
+
+
+def send_out(emu, slot: int) -> None:
+    """Answer "Bring out which POKéMON?" with party `slot`. The list opens on the fainted
+    Pokémon, and A there only says "There's no will to fight!" and shows the list again, which
+    held a run on this screen for good once parties grew past one (#115)."""
+    _point_at_party_slot(emu, slot)
+    emu.press("a", settle=40)
+    wait_for(emu, lambda rows: BRING_OUT not in _text(rows) or "no will" in _text(rows), frames=120)
+    if "no will" in _text(rows_of(emu.tilemap())):
+        raise MacroError(f"{slot} has fainted")
+
+
 def apply(emu, action: BattleAction, *, active_slot: int = 0) -> None:
     if action.kind == "move":
         select_command(emu, "FIGHT")

@@ -241,6 +241,8 @@ class Loop:
         """Move the game forward one step for the current mode. Returns emulated frames spent."""
         if state.in_battle and self.option is not None:
             self._battled = True
+        if state.mode is Mode.BATTLE_WAIT and battle_macros.BRING_OUT in state.text:
+            return await self._send_out_next(state)
         if state.mode in (Mode.DIALOG, Mode.BATTLE_WAIT):
             return self.emu.press("a", settle=30)
         if state.mode is Mode.MOVE_LIST:
@@ -258,6 +260,22 @@ class Loop:
         if state.mode is Mode.MENU:
             return await self._menu_turn(state)
         return self.emu.tick(self.config.idle_frames)
+
+    async def _send_out_next(self, state: GameState) -> int:
+        """After a faint, send in the first living bench member. Which one is a judgment the
+        `switch_to` question could make, but until then the first living one keeps the battle
+        going where pressing A on the fainted lead never did (#115)."""
+        living = bench_slots(state)
+        if not living:
+            return self.emu.press("a", settle=30)
+        label, slot = living[0]
+        try:
+            battle_macros.send_out(self.emu, slot)
+        except MacroError as error:
+            await self.broadcaster.publish(status_event("running", f"sending out {label} failed: {error}"))
+            return self.emu.press("b", settle=30)
+        await self.broadcaster.publish(status_event("running", f"sent out {label}"))
+        return self.emu.tick(30)
 
     # -- asking Jev ---------------------------------------------------------------------
 
