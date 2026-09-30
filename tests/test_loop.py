@@ -1753,3 +1753,25 @@ def test_the_first_turn_on_a_new_map_waits_before_generating_options():
     assert brain.calls == 1
     asyncio.run(loop.advance(snapshot(emu)))
     assert brain.calls == 2
+
+
+BRING_OUT_ROWS = list(PARTY_LIST_ROWS[:14]) + ["·Bring out which   ·", "", "·POKéMON?          ·"]
+
+
+def test_after_a_faint_the_party_list_sends_in_a_living_pokemon_not_the_one_under_the_cursor():
+    """With a party of two, a faint asks "Bring out which POKéMON?" and opens the party list with
+    the cursor on the fainted lead. Pressing A there says "There's no will to fight!" and shows
+    the list again, forever (#115). The living bench member has to be chosen."""
+    emu = ScriptedEmulator([BRING_OUT_ROWS, PARTY_LIST_ROWS_SLOT1[:14] + BRING_OUT_ROWS[14:], BATTLE_MENU])
+    configure_battle_memory(
+        emu,
+        hp=0,
+        party_extra=dict(
+            species=16, level=8, hp=14, max_hp=14, types=(0, 0), moves=(33,), pps=(35,), nickname="PIDGEY"
+        ),
+    )
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False))
+    state = snapshot(emu)
+    assert state.mode is Mode.BATTLE_WAIT and "Bring out which" in state.text
+    asyncio.run(loop.advance(state))
+    assert emu.presses[:2] == ["down", "a"]
