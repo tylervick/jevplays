@@ -405,6 +405,22 @@ def _milestone_option(state: GameState, milestone: Goal | None, node: str, links
     )
 
 
+GRASS_TEXT = "train in the tall grass here"
+PARTY_GOAL = 3
+"""The party the standing goal asks for (`goals.STANDING_CLAUSE`)."""
+
+
+def _grass_text(state: GameState) -> str:
+    """The grass option, saying so when a catch there is impossible for want of a ball. Runs
+    bought their Poké Balls in Pewter, after the grass, and caught nothing; nothing at the grass
+    said a ball was missing (#110). A fact that goes away once there is a ball or a full party,
+    so there is nothing for shopping to fail to discharge (#52)."""
+    has_ball = any(item.name == "POKE BALL" and item.quantity > 0 for item in state.bag)
+    if has_ball or len(state.party) >= PARTY_GOAL:
+        return GRASS_TEXT
+    return f"{GRASS_TEXT}, with no Poké Balls to catch with"
+
+
 def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> list[Option]:
     mem = emu.mem
     node = maps.node_of(state.map_id, *state.tile)
@@ -429,7 +445,7 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
             Option(
                 id="grass",
                 kind="grass",
-                text="train in the tall grass here",
+                text=_grass_text(state),
                 memory="",
                 legs=(),
                 after="wander",
