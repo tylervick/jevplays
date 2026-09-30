@@ -166,3 +166,16 @@ def test_the_explore_state_counts_the_party_against_the_standing_goal():
     sj = explore_state(overworld_state(), [], milestone=None)
     assert sj["party_size"] == "one of three"
     assert '"party_size"' in explore_questions(sj)["explore"]["instructions"]
+
+
+def test_the_explore_question_asks_for_progress_towards_both_goals():
+    """ "Make progress in the game" was read as the milestone: at the Viridian Mart, the branch
+    Jev passed up ended with a party of three about half the time for five minutes more to the
+    badge, and Jev passed it up every time (#110)."""
+    instructions = explore_questions(explore_state(overworld_state(), [], milestone=None))["explore"][
+        "instructions"
+    ]
+    assert instructions.startswith(
+        'Which of "options" should we do next to make progress towards both the "milestone" and '
+        'the "standing_goal", given "progress"?'
+    )
