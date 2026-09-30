@@ -14,7 +14,7 @@ from jevplays.executor.options import (
     sprite_noun,
 )
 from jevplays.state.snapshot import Sprite, snapshot
-from tests.support import FakeEmulator, install_map, write_mon
+from tests.support import OVERWORLD_LEAD, FakeEmulator, install_map, write_mon
 
 # 8x8 grid cells (= 4x4 blocks; install_map pairs 2x2 characters into one block, and build_grid
 # expands each block back into a 2x2 quadrant, so these characters land on the same coordinates
@@ -84,7 +84,9 @@ def test_options_cover_exits_doors_reachable_npcs_and_grass_in_order():
     )
     assert texts["npc_3"] == "talk to the nurse behind the counter"
     assert texts["npc_4"].startswith("talk to a youngster")
-    assert texts["grass"] == "train in the tall grass here"
+    assert (
+        texts["grass"] == "train in the tall grass here, with no Poké Balls to catch with"
+    )  # no ball, party of one (#110)
 
 
 def test_an_item_on_the_ground_is_picked_up_rather_than_talked_to():
@@ -389,3 +391,23 @@ def test_a_mart_door_and_its_clerk_say_what_the_shop_sells():
     _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
     clerk = next(o for o in generate(emu, snapshot(emu), memory, None) if o.after == "shop")
     assert clerk.text.endswith("to buy POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL")
+
+
+def test_grass_says_when_there_is_nothing_to_catch_with():
+    """Runs bought their Poké Balls in Pewter, after the grass, and caught nothing: nothing at the
+    grass said a ball was missing (#110). A fact, gone as soon as there is a ball or a full party."""
+    from dataclasses import replace
+
+    from jevplays.state.snapshot import BagItem
+
+    emu, state, memory = town(grass_rate=25)
+    lead = state.party[0] if state.party else OVERWORLD_LEAD
+
+    def grass(**changes):
+        s = replace(state, **changes)
+        return next(o for o in generate(emu, s, memory, milestone=None) if o.id == "grass")
+
+    empty = grass(bag=(), party=(lead,))
+    assert empty.text == "train in the tall grass here, with no Poké Balls to catch with"
+    assert grass(bag=(BagItem("POKE BALL", 3),), party=(lead,)).text == "train in the tall grass here"
+    assert grass(bag=(), party=(lead, lead, lead)).text == "train in the tall grass here"

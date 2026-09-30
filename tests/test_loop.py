@@ -836,7 +836,7 @@ def test_an_option_that_outstays_its_budget_is_dropped_and_marked_tried():
     assert brain.calls == 2  # the budget handed the decision back
     assert (UNMAPPED_MAP, "grass") in loop.memory.tried
     messages = [e["message"] for e in bc.events if e["type"] == "status"]
-    assert any(m.startswith("tried: train in the tall grass here;") for m in messages)
+    assert any(m.startswith("tried: train in the tall grass here") for m in messages)
 
 
 def test_the_budget_starts_when_the_legs_finish_so_a_long_walk_is_never_cancelled():
