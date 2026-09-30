@@ -289,3 +289,24 @@ def test_a_decision_is_complete_only_when_every_alternative_finished_every_seed(
     extra = full[:-1] + [(BranchKey(1, "run", 7), BranchResult("done", 1, 0, 0, 0))]
     extra += [(BranchKey(1, "switch", 3), BranchResult("done", 1, 0, 0, 0))]
     assert not complete(INFO, extra, seeds=4)
+
+
+def test_party_summary_compares_jevs_choice_with_every_alternative():
+    from jevplays.branch.score import party_summary
+
+    info = DecisionInfo(1, "battle", "move:A", ["move:A", "move:B"], None, None, 1000)
+    sizes = {
+        BranchKey(1, "move:A", 0): 2,
+        BranchKey(1, "move:A", 1): 1,
+        BranchKey(1, "move:B", 0): 1,
+        BranchKey(1, "move:B", 1): 1,
+    }
+    out = party_summary([info], sizes)
+    assert out["battle"] == {
+        "chosen": 1.5,
+        "chosen_2plus": 0.5,
+        "chosen_branches": 2,
+        "all": 1.25,
+        "all_2plus": 0.25,
+        "branches": 4,
+    }

@@ -259,3 +259,50 @@ def headline(scores: list[DecisionScore], rng: random.Random) -> dict[str, dict]
                 row["random_censored_alternatives"] = sum(s.random_censored for s in paired)
         out[kind] = row
     return out
+
+
+def party_summary(infos: list[DecisionInfo], sizes: dict[BranchKey, int]) -> dict[str, dict]:
+    """Per decision kind, the mean party size at the end of the branches that followed Jev's
+    choice and of every branch, and the share of each ending with two or more (#110). Time to the
+    milestone cannot see a party; this is the other side of what training and catching cost."""
+    out: dict[str, dict] = {}
+    for kind in sorted({i.kind for i in infos}):
+        mine = {i.decision: i.chosen for i in infos if i.kind == kind}
+        every = [n for k, n in sizes.items() if k.decision in mine]
+        chosen = [n for k, n in sizes.items() if mine.get(k.decision) == k.alternative]
+        if not every:
+            continue
+        out[kind] = {
+            "chosen": statistics.fmean(chosen) if chosen else None,
+            "chosen_2plus": sum(n >= 2 for n in chosen) / len(chosen) if chosen else None,
+            "chosen_branches": len(chosen),
+            "all": statistics.fmean(every),
+            "all_2plus": sum(n >= 2 for n in every) / len(every),
+            "branches": len(every),
+        }
+    return out
+
+
+def _weighted(rows: list[dict], key: str, weight: str) -> float | None:
+    total = sum(r[weight] for r in rows if r[key] is not None)
+    return sum(r[key] * r[weight] for r in rows if r[key] is not None) / total if total else None
+
+
+def pool_party(summaries: list[dict[str, dict]]) -> dict[str, dict]:
+    """`party_summary` results from several runs, combined as branch-weighted means (decision
+    numbers repeat between runs, so each run is summarised on its own first)."""
+    out: dict[str, dict] = {}
+    for kind in sorted({k for s in summaries for k in s}):
+        rows = [s[kind] for s in summaries if kind in s]
+        n_all = sum(r["branches"] for r in rows)
+        n_chosen = sum(r["chosen_branches"] for r in rows)
+
+        out[kind] = {
+            "chosen": _weighted(rows, "chosen", "chosen_branches"),
+            "chosen_2plus": _weighted(rows, "chosen_2plus", "chosen_branches"),
+            "chosen_branches": n_chosen,
+            "all": _weighted(rows, "all", "branches"),
+            "all_2plus": _weighted(rows, "all_2plus", "branches"),
+            "branches": n_all,
+        }
+    return out
