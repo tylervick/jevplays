@@ -160,6 +160,20 @@ class BranchStore:
             for d, a, s, o, f, b, c, h, e in self._db.execute(sql, args)
         ]
 
+    def final_party_sizes(self) -> dict[BranchKey, int]:
+        """Each branch's party size at its last overworld decision, for "did the branch end with a
+        party" (#110). A branch that never stood in the overworld is left out."""
+        rows = self._db.execute(
+            """
+            SELECT d.decision, d.alternative, d.seed, json_array_length(json_extract(d.body, '$.state_summary.party'))
+            FROM decision d JOIN (
+                SELECT decision, alternative, seed, max(seq) AS seq FROM decision
+                WHERE json_extract(body, '$.kind') = 'explore' GROUP BY decision, alternative, seed
+            ) last USING (decision, alternative, seed, seq)
+            """
+        )
+        return {BranchKey(d, a, s): n for d, a, s, n in rows if n is not None}
+
     # -- the response cache (brain/cache.py's store) ------------------------------------
 
     def get_response(self, key: str) -> tuple[dict, int] | None:

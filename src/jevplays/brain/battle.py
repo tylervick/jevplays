@@ -97,7 +97,7 @@ MOVE_INSTRUCTIONS = (
 )
 MOVE_CATCH_CLAUSE = (
     " If we want to catch `enemy_pokemon` instead -- it is worth having for a party of three -- "
-    "pick a move that will weaken it without knocking it out."
+    "pick the weakest attack that will still weaken it without knocking it out."
 )
 """Added only when a catch is possible (a wild battle with a Poké Ball in the bag). Winning as
 quickly as possible is the opposite of what catching needs: EMBER knocked out every level 3-5 wild
@@ -111,6 +111,9 @@ def battle_questions(sj: dict) -> dict[str, dict]:
     instructions = MOVE_INSTRUCTIONS
     if sj["battle"]["kind"] == "wild" and sj["bag"]["poke_balls"]:
         instructions += MOVE_CATCH_CLAUSE
+        # Only attacks: "weaken" was once read as LEER turn after turn, which never lowers HP
+        # (#110). A lead with no attack left keeps what it has.
+        usable = [m for m in usable if m["kind"] == "attack"] or usable
     qs: dict[str, dict] = {
         "move": {
             "type": "choice",

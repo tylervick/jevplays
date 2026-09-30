@@ -35,6 +35,8 @@ from jevplays.branch.score import (
     choice_kind_of,
     complete,
     headline,
+    party_summary,
+    pool_party,
     score_decision,
     seed_frames,
 )
@@ -63,7 +65,12 @@ def _measured(store: BranchStore) -> tuple[dict, list]:
     print(f"branches {len(rows)}  {dict(outcomes)}  jev calls {calls}  cache hits {hits}")
     if "spread" in meta:
         print(f"determinism check: largest answer spread {meta['spread']}")
+    PARTIES.append(party_summary(whole, store.final_party_sizes()))
     return meta, [score_decision(i, by_decision[i.decision], seeds) for i in whole]
+
+
+PARTIES: list[dict] = []
+"""Each measured run's `party_summary`, pooled after the headline (#110)."""
 
 
 def _unpoolable(stores: list[BranchStore]) -> str | None:
@@ -142,6 +149,13 @@ def summary(stores: list[BranchStore], by_choice: bool = False) -> int:
                 f"rule {_s(row[f'{name}_regret_s'])}, rule − Jev {diff_str}{diff_ci}"
                 f"  ({row[f'{name}_missing']} missing{extra})"
             )
+    for kind, p in pool_party(PARTIES).items():
+        pct = "-" if p["chosen_2plus"] is None else f"{p['chosen_2plus']:.0%}"
+        chosen = "-" if p["chosen"] is None else f"{p['chosen']:.2f}"
+        print(
+            f"{kind:<8} party at the end: after Jev's choice {chosen} (2+: {pct}), "
+            f"after every alternative {p['all']:.2f} (2+: {p['all_2plus']:.0%}), {p['branches']} branches"
+        )
     print(TIE_RULE)
     if by_choice:
         _print_by_choice(scores, rng)

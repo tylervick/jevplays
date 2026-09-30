@@ -317,3 +317,14 @@ MOVE_INSTRUCTIONS = (
 )
 """The move question as it was measured for the published battle result (#104); unchanged
 wherever a catch is not possible."""
+
+
+def test_a_catchable_battle_offers_only_attacks_so_weakening_cannot_mean_leer():
+    """ "Weaken it without knocking it out" was read as LEER, turn after turn: a status move never
+    lowers HP, so the target never got catchable and the lead was worn down instead (#110)."""
+    ball = (BagItem("POKE BALL", 5),)
+    catchable = battle_questions(battle_state(make_state(bag=ball), goal="g"))["move"]
+    assert list(catchable["criteria"]) == ["SCRATCH"]  # GROWL is a status move; EMBER is out of PP
+    assert "weakest attack" in catchable["instructions"]
+    plain = battle_questions(battle_state(make_state(), goal="g"))["move"]
+    assert list(plain["criteria"]) == ["SCRATCH", "GROWL"]

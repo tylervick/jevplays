@@ -221,10 +221,9 @@
   "questions": {
     "move": {
       "type": "choice",
-      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon? If we want to catch `enemy_pokemon` instead -- it is worth having for a party of three -- pick a move that will weaken it without knocking it out.",
+      "instructions": "Which move should `our_pokemon` use this turn to win the battle as quickly and safely as possible, given the types of both Pokémon? If we want to catch `enemy_pokemon` instead -- it is worth having for a party of three -- pick the weakest attack that will still weaken it without knocking it out.",
       "criteria": {
-        "SCRATCH": "Normal-type attack, weak power",
-        "GROWL": "Normal-type status, none power"
+        "SCRATCH": "Normal-type attack, weak power"
       }
     },
     "switch": {
@@ -270,22 +269,21 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 1045,
-      "output_tokens": 145
+      "input_tokens": 1028,
+      "output_tokens": 136
     },
     "answers": {
       "move": {
         "type": "choice",
         "choice": "SCRATCH",
-        "confidence": 0.84,
+        "confidence": 1.0,
         "probabilities": {
-          "GROWL": 0.08,
-          "SCRATCH": 0.92
+          "SCRATCH": 1.0
         }
       },
       "switch": {
         "type": "noul",
-        "noul": 0.17
+        "noul": 0.19
       },
       "switch_to": {
         "type": "choice",
@@ -297,11 +295,11 @@
       },
       "heal": {
         "type": "noul",
-        "noul": 0.28
+        "noul": 0.27
       },
       "run": {
         "type": "noul",
-        "noul": 0.22
+        "noul": 0.21
       },
       "catch": {
         "type": "noul",
@@ -313,5 +311,5 @@
       }
     }
   },
-  "latency_ms": 137
+  "latency_ms": 115
 }

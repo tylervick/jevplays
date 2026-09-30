@@ -81,3 +81,18 @@ def test_export_writes_a_run_directory_replay_can_read(tmp_path):
     run = RunDir.open(path)
     assert [d["id"] for d in run.decisions()] == ["a", "b"]
     assert run.info()["flags"]["branch"] == [12, "move:EMBER", 3]
+
+
+def test_final_party_sizes_come_from_each_branchs_last_overworld_decision(tmp_path):
+    s = store(tmp_path)
+
+    def party(n):
+        return {"kind": "explore", "state_summary": {"party": [{"name": "X"}] * n}}
+
+    s.add_decision(KEY, 1, party(1))
+    s.add_decision(KEY, 2, {"kind": "battle", "state_summary": {}})
+    s.add_decision(KEY, 3, party(2))
+    s.add_decision(KEY, 4, {"kind": "battle", "state_summary": {}})
+    other = BranchKey(12, "run", 0)
+    s.add_decision(other, 1, {"kind": "battle", "state_summary": {}})
+    assert s.final_party_sizes() == {KEY: 2}  # a branch with no overworld decision is left out
