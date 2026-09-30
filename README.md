@@ -285,29 +285,33 @@ stopped on.
 
 `jevplays branch` replays every alternative Jev didn't take from the same saved state, 8 seeds
 each, and measures game time to the active milestone; `Scripts/branch-report.py` scores it
-(`--by-choice` splits it by what Jev chose). Five runs from `route1.state` to the Boulder Badge --
-792 decisions, 30,720 branches -- after the navigator and map fixes the measurement turned up
-(#88, #94, #100):
+(`--by-choice` splits it by what Jev chose, and it reports the party size each branch ends with).
+Five runs from `route1.state` to the Boulder Badge -- 868 decisions, 33,640 branches -- measured
+after the navigator and map fixes (#88, #94, #100, #102, #116) and the changes that let Jev shop
+and catch (#112, #113, #117, #118):
 
-- **Battles: Jev's move choice beats simple rules.** Choosing the first action the way Jev did
-  saved 17.6s [3.5, 32.4] of game time against a random move and 30.3s [8.7, 52.2] against always
-  using the strongest move. Against the best alternative in hindsight it is indistinguishable
-  (-11.5s [-32.2, 10.8]), and it never chose to switch, heal, run or catch.
-- **Overworld: Jev trains far more than the fastest path needs.** It chose the tall grass on 158
-  of 249 overworld decisions, each costing 264s [206, 322] against the best alternative; overall,
-  heading straight for the milestone would have been 218s [173, 259] faster, and even a random
-  option 59s [29, 89] faster. Every one of those training decisions was on the way to Brock, so
-  the Brock fight is inside the timed stretch. Training does buy safety: paired by seed against
-  heading for the milestone, it went into the gym half a level higher, fought Brock in 10.5
-  decisions instead of 14.2, and blacked out on 83% of branches instead of 91% -- but the
-  blackouts it prevents save less time than it costs (#103). Blackouts are that common because
-  every run fights to Brock with a single Pokémon; Jev never catches a second one (#110).
+- **Overworld: Jev's choices beat simple rules.** Choosing the way Jev did saved 57.7s [19.5, 94.8]
+  of game time against a random option and 142.3s [75.9, 205.9] against always heading straight
+  for the milestone; against the best alternative in hindsight it is indistinguishable (20.8s
+  [-31.6, 67.5]). It trained in the grass on 192 of 301 decisions, and that no longer costs
+  measurable time (28.2s [-40.8, 96.3]): the grass now says when there is no ball to catch with.
+- **Battles: indistinguishable from the rules.** Against the best alternative 3.3s [-26.9, 34.3];
+  against a random move -7.6s [-30.8, 14.6] and the strongest move -20.0s [-47.6, 8.6], intervals
+  that cross zero.
+- **The party is where the choices differ.** Where Jev could have entered the Viridian Mart before
+  the grass and did something else (23 decisions), the branches that entered it ended with a
+  party of three or more 48% of the time (mean 3.2 Pokémon), against 1% after Jev's choice (mean
+  1.07), for about five minutes more to the badge (median 1,637s against 1,322s). Jev passed that
+  up every time; across 16 recorded runs it shopped there once, and that run caught four Pokémon
+  and fought Brock with four (#110).
 
 Caveats: the intervals treat decisions as independent, while decisions in one run share a
-trajectory, so the true uncertainty is somewhat wider. 3.5% of branches hit the frame cap and 0.6%
-stalled at the Viridian Gym's locked door (#91, fixed after this series); both are left out of the
-means rather than counted. Jev is not deterministic -- the same question's probabilities vary by
-up to 0.15 across repeats -- so each distinct question was answered once and cached. Design:
+trajectory, so the true uncertainty is somewhat wider. 6.5% of branches hit the frame cap and are
+left out of the time means rather than counted as at least the cap; capped branches ended with two
+or more Pokémon far more often (26%) than finished ones (7%), so the time means lean against the
+branches that caught. Jev is not deterministic -- the same question's probabilities vary by up to
+0.16 across repeats -- so each distinct question was answered once and cached. Earlier series:
+#104 and #111 (before the shop and catch changes). Design:
 `docs/superpowers/specs/2026-09-23-counterfactual-branching-design.md`.
 
 `--runs-dir DIR` puts new run directories under `DIR` instead of `runs/`. `--no-log` skips the run
