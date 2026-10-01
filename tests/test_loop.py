@@ -1951,3 +1951,13 @@ def test_the_handover_from_brock_to_misty_clears_the_tried_marks():
     assert loop.memory.tried == set()
     done = [e for e in bc.events if e["type"] == "status" and e["message"] == "milestone done: beat_brock"]
     assert len(done) == 1
+
+
+def test_the_exits_a_map_offers_are_written_to_the_run_dir(tmp_path):
+    from jevplays.runlog import RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    emu = explore_emu(map_id=maps.PALLET_TOWN, connections={"north": maps.ROUTE_1})
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), run_dir=run_dir)
+    run(loop, 1)
+    assert maps.ROUTE_1 in run_dir.load_memory()["exits"][str(maps.PALLET_TOWN)]

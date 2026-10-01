@@ -546,3 +546,65 @@ def test_the_real_misty_milestone_is_withheld_until_the_run_has_walked_to_her_gy
     walked.note_crossing("cerulean_city", "cerulean_gym", dest_map=maps.CERULEAN_GYM)
     milestone = next(o for o in generate(emu, state, walked, BEAT_MISTY) if o.kind == "milestone")
     assert milestone.after == "talk_leader" and milestone.legs[-1].dest_map == maps.CERULEAN_GYM
+
+
+def test_generate_remembers_where_this_maps_exits_and_doors_lead_and_whether_it_is_a_building():
+    emu, state, memory = town()
+    generate(emu, state, memory, None)
+    assert memory.exits == {state.map_id: {13, 12, 41, 42}} and memory.buildings == set()
+    emu, state, memory = town(warps=[(7, 7, 0, ram.WARP_LAST_MAP)], connections={})
+    emu.mem[ram.wLastMap] = 12
+    generate(emu, state, memory, None)
+    assert memory.exits == {state.map_id: {12}} and memory.buildings == {state.map_id}
+    assert Memory.from_dict(memory.to_dict()) == memory
+
+
+def test_a_visited_building_whose_only_way_out_is_back_here_leads_nowhere_new():
+    """The Pewter Pokémon Center ping-pong past Brock."""
+    emu, state, memory = town()
+    memory.note_map(41)
+    memory.exits[41] = {state.map_id}
+    memory.buildings.add(41)
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["door_41"] == "visited, leads nowhere new"
+
+
+def test_a_building_with_another_way_out_is_plain_visited():
+    emu, state, memory = town()
+    memory.note_map(41)
+    memory.exits[41] = {state.map_id, 50}  # the Museum's stairs, say
+    memory.buildings.add(41)
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["door_41"] == "visited"
+
+
+def test_a_map_that_is_not_a_building_is_never_called_a_dead_end():
+    """Mt. Moon B2F offered only the ladder back from where the run stood, but it is several
+    walled-off pockets under one map id: its other ladders lead on."""
+    emu, state, memory = town()
+    memory.note_map(41)
+    memory.exits[41] = {state.map_id}
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["door_41"] == "visited"
+
+
+def test_the_way_back_outside_is_worded_for_the_map_it_leads_back_to():
+    """`go back outside` used to read `(new)` forever, so a building's exit never said it went
+    back to a town already seen. `wLastMap` names that town; the leg still carries WARP_LAST_MAP."""
+    emu, state, memory = town(warps=[(7, 7, 0, ram.WARP_LAST_MAP)], connections={})
+    emu.mem[ram.wLastMap] = 12
+    memory.note_map(12)
+    out = next(o for o in generate(emu, state, memory, None) if o.id == f"door_{ram.WARP_LAST_MAP}")
+    assert out.text == "go back outside" and out.dest_map == 12
+    assert out.legs[0].dest_map == ram.WARP_LAST_MAP
+    assert out.memory == "visited"
+
+
+def test_the_nurse_is_not_offered_when_the_whole_party_is_at_full_hp():
+    emu, state, memory = town()
+    hurt_lead(emu, hp=20, max_hp=20)
+    ids = [o.id for o in generate(emu, snapshot(emu), memory, None)]
+    assert "npc_3" not in ids
+    hurt_lead(emu, hp=19, max_hp=20)
+    nurse = next(o for o in generate(emu, snapshot(emu), memory, None) if o.id == "npc_3")
+    assert nurse.after == "heal"

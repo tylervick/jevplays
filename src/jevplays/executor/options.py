@@ -52,7 +52,7 @@ class Option:
     id: str  # exit_north | door_41 | npc_3 | grass | milestone | heal
     kind: str  # exit | door | npc | grass | milestone | heal
     text: str  # what Jev reads, without the memory word
-    memory: str  # new | visited | talked already | tried
+    memory: str  # new | visited | visited, leads nowhere new | talked already | tried
     legs: tuple[Leg, ...]
     after: str | None  # macro name: talk_<slot> | heal | shop | wander | the milestone's after | None
     target: tuple[int, int] | None = None  # the tile the npc option talks from
@@ -82,13 +82,21 @@ class Memory:
     """The map graph this run has walked: node name -> the links crossed out of it. `maps.route`
     searches it alongside the hand-written `maps.LINKS`, which is what lets a milestone or a heal
     trip be planned from a map nobody typed into the table (#35)."""
+    exits: dict[int, set[int]] = field(default_factory=dict)
+    """map id -> the maps its exits and doors were offered towards, from every map Jev was asked
+    on."""
+    buildings: set[int] = field(default_factory=set)
+    """Maps that offered a "go back outside" door: one room, or a few, with no walled-off pockets,
+    so what was offered from one spot is all there is. `dead_end` trusts only these."""
     ladders: set[tuple[int, int, int]] = field(default_factory=set)
     """(map id, destination map, destination warp id) of each ladder this run has used, either
     end: what makes one of several ladders to the same floor "visited" and the rest "new" (#129)."""
 
     @classmethod
     def empty(cls) -> "Memory":
-        return cls(visited_maps=set(), talked=set(), tried=set(), links={}, ladders=set())
+        return cls(
+            visited_maps=set(), talked=set(), tried=set(), links={}, exits={}, buildings=set(), ladders=set()
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -99,6 +107,8 @@ class Memory:
                 node: [[link.kind, link.dest_node, link.direction, link.dest_map] for link in crossed]
                 for node, crossed in sorted(self.links.items())
             },
+            "exits": {str(map_id): sorted(dests) for map_id, dests in sorted(self.exits.items())},
+            "buildings": sorted(self.buildings),
             "ladders": sorted([list(ladder) for ladder in self.ladders]),
         }
 
@@ -114,6 +124,8 @@ class Memory:
                 node: [maps.Link(kind=k, dest_node=n, direction=w, dest_map=m) for k, n, w, m in crossed]
                 for node, crossed in d.get("links", {}).items()
             },
+            exits={int(map_id): set(dests) for map_id, dests in d.get("exits", {}).items()},
+            buildings=set(d.get("buildings", [])),
             ladders={tuple(ladder) for ladder in d.get("ladders", [])},
         )
 
@@ -170,6 +182,24 @@ class Memory:
             return
         here.append(link)
 
+    def note_exits(self, map_id: int, options: "list[Option]") -> None:
+        """Remember where this map's exits and doors were offered towards (a union: what is offered
+        depends on where we stand), and whether it is a building."""
+        dests = {o.dest_map for o in options if o.kind in ("exit", "door") and o.dest_map is not None}
+        self.exits.setdefault(map_id, set()).update(dests)
+        if any(o.kind == "door" and o.legs[0].dest_map == maps.WARP_LAST_MAP for o in options):
+            self.buildings.add(map_id)
+
+    def dead_end(self, here: int, dest: int) -> bool:
+        """Whether `dest` is a building whose only way out is back to `here`.
+
+        A run past Brock walked in and out of the Pewter Pokémon Center for 20 minutes, both
+        doors reading "(visited)". A search over map ids beyond a door said more, and said it
+        wrongly in Mt. Moon: a cave floor is several walled-off pockets under one id, so "nothing
+        new beyond" was claimed for a floor whose other ladders lead on. A building has no pockets,
+        so this one-step claim is the one that holds."""
+        return dest in self.buildings and dest in self.exits and self.exits[dest] <= {here}
+
     def note_ladder(self, map_id: int, dest: int, warp_id: int) -> None:
         self.ladders.add((map_id, dest, warp_id))
 
@@ -191,7 +221,14 @@ class Memory:
             ladder = (map_id, option.dest_map, option.legs[0].warp_id)
             return "visited" if ladder in self.ladders else "new"
         if option.kind in ("exit", "door"):
-            return "visited" if option.dest_map in self.visited_maps else "new"
+            if option.dest_map not in self.visited_maps:
+                return "new"
+            # Only the dead end is said. "visited, leads on to new places" was tried and drew Jev
+            # harder than "new" did: 4 of 4 probe runs went Pewter <-> Route 2 thousands of times,
+            # both ways reading so, with Route 3 "(new)" at 0.20 against 0.72.
+            if self.dead_end(map_id, option.dest_map):
+                return "visited, leads nowhere new"
+            return "visited"
         return "new"
 
 
@@ -317,9 +354,9 @@ def _walk_to_landing(grid, here, warps, dest, warp_id, blocked) -> tuple[int, tu
 def _door_option(
     emu, dest: int, warp_id: int | None, state: GameState, where: tuple[int, int] | None = None
 ) -> Option:
-    # WARP_LAST_MAP means "back out the way you came in", whose map id is only in `wLastMap`,
-    # which nothing here reads: so this door is always `(new)` and its leg has no destination
-    # for the navigator to check. Reading `wLastMap` would fix both; deferred with #8.
+    # WARP_LAST_MAP means "back out the way you came in", whose map id is in `wLastMap`. The
+    # option's `dest_map` reads it so the door gets a memory word like any other; the leg
+    # keeps WARP_LAST_MAP, so the navigator still cannot check where it lands (#8).
     text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
     stock = world.mart_inventory(emu, dest)
     # Only a shelf the run can buy from is worth naming: broke, or with nothing the clerk
@@ -339,7 +376,7 @@ def _door_option(
         memory="",
         legs=(Leg(kind="warp", dest_map=dest, label=text, warp_id=warp_id),),
         after=None,
-        dest_map=dest,
+        dest_map=emu.mem[ram.wLastMap] if dest == ram.WARP_LAST_MAP else dest,
     )
 
 
@@ -406,6 +443,11 @@ def _npc_options(emu, grid: world.MapGrid, state: GameState) -> list[Option]:
         text = f"{option_verb(noun)} {noun} {place_words(state.tile, sprite, sprite.picture)}"
         after = f"talk_{sprite.slot}"
         if sprite.picture == NURSE_PICTURE:
+            if state.party and all(mon.hp == mon.max_hp for mon in state.party):
+                # Nobody to heal: like the broke clerk, the step would come back at once as a
+                # success and read "(new)" for good. Eight probe runs past Brock talked to a nurse
+                # at full HP for most of 30 minutes each.
+                continue
             after = "heal"
         elif sprite.picture == CLERK_PICTURE:
             if not shopping_list(state):
@@ -540,4 +582,5 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
             )
         )
 
+    memory.note_exits(state.map_id, drafts)
     return [replace(option, memory=memory.word(state.map_id, option)) for option in drafts]

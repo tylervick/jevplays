@@ -601,7 +601,10 @@ class Loop:
 
     async def _choose_option(self, state: GameState) -> int:
         """Generate what this map affords, ask Jev which one to do, and start it."""
+        known_exits = len(self.memory.exits.get(state.map_id, ()))
         options = generate(self.emu, state, self.memory, self.milestone)
+        if len(self.memory.exits.get(state.map_id, ())) != known_exits:
+            self._save_memory()
         if not options:
             if not self._announced_no_options:
                 self._announced_no_options = True
