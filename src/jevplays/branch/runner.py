@@ -15,6 +15,7 @@ from jevplays.brain.decision import BattleAction, ExploreAction
 from jevplays.branch.alternatives import NotReproducible, goal_by_id, prepare
 from jevplays.branch.stop import Stopper, cap_for
 from jevplays.branch.store import BranchKey, BranchResult, BranchSink, BranchStore, DecisionInfo
+from jevplays.executor.goals import DEFAULT_UNTIL, until_from_flags
 from jevplays.runlog import RunDir
 
 BRANCHED_KINDS = ("battle", "explore")
@@ -47,6 +48,8 @@ class Job:
     db: Path
     model: str
     battle_goal: str
+    until: str = DEFAULT_UNTIL
+    """The recorded run's `--until`, so a branch works towards the same last milestone."""
 
 
 class _Quiet:
@@ -84,6 +87,48 @@ def check_seeds(store: BranchStore, seeds: int) -> None:
     store.set_meta("seeds", str(seeds))
 
 
+def recorded_until(info: dict) -> str:
+    """The `until` the recorded run was started with, from its run.json."""
+    return until_from_flags(info.get("flags", {}))
+
+
+def branch_config(job: Job):
+    """The LoopConfig a branch plays under: unpaced, no frames, the recorded run's battle goal
+    and `until`. Without the `until`, a branch from a decision past the default spine would
+    finish at once, that spine being done (the Stopper's "done" is the milestone moving on)."""
+    from jevplays.loop import LoopConfig
+
+    return LoopConfig(paced=False, fps=1e-9, goal=job.battle_goal, until=job.until)
+
+
+def jobs_for(
+    c: Candidate, alternatives, seeds: int, done, *, rom: Path, db: Path, model: str, goal: str, until: str
+) -> list[Job]:
+    """One job per alternative and seed of a candidate decision, less those already done."""
+    jobs = []
+    for alt in alternatives:
+        for seed in range(seeds):
+            key = BranchKey(c.n, alt.key, seed)
+            if key in done:
+                continue
+            jobs.append(
+                Job(
+                    rom,
+                    c.state,
+                    c.sidecar["memory"],
+                    c.sidecar["milestone"],
+                    key,
+                    alt.action,
+                    cap_for(c.reference_frames),
+                    db,
+                    model,
+                    goal,
+                    until,
+                )
+            )
+    return jobs
+
+
 def run_branch(job: Job, brain_factory=None) -> BranchResult:
     """Play one branch to its end and record it. Runs in a worker process.
 
@@ -94,7 +139,7 @@ def run_branch(job: Job, brain_factory=None) -> BranchResult:
     from jevplays.brain.cache import CachedBrain, ModelDrift
     from jevplays.emulator.pyboy import Emulator
     from jevplays.executor.options import Memory
-    from jevplays.loop import Loop, LoopConfig
+    from jevplays.loop import Loop
 
     if brain_factory is None:
         from jevplays.brain.client import Brain
@@ -112,7 +157,7 @@ def run_branch(job: Job, brain_factory=None) -> BranchResult:
                 loop = Loop(
                     emu,
                     _Quiet(),
-                    LoopConfig(paced=False, fps=1e-9, goal=job.battle_goal),
+                    branch_config(job),
                     brain=brain,
                     run_dir=BranchSink(store, job.key),
                     memory=Memory.from_dict(job.memory),
@@ -166,6 +211,7 @@ def measure(run_path: Path, *, rom: Path, seeds: int, sample: int | None, worker
     info = run_dir.info()
     model = info.get("model", "")
     goal = info.get("flags", {}).get("battle_goal") or DEFAULT_GOAL
+    until = recorded_until(info)
     store.set_meta("run", str(run_path))
     store.set_meta("model", model)
     done = store.done()
@@ -192,25 +238,11 @@ def measure(run_path: Path, *, rom: Path, seeds: int, sample: int | None, worker
                     c.reference_frames,
                 )
             )
-            for alt in prepared.alternatives:
-                for seed in range(seeds):
-                    key = BranchKey(c.n, alt.key, seed)
-                    if key in done:
-                        continue
-                    jobs.append(
-                        Job(
-                            rom,
-                            c.state,
-                            c.sidecar["memory"],
-                            c.sidecar["milestone"],
-                            key,
-                            alt.action,
-                            cap_for(c.reference_frames),
-                            db,
-                            model,
-                            goal,
-                        )
-                    )
+            jobs.extend(
+                jobs_for(
+                    c, prepared.alternatives, seeds, done, rom=rom, db=db, model=model, goal=goal, until=until
+                )
+            )
     print(
         f"branch: {len(found)} decisions, {len(jobs)} branches to run, {len(done)} already done", flush=True
     )

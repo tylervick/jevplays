@@ -85,6 +85,26 @@ def finished_line(until: str, decisions: int) -> str:
     return f"finished: {finish_words(until)} after {decisions} decisions"
 
 
+class _ExplicitUntil(argparse.Action):
+    """`--until`, remembering that it was given: a resumed run keeps the `until` it was started
+    with unless the command line says otherwise, and a default cannot say that."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        namespace.until_given = True
+
+
+def resolve_until(args: argparse.Namespace, run_dir) -> str:
+    """The milestone this run stops at: `--until` when given; on `--resume`, what the run was
+    started with (run.json); otherwise the default. Takes a RunDir or None (untyped here so
+    importing cli never pulls the log module in)."""
+    from jevplays.executor.goals import until_from_flags
+
+    if getattr(args, "until_given", False) or run_dir is None or args.resume is None:
+        return args.until
+    return until_from_flags(run_dir.info().get("flags", {}))
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     rom = args.rom or _rom_from_env()
     if rom is None:
@@ -124,6 +144,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "until": args.until,
             },
         )
+    args.until = resolve_until(args, run_dir)
 
     from jevplays.dashboard.events import status_event
     from jevplays.dashboard.server import Broadcaster, create_app, serve
@@ -398,6 +419,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--until",
+        action=_ExplicitUntil,
         choices=BADGE_MILESTONES,
         default=DEFAULT_UNTIL,
         help="the last milestone the run works towards; it finishes there (default: %(default)s)",

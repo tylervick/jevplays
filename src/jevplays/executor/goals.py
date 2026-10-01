@@ -204,6 +204,12 @@ def milestone_by_id(goal_id: str) -> Goal:
     raise ValueError(f"unknown milestone {goal_id!r}")
 
 
+def until_from_flags(flags: dict) -> str:
+    """The `until` a run was started with, from its run.json flags. A run.json from before the
+    flag existed ran the default spine."""
+    return flags.get("until") or DEFAULT_UNTIL
+
+
 def finish_words(until: str) -> str:
     """What a run that stops at `until` says when it gets there: the badge, or the milestone."""
     goal = milestone_by_id(until)

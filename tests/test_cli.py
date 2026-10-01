@@ -237,3 +237,22 @@ def test_the_finished_line_names_the_badge_the_run_stopped_at():
 
     assert finished_line("beat_brock", 12) == "finished: Boulder Badge after 12 decisions"
     assert finished_line("beat_misty", 340) == "finished: Cascade Badge after 340 decisions"
+
+
+def test_a_resumed_run_keeps_the_until_it_was_started_with(tmp_path):
+    """`--resume` reads `until` back from run.json; an explicit `--until` wins, and a run.json
+    from before the flag existed means the Boulder Badge."""
+    from jevplays.cli import build_parser, resolve_until
+    from jevplays.runlog import RunDir
+
+    parser = build_parser()
+    misty = RunDir.create(tmp_path / "a", rom=None, flags={"until": "beat_misty"})
+    old = RunDir.create(tmp_path / "b", rom=None, flags={})
+
+    assert resolve_until(parser.parse_args(["run", "--resume", str(misty.path)]), misty) == "beat_misty"
+    explicit = parser.parse_args(["run", "--resume", str(misty.path), "--until", "beat_brock"])
+    assert resolve_until(explicit, misty) == "beat_brock"
+    assert resolve_until(parser.parse_args(["run", "--resume", str(old.path)]), old) == "beat_brock"
+    # A fresh run takes the flag as given.
+    assert resolve_until(parser.parse_args(["run", "--until", "beat_misty"]), None) == "beat_misty"
+    assert resolve_until(parser.parse_args(["run"]), None) == "beat_brock"
