@@ -328,3 +328,12 @@ def test_a_catchable_battle_offers_only_attacks_so_weakening_cannot_mean_leer():
     assert "weakest attack" in catchable["instructions"]
     plain = battle_questions(battle_state(make_state(), goal="g"))["move"]
     assert list(plain["criteria"]) == ["SCRATCH", "GROWL"]
+
+
+def test_the_catch_question_does_not_say_a_ball_needs_low_hp():
+    """A Poké Ball works at full HP on the common early Pokémon about a third of the time; the old
+    criteria said it needs low HP, so Jev answered ~0.1 to 4,414 full-HP targets while training on
+    Route 2 for a party it could not finish (#110)."""
+    qs = battle_questions(battle_state(make_state(bag=(BagItem("POKE BALL", 5),)), goal="g"))
+    true = qs["catch"]["criteria"]["true"]
+    assert "can work at any hp" in true and "low enough" not in true

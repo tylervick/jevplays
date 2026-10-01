@@ -153,8 +153,8 @@ def battle_questions(sj: dict) -> dict[str, dict]:
                 "type": "noul",
                 "instructions": "Should we throw a Poké Ball at `enemy_pokemon` this turn?",
                 "criteria": {
-                    "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough (asleep or paralyzed helps) for a ball to work",
-                    "false": "Its hp is still high, or it is not worth a ball",
+                    "true": "We want a party of at least three and `enemy_pokemon` is worth having: a ball can work at any hp, more often the lower its hp (asleep or paralyzed helps)",
+                    "false": "It is not worth a ball, or we would rather weaken it first",
                 },
             }
     qs["faint"] = {

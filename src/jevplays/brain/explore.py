@@ -69,9 +69,9 @@ def explore_questions(sj: dict) -> dict[str, dict]:
         "explore": {
             "type": "choice",
             "instructions": (
-                'Which of "options" should we do next to make progress in the game, given '
-                '"progress", the "milestone" and the "standing_goal"? Each option ends with a word '
-                "in parentheses: "
+                'Which of "options" should we do next to make progress towards both the '
+                '"milestone" and the "standing_goal", given "progress"? Each option ends with a '
+                "word in parentheses: "
                 '"new" means we have never done it from here; "visited" or "talked already" means '
                 'we have done it before and may not need to again; "tried" means we chose it '
                 "before from here and nothing came of it, so repeat it only if nothing else is "

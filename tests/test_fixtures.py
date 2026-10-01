@@ -149,12 +149,16 @@ def test_switch_fixture_agrees_with_the_switch_noul():
     labels = [m["label"] for m in f["state_json"]["bench"]]
     assert len(labels) == 1 and labels[0]  # whichever species Route 1 rolled when the state was made
     assert f["state_json"]["party"] == "two" and "switch" in f["questions"]
-    # Switch is the last rule before the plain move, so heal, catch, and run all have to have
-    # stayed under their thresholds for the switch noul to be what decided this turn.
+    # Switch is the last rule before the plain move, so heal and run have to have stayed under
+    # their thresholds for the switch noul to be what decided this turn. Catch comes before switch:
+    # since CATCH_THRESHOLD is 0.25 (#110) a wild battle with a ball can throw instead, and then the
+    # policy's own order is what is pinned.
     answers = f["response"]["answers"]
     assert answers.get("heal", {}).get("noul", 0.0) <= HEAL_THRESHOLD
-    assert answers.get("catch", {}).get("noul", 0.0) <= CATCH_THRESHOLD
     assert answers.get("run", {}).get("noul", 0.0) <= RUN_THRESHOLD
+    if answers.get("catch", {}).get("noul", 0.0) > CATCH_THRESHOLD:
+        assert d.action_value.kind == "catch" and d.fallback is False
+        return
     switch = f["response"]["answers"]["switch"]["noul"]
     assert (d.action_value.kind == "switch") == (switch > SWITCH_THRESHOLD)
     assert d.fallback is False
