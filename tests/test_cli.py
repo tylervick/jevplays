@@ -218,3 +218,22 @@ def test_branch_needs_at_least_two_seeds_and_one_worker(capsys):
         with pytest.raises(SystemExit):
             parser.parse_args(["branch", "run", *bad])
         assert bad[0] in capsys.readouterr().err
+
+
+def test_run_stops_at_the_boulder_badge_unless_told_to_go_on(capsys):
+    import pytest
+
+    from jevplays.cli import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["run"]).until == "beat_brock"
+    assert parser.parse_args(["run", "--until", "beat_misty"]).until == "beat_misty"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "--until", "get_starter"])  # not a badge: nothing to finish on
+
+
+def test_the_finished_line_names_the_badge_the_run_stopped_at():
+    from jevplays.cli import finished_line
+
+    assert finished_line("beat_brock", 12) == "finished: Boulder Badge after 12 decisions"
+    assert finished_line("beat_misty", 340) == "finished: Cascade Badge after 340 decisions"
