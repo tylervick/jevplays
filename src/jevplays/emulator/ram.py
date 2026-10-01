@@ -80,6 +80,11 @@ wTilesetBlocksPtr = 0xD52C  # little-endian ROM address
 wTilesetCollisionPtr = 0xD530
 wGrassRate = 0xD887  # how often this map's grass starts a battle; 0 means no wild Pokémon live here
 wGrassTile = 0xD535
+TILE_PAIR_COLLISIONS_LAND = 0x0C7E
+"""ROM bank 0: (tileset, tile, tile) triples, 0xFF-terminated. A step between those two tiles is
+blocked though both are walkable: a cave's raised floor against its lower floor (Mt. Moon)."""
+TILE_PAIR_ENTRY_SIZE = 3
+TILE_PAIR_MAX_ENTRIES = 32  # the table holds 11; a bound against reading past it
 COLLISION_END = 0xFF
 
 

@@ -1,5 +1,7 @@
 from jevplays.emulator import ram
 from jevplays.executor.world import (
+    WALKABLE,
+    MapGrid,
     Warp,
     astar,
     blocked_by_sprites,
@@ -8,6 +10,7 @@ from jevplays.executor.world import (
     reachable_edge,
     read_connections,
     read_warps,
+    tile_pairs,
     walkable_warps,
     warp_target,
 )
@@ -188,3 +191,44 @@ def test_a_door_mat_underfoot_on_the_maps_edge_is_taken_where_it_is():
     grid = build_grid(emu)
     mat = (Warp(3, 5, 0, 9), Warp(4, 5, 0, 9))
     assert warp_target(grid, (4, 5), mat, 9, frozenset()) == (4, 5)
+
+
+CAVE = [[0x20, 0x20, 0x05], [0x20, 0x20, 0x05], [0x20, 0x20, 0x20]]
+"""Mt. Moon in miniature: a raised floor (0x05) down the east side, the lower floor (0x20) elsewhere,
+walkable both."""
+
+
+def cave(pairs=frozenset({frozenset((0x20, 0x05))})):
+    return MapGrid([[WALKABLE] * 3 for _ in range(3)], CAVE, pairs)
+
+
+def test_a_step_across_a_refused_tile_pair_is_not_taken():
+    grid = cave()
+    assert grid.can_step((1, 0), (0, 0)) and not grid.can_step((1, 0), (2, 0))
+    assert grid.can_step((2, 0), (2, 1))  # along the raised floor is fine
+    assert astar(grid, (0, 0), (2, 0)) is None  # no way up from here
+    assert astar(cave(frozenset()), (0, 0), (2, 0)) == [(1, 0), (2, 0)]
+
+
+def test_reachable_edge_respects_tile_pairs():
+    assert reachable_edge(cave(), (0, 0), "east", frozenset()) == (2, 2)  # around, on the lower floor
+    assert reachable_edge(cave(frozenset()), (0, 0), "east", frozenset()) == (2, 0)
+
+
+def test_tile_pairs_are_read_for_the_current_tileset_from_the_games_table():
+    emu = FakeEmulator()
+    table = [0x11, 0x20, 0x05, 0x03, 0x30, 0x2E, 0x11, 0x05, 0x21, ram.COLLISION_END]
+    for i, byte in enumerate(table):
+        emu.mem.rom[(0, ram.TILE_PAIR_COLLISIONS_LAND + i)] = byte
+    assert tile_pairs(emu, 0x11) == {frozenset((0x20, 0x05)), frozenset((0x05, 0x21))}
+    assert tile_pairs(emu, 0x03) == {frozenset((0x30, 0x2E))}
+    assert tile_pairs(emu, 0x00) == frozenset()
+
+
+def test_build_grid_carries_the_tilesets_pairs():
+    emu = FakeEmulator()
+    install_map(emu, ROWS)
+    emu.mem[ram.wCurMapTileset] = 0x11
+    for i, byte in enumerate([0x11, 0x01, 0x02, ram.COLLISION_END]):
+        emu.mem.rom[(0, ram.TILE_PAIR_COLLISIONS_LAND + i)] = byte
+    assert build_grid(emu).pairs == {frozenset((0x01, 0x02))}

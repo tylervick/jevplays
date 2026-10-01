@@ -286,7 +286,7 @@ class Navigator:
     def _step_off(self, emu, state, grid, here, blocked) -> str:
         for direction, (dx, dy) in world.DIRECTIONS.items():
             cell = (here[0] + dx, here[1] + dy)
-            if grid.walkable(*cell) and cell not in blocked and step(emu, direction):
+            if grid.can_step(here, cell) and cell not in blocked and step(emu, direction):
                 return "moving"
         return self._fail_step(emu, state, None)
 

@@ -948,10 +948,10 @@ class Loop:
             (d, (here[0] + world.DIRECTIONS[d][0], here[1] + world.DIRECTIONS[d][1])) for d in order
         ]
         for direction, cell in neighbours:
-            if cell in grass and navigate.step(self.emu, direction):
+            if cell in grass and grid.can_step(here, cell) and navigate.step(self.emu, direction):
                 return True
         for direction, cell in neighbours:
-            if grid.walkable(*cell) and navigate.step(self.emu, direction):
+            if grid.can_step(here, cell) and navigate.step(self.emu, direction):
                 return True
         return False
 
