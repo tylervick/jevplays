@@ -35,8 +35,11 @@ COUNTER_PICTURES = frozenset((NURSE_PICTURE, CLERK_PICTURE))
 CENTERS: tuple[tuple[str, int], ...] = (
     ("viridian_pokecenter", maps.VIRIDIAN_POKECENTER),
     ("pewter_pokecenter", maps.PEWTER_POKECENTER),
+    ("mt_moon_pokecenter", maps.MT_MOON_POKECENTER),
+    ("cerulean_pokecenter", maps.CERULEAN_POKECENTER),
 )
-"""Pokémon Center nodes the `heal` option can route to, and their map ids."""
+"""Pokémon Center nodes the `heal` option can route to, and their map ids. The ones past Pewter
+are reached only over the run's walked graph: until the run has been inside, there is no route."""
 
 _SPRITES_PATH = Path(__file__).resolve().parent.parent / "state" / "data" / "sprites.json"
 SPRITE_NOUNS: dict[int, str] = {

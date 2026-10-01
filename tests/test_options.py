@@ -463,3 +463,35 @@ def test_a_milestone_with_a_destination_is_not_offered_until_the_run_has_walked_
     emu, state, _memory = town(map_id=maps.CERULEAN_GYM)
     opts = generate(emu, state, walked, far)
     assert opts[0].kind == "milestone" and opts[0].legs == () and opts[0].after == "talk_leader"
+
+
+def test_a_hurt_lead_in_cerulean_heals_at_the_cerulean_center_once_the_run_has_walked_there():
+    """Past Pewter the heal trip finds the nearest center the run has walked to, not the one
+    before Mt. Moon; the way there is still only the walked graph."""
+    emu, _state, _memory = town(map_id=maps.CERULEAN_CITY)
+    hurt_lead(emu)
+    state = snapshot(emu)
+    walked = Memory.empty()
+    walked.note_crossing("pewter_city", "cerulean_city", direction="east")
+    walked.note_crossing("cerulean_city", "cerulean_pokecenter", dest_map=maps.CERULEAN_POKECENTER)
+    heal = next(o for o in generate(emu, state, walked, None) if o.kind == "heal")
+    assert heal.text == "go heal at Cerulean Pokémon Center"
+    assert [leg.dest_map for leg in heal.legs] == [maps.CERULEAN_POKECENTER]
+
+    # Without that crossing the nearest known center is Pewter's, back the way the run came.
+    back = Memory.empty()
+    back.note_crossing("pewter_city", "cerulean_city", direction="east")
+    heal = next(o for o in generate(emu, state, back, None) if o.kind == "heal")
+    assert heal.text == "go heal at Pewter Pokémon Center"
+
+
+def test_the_past_pewter_centers_heal_and_are_not_left_to_heal_in():
+    from jevplays.executor.options import CENTERS
+
+    assert ("cerulean_pokecenter", maps.CERULEAN_POKECENTER) in CENTERS
+    assert ("mt_moon_pokecenter", maps.MT_MOON_POKECENTER) in CENTERS
+    assert maps.node_of(68, 0, 0) == "mt_moon_pokecenter"
+    for center in (maps.CERULEAN_POKECENTER, 68):
+        emu, _state, _memory = town(map_id=center)
+        hurt_lead(emu)
+        assert not any(o.kind == "heal" for o in generate(emu, snapshot(emu), Memory.empty(), None))
