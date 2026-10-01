@@ -17,6 +17,7 @@ from jevplays.emulator.ram import (
     MON_TYPE2,
     SPRITE_COORD_OFFSET,
     SPRITE_SLOT_SIZE,
+    TILE_PAIR_COLLISIONS_LAND,
     TILEMAP_HEIGHT,
     TILEMAP_SIZE,
     TILEMAP_WIDTH,
@@ -275,6 +276,7 @@ def install_map(emu, rows, warps=(), connections=None, tileset=(25, 0x4000, 0x50
         m.rom[(bank, blocks_addr + 32 + i)] = GRASS_TILE  # block 2: every tile is tall grass
     m.rom[(collision_bank, collision_addr)] = 1
     m.rom[(collision_bank, collision_addr + 1)] = COLLISION_END
+    m.rom[(0, TILE_PAIR_COLLISIONS_LAND)] = COLLISION_END  # no tile pairs, as for most tilesets
     height, width = len(rows) // 2, len(rows[0]) // 2
     m[wCurMapWidth], m[wCurMapHeight] = width, height
     stride = width + 2 * MAP_BORDER_BLOCKS

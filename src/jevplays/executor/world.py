@@ -30,16 +30,37 @@ class Warp:
 
 
 class MapGrid:
-    def __init__(self, cells: list[list[int]]) -> None:
+    def __init__(
+        self,
+        cells: list[list[int]],
+        tiles: list[list[int]] | None = None,
+        pairs: frozenset[frozenset[int]] = frozenset(),
+    ) -> None:
         self.cells = cells
         self.height = len(cells)
         self.width = len(cells[0]) if cells else 0
+        self.tiles = tiles
+        """Each cell's collision tile (its quadrant's bottom-left), for `pairs`."""
+        self.pairs = pairs
+        """Tile pairs this map's tileset will not step between (`ram.TILE_PAIR_COLLISIONS_LAND`)."""
 
     def in_bounds(self, x: int, y: int) -> bool:
         return 0 <= x < self.width and 0 <= y < self.height
 
     def walkable(self, x: int, y: int) -> bool:
         return self.in_bounds(x, y) and self.cells[y][x] != BLOCKED
+
+    def can_step(self, here: tuple[int, int], there: tuple[int, int]) -> bool:
+        """Whether one step from `here` lands on `there`: walkable, and not across a tile pair the
+        game refuses. Mt. Moon's raised floor (0x05) against its lower floor (0x20) are both
+        walkable; a path between them made every probe run past Brock shuffle on one tile, a wild
+        battle every few steps, until the option ran out."""
+        if not self.walkable(*there):
+            return False
+        if self.tiles is None or not self.pairs or not self.in_bounds(*here):
+            return True
+        pair = frozenset((self.tiles[here[1]][here[0]], self.tiles[there[1]][there[0]]))
+        return pair not in self.pairs
 
     def is_grass(self, x: int, y: int) -> bool:
         return self.in_bounds(x, y) and self.cells[y][x] == GRASS
@@ -108,6 +129,7 @@ def build_grid(emu) -> MapGrid:
     if grass != 0xFF:
         walkable.add(grass)
     cells = [[0] * (width * 2) for _ in range(height * 2)]
+    tiles = [[0] * (width * 2) for _ in range(height * 2)]
     for by in range(height):
         for bx in range(width):
             block = mem[
@@ -121,13 +143,28 @@ def build_grid(emu) -> MapGrid:
                     # bottom-right is not can be walked forever without a battle (#100).
                     bottom = base + (qy * 2 + 1) * 4 + qx * 2
                     left, right = _rom_byte(emu, bank, bottom), _rom_byte(emu, bank, bottom + 1)
+                    tiles[by * 2 + qy][bx * 2 + qx] = left
                     if left not in walkable:
                         cells[by * 2 + qy][bx * 2 + qx] = BLOCKED
                     elif right == grass and grass != 0xFF:
                         cells[by * 2 + qy][bx * 2 + qx] = GRASS
                     else:
                         cells[by * 2 + qy][bx * 2 + qx] = WALKABLE
-    return MapGrid(cells)
+    return MapGrid(cells, tiles, tile_pairs(emu, mem[ram.wCurMapTileset]))
+
+
+def tile_pairs(emu, tileset: int) -> frozenset[frozenset[int]]:
+    """The tile pairs `tileset` will not step between, read from the game's own table."""
+    pairs = set()
+    for i in range(ram.TILE_PAIR_MAX_ENTRIES):
+        addr = ram.TILE_PAIR_COLLISIONS_LAND + i * ram.TILE_PAIR_ENTRY_SIZE
+        entry = _rom_byte(emu, 0, addr)
+        if entry == ram.COLLISION_END:
+            break
+        first, second = _rom_byte(emu, 0, addr + 1), _rom_byte(emu, 0, addr + 2)
+        if entry == tileset and first != second:  # one tile against itself is no boundary
+            pairs.add(frozenset((first, second)))
+    return frozenset(pairs)
 
 
 def blocked_by_sprites(sprites: tuple[Sprite, ...]) -> set[tuple[int, int]]:
@@ -162,7 +199,7 @@ def astar(
             return path[::-1]
         for dx, dy in DIRECTIONS.values():
             nxt = (current[0] + dx, current[1] + dy)
-            if not grid.walkable(*nxt) or nxt in blocked:
+            if not grid.can_step(current, nxt) or nxt in blocked:
                 continue
             new_cost = cost[current] + 1
             if new_cost < cost.get(nxt, 1 << 30):
@@ -193,7 +230,7 @@ def reachable_edge(
             return cur
         for dx, dy in DIRECTIONS.values():
             nxt = (cur[0] + dx, cur[1] + dy)
-            if grid.walkable(*nxt) and nxt not in blocked and nxt not in seen:
+            if grid.can_step(cur, nxt) and nxt not in blocked and nxt not in seen:
                 seen.add(nxt)
                 queue.append(nxt)
     return None
