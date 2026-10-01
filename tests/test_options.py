@@ -188,6 +188,16 @@ def test_the_way_back_outside_is_worded_for_the_map_it_leads_back_to():
     assert out.memory == "visited, leads nowhere new"
 
 
+def test_the_nurse_is_not_offered_when_the_whole_party_is_at_full_hp():
+    emu, state, memory = town()
+    hurt_lead(emu, hp=20, max_hp=20)
+    ids = [o.id for o in generate(emu, snapshot(emu), memory, None)]
+    assert "npc_3" not in ids
+    hurt_lead(emu, hp=19, max_hp=20)
+    nurse = next(o for o in generate(emu, snapshot(emu), memory, None) if o.id == "npc_3")
+    assert nurse.after == "heal"
+
+
 def test_npc_plan_walks_to_a_neighbour_and_faces_the_sprite():
     emu, state, memory = town()
     nurse = next(o for o in generate(emu, state, memory, None) if o.id == "npc_3")

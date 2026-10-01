@@ -375,6 +375,11 @@ def _npc_options(emu, grid: world.MapGrid, state: GameState) -> list[Option]:
         text = f"{option_verb(noun)} {noun} {place_words(state.tile, sprite, sprite.picture)}"
         after = f"talk_{sprite.slot}"
         if sprite.picture == NURSE_PICTURE:
+            if state.party and all(mon.hp == mon.max_hp for mon in state.party):
+                # Nobody to heal: like the broke clerk, the step would come back at once as a
+                # success and read "(new)" for good. Eight probe runs past Brock talked to a nurse
+                # at full HP for most of 30 minutes each.
+                continue
             after = "heal"
         elif sprite.picture == CLERK_PICTURE:
             if not shopping_list(state):
