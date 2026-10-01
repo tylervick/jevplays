@@ -6,7 +6,7 @@ from jevplays.brain.decision import PromptAction
 from jevplays.brain.errors import BrainUnavailable
 from jevplays.emulator import ram
 from jevplays.executor import maps
-from jevplays.executor.goals import MILESTONES
+from jevplays.executor.goals import BEAT_MISTY, MILESTONES
 from jevplays.executor.options import Option
 from jevplays.executor.world import build_grid
 from jevplays.loop import OPTION_BUDGET_FRAMES, Loop, LoopConfig, local_decision
@@ -1808,8 +1808,9 @@ def test_talk_leader_talks_to_the_northernmost_person_from_the_tile_below(monkey
     calls = []
     monkeypatch.setattr(loop_module, "talk_to", lambda emu, x, y, face: calls.append((x, y, face)) or True)
     loop = Loop(overworld_emu(), RecordingBroadcaster(), LoopConfig(paced=False))
+    loop.milestone = BEAT_MISTY
     sprites = (Sprite(slot=1, picture=6, x=2, y=7), Sprite(slot=2, picture=9, x=4, y=2), Sprite(3, 6, 6, 5))
-    state = overworld_state(map_id=maps.CERULEAN_GYM, sprites=sprites)
+    state = overworld_state(map_id=maps.CERULEAN_GYM, x=4, y=6, sprites=sprites)
     assert loop._apply_macro("talk_leader", state) is True
     assert calls == [(4, 3, "up")]
 
@@ -1842,3 +1843,78 @@ def test_until_beat_misty_carries_on_past_the_boulder_badge_and_finishes_at_the_
 
 def test_until_defaults_to_the_boulder_badge():
     assert LoopConfig().until == "beat_brock"
+
+
+def _recording_talk(monkeypatch):
+    from jevplays import loop as loop_module
+
+    calls = []
+    monkeypatch.setattr(loop_module, "talk_to", lambda emu, x, y, face: calls.append((x, y, face)) or True)
+    return calls
+
+
+def test_talk_leader_talks_from_a_reachable_side_when_the_tile_below_is_taken(monkeypatch):
+    """The tile and facing come from the same search the NPC options use (`_npc_target`), not
+    from assuming the leader can be reached from below: here a trainer stands there."""
+    from jevplays.state.snapshot import Sprite
+
+    calls = _recording_talk(monkeypatch)
+    loop = Loop(overworld_emu(), RecordingBroadcaster(), LoopConfig(paced=False))
+    loop.milestone = BEAT_MISTY
+    sprites = (Sprite(slot=1, picture=9, x=4, y=2), Sprite(slot=2, picture=6, x=4, y=3))
+    state = overworld_state(map_id=maps.CERULEAN_GYM, x=2, y=5, sprites=sprites)
+    assert loop._apply_macro("talk_leader", state) is True
+    assert calls == [(3, 2, "right")]
+
+
+def test_talk_leader_breaks_a_tie_for_northernmost_by_x_then_slot(monkeypatch):
+    from jevplays.state.snapshot import Sprite
+
+    calls = _recording_talk(monkeypatch)
+    loop = Loop(overworld_emu(), RecordingBroadcaster(), LoopConfig(paced=False))
+    loop.milestone = BEAT_MISTY
+    east, west = Sprite(slot=1, picture=9, x=8, y=2), Sprite(slot=2, picture=6, x=4, y=2)
+    for sprites in ((east, west), (west, east)):
+        calls.clear()
+        state = overworld_state(map_id=maps.CERULEAN_GYM, x=4, y=6, sprites=sprites)
+        assert loop._apply_macro("talk_leader", state) is True
+        assert calls == [(4, 3, "up")]  # the western one, whichever order RAM lists them in
+
+
+def test_talk_leader_does_nothing_off_the_milestones_map(monkeypatch):
+    from jevplays.state.snapshot import Sprite
+
+    calls = _recording_talk(monkeypatch)
+    emu = overworld_emu()
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False))
+    sprites = (Sprite(slot=1, picture=9, x=4, y=2),)
+    loop.milestone = BEAT_MISTY
+    assert (
+        loop._apply_macro("talk_leader", overworld_state(map_id=maps.PEWTER_GYM, x=4, y=6, sprites=sprites))
+        is False
+    )
+    loop.milestone = None
+    assert (
+        loop._apply_macro("talk_leader", overworld_state(map_id=maps.CERULEAN_GYM, x=4, y=6, sprites=sprites))
+        is False
+    )
+    assert calls == [] and emu.presses == []
+
+
+def test_the_handover_from_brock_to_misty_clears_the_tried_marks():
+    """With `until=beat_misty` the Boulder Badge is a milestone done, not the end: the run takes
+    up beat_misty, and what came to nothing before the badge may not now (#110)."""
+    emu, bc = explore_emu(map_id=maps.PEWTER_GYM), RecordingBroadcaster()
+    for flag in ("got_starter", "got_pokedex", "beat_brock"):
+        set_flag(emu, flag)
+    loop = Loop(emu, bc, LoopConfig(paced=False, until="beat_misty"))
+    asyncio.run(loop._refresh_milestone(snapshot(emu)))
+    assert loop.milestone.id == "beat_brock"
+    loop.memory.note_tried(maps.PEWTER_MART, "npc_1")
+
+    emu.mem[ram.wObtainedBadges] = 1
+    asyncio.run(loop._refresh_milestone(snapshot(emu)))
+    assert loop.milestone.id == "beat_misty" and not loop.finished
+    assert loop.memory.tried == set()
+    done = [e for e in bc.events if e["type"] == "status" and e["message"] == "milestone done: beat_brock"]
+    assert len(done) == 1

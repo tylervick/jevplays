@@ -58,6 +58,7 @@ from jevplays.executor.goals import STARTER_TILES, Goal
 from jevplays.executor.maps import VIRIDIAN_MART
 from jevplays.executor.navigate import Navigator, goto_far
 from jevplays.executor.options import Memory, Option, generate
+from jevplays.executor.options import _npc_target as npc_target
 from jevplays.executor.talk import talk_to
 from jevplays.runlog import CHECKPOINT_EVERY, RunDir
 from jevplays.state.modes import Mode
@@ -823,14 +824,7 @@ class Loop:
         if macro == "talk_brock":
             return talk_to(emu, 4, 2, "up")
         if macro == "talk_leader":
-            # A gym leader stands at the back of the gym, north of every trainer in it: talk to
-            # the northernmost person from the tile in front of them. Brock keeps his verified
-            # tile above; this one is read off the map rather than typed in per gym.
-            people = [sprite for sprite in state.sprites if sprite.picture]
-            if not people:
-                return False
-            leader = min(people, key=lambda sprite: sprite.y)
-            return talk_to(emu, leader.x, leader.y + 1, "up")
+            return self._talk_leader(state)
         if macro == "heal":
             return shop.heal_at_nurse(emu)
         if macro == "shop":
@@ -849,6 +843,28 @@ class Loop:
             # nothing to do here but hand it the tile and the facing the option carries.
             return talk_to(emu, *self.option.target, self.option.face)
         raise ValueError(f"unknown option macro {macro!r}")
+
+    def _talk_leader(self, state: GameState) -> bool:
+        """Talk to the gym leader: the northernmost person on the map, since a leader stands at
+        the back of the gym, north of every trainer in it (ties go west, then to the lower slot,
+        so the choice does not depend on RAM order). Where to stand and which way to face come
+        from the search the NPC options use, which handles a neighbour that is taken or a counter
+        in between. Brock keeps his verified tile (`talk_brock`). Only on the map the active
+        milestone happens on: anywhere else the northernmost person is not a leader."""
+        destination = self.milestone.destination if self.milestone is not None else None
+        if destination is None or state.map_id != maps.map_id_of(destination):
+            return False
+        people = [sprite for sprite in state.sprites if sprite.picture]
+        if not people:
+            return False
+        leader = min(people, key=lambda sprite: (sprite.y, sprite.x, sprite.slot))
+        grid = world.build_grid(self.emu)
+        blocked = frozenset(world.blocked_by_sprites(state.sprites))
+        target = npc_target(grid, blocked, state.tile, leader)
+        if target is None:
+            return False
+        _length, tile, face = target
+        return talk_to(self.emu, *tile, face)
 
     def _take_starter(self, species: str) -> bool:
         """Take the ball Jev chose. The balls on Oak's table are not sprites, so this is a

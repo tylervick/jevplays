@@ -495,3 +495,21 @@ def test_the_past_pewter_centers_heal_and_are_not_left_to_heal_in():
         emu, _state, _memory = town(map_id=center)
         hurt_lead(emu)
         assert not any(o.kind == "heal" for o in generate(emu, snapshot(emu), Memory.empty(), None))
+
+
+def test_the_real_misty_milestone_is_withheld_until_the_run_has_walked_to_her_gym():
+    """The no-route rule with BEAT_MISTY itself, not a stub: from Pewter with nothing walked east
+    it is not offered; with the crossings to the gym it is, and leads there."""
+    from dataclasses import replace as with_fields
+
+    from jevplays.executor.goals import BEAT_MISTY
+
+    emu, _state, _memory = town(map_id=maps.PEWTER_CITY)
+    state = with_fields(snapshot(emu), badges=1)
+    assert not any(o.kind == "milestone" for o in generate(emu, state, Memory.empty(), BEAT_MISTY))
+
+    walked = Memory.empty()
+    walked.note_crossing("pewter_city", "cerulean_city", direction="east")
+    walked.note_crossing("cerulean_city", "cerulean_gym", dest_map=maps.CERULEAN_GYM)
+    milestone = next(o for o in generate(emu, state, walked, BEAT_MISTY) if o.kind == "milestone")
+    assert milestone.after == "talk_leader" and milestone.legs[-1].dest_map == maps.CERULEAN_GYM
