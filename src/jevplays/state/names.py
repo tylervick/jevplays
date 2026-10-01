@@ -115,7 +115,14 @@ def type_name(type_id: int) -> str:
     return TYPES.get(type_id, f"Type {type_id}")
 
 
+TM_IDS = range(201, 251)
+"""TM01..TM50, which the game names by number rather than in its item name table. A probe past
+Brock showed Jev a bag holding "Item 234": TM34, from Brock."""
+
+
 def item_name(item_id: int) -> str:
+    if item_id in TM_IDS:
+        return f"TM{item_id - TM_IDS.start + 1:02d}"
     return ITEMS.get(item_id, f"Item {item_id}")
 
 
