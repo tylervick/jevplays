@@ -125,6 +125,67 @@ def test_memory_words():
     assert Memory.from_dict(memory.to_dict()) == memory
 
 
+def test_generate_remembers_where_this_maps_exits_and_doors_lead():
+    emu, state, memory = town()
+    generate(emu, state, memory, None)
+    assert memory.exits == {state.map_id: {13, 12, 41, 42}}
+    assert Memory.from_dict(memory.to_dict()) == memory
+
+
+def test_a_visited_door_into_a_dead_end_leads_nowhere_new():
+    """The Pewter Pokémon Center ping-pong past Brock: a building whose only way out is back
+    here has nothing beyond it, however many times it is visited."""
+    emu, state, memory = town()
+    memory.note_map(41)
+    memory.exits[41] = {state.map_id}
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["door_41"] == "visited, leads nowhere new"
+
+
+def test_a_visited_exit_with_an_unvisited_map_beyond_it_leads_on():
+    emu, state, memory = town()
+    memory.note_map(12)
+    memory.note_map(50)
+    memory.exits[12] = {state.map_id, 50}
+    memory.exits[50] = {12, 51}  # 51, two maps out, has never been visited
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["exit_east"] == "visited, leads on to new places"
+
+
+def test_a_new_place_reached_only_back_through_here_does_not_count():
+    """The search never comes back through the map we stand on: the Center's door leads nowhere
+    new even though this town's own north exit is unvisited."""
+    emu, state, memory = town()
+    memory.note_map(41)
+    memory.exits[41] = {state.map_id}
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["exit_north"] == "new" and words["door_41"] == "visited, leads nowhere new"
+
+
+def test_a_visited_map_whose_exits_were_never_seen_stays_plain_visited():
+    """A map crossed on the way somewhere, never asked on, has unknown exits: neither claim is
+    true, so the word is the one it always was."""
+    emu, state, memory = town()
+    memory.note_map(12)
+    memory.note_map(50)
+    memory.exits[12] = {state.map_id, 50}
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["exit_east"] == "visited"
+
+
+def test_the_way_back_outside_is_worded_for_the_map_it_leads_back_to():
+    """`go back outside` used to read `(new)` forever, so a building's exit never said it went
+    back to a town already seen. `wLastMap` names that town; the leg still carries WARP_LAST_MAP."""
+    emu, state, memory = town(warps=[(7, 7, 0, ram.WARP_LAST_MAP)], connections={})
+    emu.mem[ram.wLastMap] = 12
+    memory.note_map(12)
+    memory.exits[12] = {state.map_id}
+    out = next(o for o in generate(emu, state, memory, None) if o.id == f"door_{ram.WARP_LAST_MAP}")
+    assert out.text == "go back outside" and out.dest_map == 12
+    assert out.legs[0].dest_map == ram.WARP_LAST_MAP
+    assert out.memory == "visited, leads nowhere new"
+
+
 def test_npc_plan_walks_to_a_neighbour_and_faces_the_sprite():
     emu, state, memory = town()
     nurse = next(o for o in generate(emu, state, memory, None) if o.id == "npc_3")

@@ -1054,6 +1054,16 @@ def test_the_memory_is_written_to_the_run_dir_as_it_changes(tmp_path):
     assert run_dir.load_memory()["visited_maps"] == [maps.PALLET_TOWN]
 
 
+def test_the_exits_a_map_offers_are_written_to_the_run_dir(tmp_path):
+    from jevplays.runlog import RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    emu = explore_emu(map_id=maps.PALLET_TOWN, connections={"north": maps.ROUTE_1})
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), run_dir=run_dir)
+    run(loop, 1)
+    assert maps.ROUTE_1 in run_dir.load_memory()["exits"][str(maps.PALLET_TOWN)]
+
+
 def test_a_resumed_loop_starts_from_the_memory_it_is_handed():
     from jevplays.executor.options import Memory
 

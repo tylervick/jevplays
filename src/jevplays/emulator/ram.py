@@ -72,6 +72,7 @@ wNumberOfWarps = 0xD3AE
 wWarpEntries = 0xD3AF  # 4 bytes each: y, x, warp id, destination map
 WARP_ENTRY_SIZE = 4
 WARP_LAST_MAP = 0xFF  # destination "the map we came from"
+wLastMap = 0xD365  # the map a WARP_LAST_MAP warp leads back to
 
 # Tileset tables in ROM: blocks are 16 tile ids (4x4, row-major); the collision list is the
 # walkable tile ids, 0xFF-terminated; the grass tile is walkable too when it is not 0xFF.

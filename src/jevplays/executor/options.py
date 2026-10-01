@@ -52,7 +52,7 @@ class Option:
     id: str  # exit_north | door_41 | npc_3 | grass | milestone | heal
     kind: str  # exit | door | npc | grass | milestone | heal
     text: str  # what Jev reads, without the memory word
-    memory: str  # new | visited | talked already | tried
+    memory: str  # new | visited[, leads on to new places | leads nowhere new] | talked already | tried
     legs: tuple[Leg, ...]
     after: str | None  # macro name: talk_<slot> | heal | shop | wander | the milestone's after | None
     target: tuple[int, int] | None = None  # the tile the npc option talks from
@@ -82,10 +82,13 @@ class Memory:
     """The map graph this run has walked: node name -> the links crossed out of it. `maps.route`
     searches it alongside the hand-written `maps.LINKS`, which is what lets a milestone or a heal
     trip be planned from a map nobody typed into the table (#35)."""
+    exits: dict[int, set[int]] = field(default_factory=dict)
+    """map id -> the maps its exits and doors were offered towards, from every map Jev was asked
+    on. What `word` searches to say whether a visited exit leads anywhere new."""
 
     @classmethod
     def empty(cls) -> "Memory":
-        return cls(visited_maps=set(), talked=set(), tried=set(), links={})
+        return cls(visited_maps=set(), talked=set(), tried=set(), links={}, exits={})
 
     def to_dict(self) -> dict:
         return {
@@ -96,6 +99,7 @@ class Memory:
                 node: [[link.kind, link.dest_node, link.direction, link.dest_map] for link in crossed]
                 for node, crossed in sorted(self.links.items())
             },
+            "exits": {str(map_id): sorted(dests) for map_id, dests in sorted(self.exits.items())},
         }
 
     @classmethod
@@ -110,6 +114,7 @@ class Memory:
                 node: [maps.Link(kind=k, dest_node=n, direction=w, dest_map=m) for k, n, w, m in crossed]
                 for node, crossed in d.get("links", {}).items()
             },
+            exits={int(map_id): set(dests) for map_id, dests in d.get("exits", {}).items()},
         )
 
     def note_map(self, map_id: int) -> None:
@@ -157,6 +162,34 @@ class Memory:
             return
         here.append(link)
 
+    def note_exits(self, map_id: int, options: "list[Option]") -> None:
+        """Remember where this map's exits and doors were offered towards. A union: what is
+        offered depends on where we stand (Route 2's two halves), and any of it is a way on."""
+        dests = {o.dest_map for o in options if o.kind in ("exit", "door") and o.dest_map is not None}
+        self.exits.setdefault(map_id, set()).update(dests)
+
+    def leads_on(self, here: int, dest: int) -> bool | None:
+        """Whether the maps beyond `dest` include one not yet visited, without coming back
+        through `here`: True when one does, False when every map out there is known and visited,
+        None when the search reaches a map whose exits were never seen (crossed on the way to
+        somewhere, never asked on), so there is nothing true to say.
+
+        A run past Brock walked in and out of the Pewter Pokémon Center for 20 minutes, both
+        doors reading "(visited)" while Route 3 led on to Mt. Moon's unvisited floors. Which
+        way leads somewhere new is a fact about the walked map, so code says it."""
+        seen, todo, unknown = {here, dest}, [dest], False
+        while todo:
+            map_id = todo.pop()
+            if map_id not in self.exits:
+                unknown = True
+                continue
+            for beyond in self.exits[map_id] - seen:
+                if beyond not in self.visited_maps:
+                    return True
+                seen.add(beyond)
+                todo.append(beyond)
+        return None if unknown else False
+
     def note_talked(self, map_id: int, slot: int) -> None:
         self.talked.add((map_id, slot))
 
@@ -170,7 +203,12 @@ class Memory:
             slot = int(option.id.split("_", 1)[1])
             return "talked already" if (map_id, slot) in self.talked else "new"
         if option.kind in ("exit", "door"):
-            return "visited" if option.dest_map in self.visited_maps else "new"
+            if option.dest_map not in self.visited_maps:
+                return "new"
+            beyond = self.leads_on(map_id, option.dest_map)
+            if beyond is None:
+                return "visited"
+            return "visited, leads on to new places" if beyond else "visited, leads nowhere new"
         return "new"
 
 
@@ -247,9 +285,9 @@ def _exit_options(
 def _door_options(emu, warps: tuple[world.Warp, ...], state: GameState) -> list[Option]:
     options = []
     for dest in sorted({w.dest for w in warps}):
-        # WARP_LAST_MAP means "back out the way you came in", whose map id is only in `wLastMap`,
-        # which nothing here reads: so this door is always `(new)` and its leg has no destination
-        # for the navigator to check. Reading `wLastMap` would fix both; deferred with #8.
+        # WARP_LAST_MAP means "back out the way you came in", whose map id is in `wLastMap`. The
+        # option's `dest_map` reads it so the door gets a memory word like any other; the leg
+        # keeps WARP_LAST_MAP, so the navigator still cannot check where it lands (#8).
         text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
         stock = world.mart_inventory(emu, dest)
         # Only a shelf the run can buy from is worth naming: broke, or with nothing the clerk
@@ -266,7 +304,7 @@ def _door_options(emu, warps: tuple[world.Warp, ...], state: GameState) -> list[
                 memory="",
                 legs=(Leg(kind="warp", dest_map=dest, label=text),),
                 after=None,
-                dest_map=dest,
+                dest_map=emu.mem[ram.wLastMap] if dest == ram.WARP_LAST_MAP else dest,
             )
         )
     return options
@@ -469,4 +507,5 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
             )
         )
 
+    memory.note_exits(state.map_id, drafts)
     return [replace(option, memory=memory.word(state.map_id, option)) for option in drafts]
