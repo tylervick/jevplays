@@ -1794,3 +1794,51 @@ def test_tried_marks_expire_when_a_milestone_is_done(monkeypatch):
     monkeypatch.setattr(goal_table, "active_milestone", lambda state: MILESTONES[2])
     asyncio.run(loop._refresh_milestone(snapshot(emu)))
     assert loop.memory.tried == set()
+
+
+# --- Past Brock: talk_leader, and `until` ---------------------------------------------------
+
+
+def test_talk_leader_talks_to_the_northernmost_person_from_the_tile_below(monkeypatch):
+    """In a gym the leader stands at the back, north of every trainer: the macro reads where,
+    rather than a tile typed in per gym."""
+    from jevplays import loop as loop_module
+    from jevplays.state.snapshot import Sprite
+
+    calls = []
+    monkeypatch.setattr(loop_module, "talk_to", lambda emu, x, y, face: calls.append((x, y, face)) or True)
+    loop = Loop(overworld_emu(), RecordingBroadcaster(), LoopConfig(paced=False))
+    sprites = (Sprite(slot=1, picture=6, x=2, y=7), Sprite(slot=2, picture=9, x=4, y=2), Sprite(3, 6, 6, 5))
+    state = overworld_state(map_id=maps.CERULEAN_GYM, sprites=sprites)
+    assert loop._apply_macro("talk_leader", state) is True
+    assert calls == [(4, 3, "up")]
+
+    monkeypatch.setattr(loop_module, "talk_to", lambda emu, x, y, face: False)
+    assert loop._apply_macro("talk_leader", state) is False
+
+
+def test_talk_leader_with_nobody_on_the_map_fails_without_pressing_anything():
+    emu = overworld_emu()
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False))
+    assert loop._apply_macro("talk_leader", overworld_state(map_id=maps.CERULEAN_GYM)) is False
+    assert emu.presses == []
+
+
+def test_until_beat_misty_carries_on_past_the_boulder_badge_and_finishes_at_the_cascade_badge():
+    emu, bc = explore_emu(map_id=maps.PALLET_TOWN), RecordingBroadcaster()
+    for flag in ("got_starter", "got_pokedex", "beat_brock"):
+        set_flag(emu, flag)
+    emu.mem[ram.wObtainedBadges] = 1
+    loop = Loop(emu, bc, LoopConfig(paced=False, until="beat_misty"))
+    asyncio.run(loop._refresh_milestone(snapshot(emu)))
+    assert not loop.finished and loop.milestone.id == "beat_misty"
+
+    emu.mem[ram.wObtainedBadges] = 0b11
+    asyncio.run(loop._refresh_milestone(snapshot(emu)))
+    assert loop.finished and loop.milestone is None
+    finished = [e for e in bc.events if e["type"] == "status" and e["status"] == "finished"]
+    assert len(finished) == 1 and finished[0]["message"] == "Cascade Badge"
+
+
+def test_until_defaults_to_the_boulder_badge():
+    assert LoopConfig().until == "beat_brock"

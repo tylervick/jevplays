@@ -134,6 +134,10 @@ class LoopConfig:
     budget, so the ceiling is carried by the process that spends it."""
     snapshot_every_decision: bool = False
     """Save the game and the loop's memory at every decision, for `jevplays branch` (#82)."""
+    until: str = goal_table.DEFAULT_UNTIL
+    """The last milestone this run works towards (`executor.goals.ALL_MILESTONES`); the run
+    finishes when it is done. The default ends at the Boulder Badge, as every run did before the
+    story went past Pewter; `beat_misty` carries on to the Cascade Badge."""
 
 
 def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision:
@@ -559,7 +563,14 @@ class Loop:
         """The milestone for this turn. Returns the frames to spend when the run is over, and
         None when there is still a milestone to work towards."""
         previous = self.milestone
-        self.milestone = goal_table.active_milestone(state)
+        until = self.config.until
+        # The default run asks exactly what it always asked, so nothing downstream of it (a
+        # stand-in for `active_milestone` included) has to know `until` exists.
+        self.milestone = (
+            goal_table.active_milestone(state)
+            if until == goal_table.DEFAULT_UNTIL
+            else goal_table.active_milestone(state, until=until)
+        )
         if previous is not None and (self.milestone is None or self.milestone.id != previous.id):
             if self.config.snapshot_every_decision and self.run_dir is not None:
                 self.run_dir.note_milestone(previous.id, self._game_clock())
@@ -577,7 +588,9 @@ class Loop:
                 # The last turn of the run still deserves its answer: nothing after this reaches
                 # a battle menu, so waiting for one would drop it (#51).
                 self._resolve_prediction(state, final=True)
-                await self.broadcaster.publish(status_event("finished", "Boulder Badge"))
+                await self.broadcaster.publish(
+                    status_event("finished", goal_table.finish_words(self.config.until))
+                )
             return self.emu.tick(self.config.idle_frames)
         return None
 
@@ -809,6 +822,15 @@ class Loop:
             return talk_to(emu, 5, 3, "up")
         if macro == "talk_brock":
             return talk_to(emu, 4, 2, "up")
+        if macro == "talk_leader":
+            # A gym leader stands at the back of the gym, north of every trainer in it: talk to
+            # the northernmost person from the tile in front of them. Brock keeps his verified
+            # tile above; this one is read off the map rather than typed in per gym.
+            people = [sprite for sprite in state.sprites if sprite.picture]
+            if not people:
+                return False
+            leader = min(people, key=lambda sprite: sprite.y)
+            return talk_to(emu, leader.x, leader.y + 1, "up")
         if macro == "heal":
             return shop.heal_at_nurse(emu)
         if macro == "shop":
