@@ -1054,6 +1054,24 @@ def test_the_memory_is_written_to_the_run_dir_as_it_changes(tmp_path):
     assert run_dir.load_memory()["visited_maps"] == [maps.PALLET_TOWN]
 
 
+def test_a_ladder_the_run_went_down_is_recorded_as_the_way_back_up():
+    """Mt. Moon's floors warp to each other by map id; none has a "back the way you came" warp,
+    so the way back is recorded as the ladder that leads straight there."""
+    emu, bc = (
+        explore_emu(sprites=(), connections={}, warps=[(3, 3, 0, ram.WARP_LAST_MAP)]),
+        RecordingBroadcaster(),
+    )
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.memory.note_tried(UNMAPPED_MAP, "grass")
+    run(loop, 1)  # takes the only door and plans its warp leg
+    assert loop.navigator.current.kind == "warp"
+    emu.mem[ram.wCurMap] = maps.PALLET_TOWN  # the warp lands us there...
+    emu.mem[ram.wWarpEntries : ram.wWarpEntries + 4] = [3, 3, 0, UNMAPPED_MAP]  # ...by a ladder back
+    run(loop, 1)
+    back = [(x.kind, x.dest_node, x.dest_map) for x in loop.memory.links["pallet_town"]]
+    assert back == [("warp", f"map_{UNMAPPED_MAP}", UNMAPPED_MAP)]
+
+
 def test_a_resumed_loop_starts_from_the_memory_it_is_handed():
     from jevplays.executor.options import Memory
 

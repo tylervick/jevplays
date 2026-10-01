@@ -306,6 +306,12 @@ def test_a_warp_crossing_records_the_way_back_out():
     ]
 
 
+def test_a_ladder_crossing_records_the_way_back_by_its_map():
+    memory = Memory.empty()
+    memory.note_crossing("map_60", "map_61", dest_map=61, back_dest_map=60)
+    assert [(x.kind, x.dest_node, x.dest_map) for x in memory.links["map_61"]] == [("warp", "map_60", 60)]
+
+
 def test_recording_the_same_crossing_twice_changes_nothing():
     memory = Memory.empty()
     memory.note_crossing("pewter_city", "map_14", direction="east")
