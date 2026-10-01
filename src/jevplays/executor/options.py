@@ -84,11 +84,14 @@ class Memory:
     trip be planned from a map nobody typed into the table (#35)."""
     exits: dict[int, set[int]] = field(default_factory=dict)
     """map id -> the maps its exits and doors were offered towards, from every map Jev was asked
-    on. What `word` searches to say whether a visited exit leads anywhere new."""
+    on."""
+    buildings: set[int] = field(default_factory=set)
+    """Maps that offered a "go back outside" door: one room, or a few, with no walled-off pockets,
+    so what was offered from one spot is all there is. `dead_end` trusts only these."""
 
     @classmethod
     def empty(cls) -> "Memory":
-        return cls(visited_maps=set(), talked=set(), tried=set(), links={}, exits={})
+        return cls(visited_maps=set(), talked=set(), tried=set(), links={}, exits={}, buildings=set())
 
     def to_dict(self) -> dict:
         return {
@@ -100,6 +103,7 @@ class Memory:
                 for node, crossed in sorted(self.links.items())
             },
             "exits": {str(map_id): sorted(dests) for map_id, dests in sorted(self.exits.items())},
+            "buildings": sorted(self.buildings),
         }
 
     @classmethod
@@ -115,6 +119,7 @@ class Memory:
                 for node, crossed in d.get("links", {}).items()
             },
             exits={int(map_id): set(dests) for map_id, dests in d.get("exits", {}).items()},
+            buildings=set(d.get("buildings", [])),
         )
 
     def note_map(self, map_id: int) -> None:
@@ -163,32 +168,22 @@ class Memory:
         here.append(link)
 
     def note_exits(self, map_id: int, options: "list[Option]") -> None:
-        """Remember where this map's exits and doors were offered towards. A union: what is
-        offered depends on where we stand (Route 2's two halves), and any of it is a way on."""
+        """Remember where this map's exits and doors were offered towards (a union: what is offered
+        depends on where we stand), and whether it is a building."""
         dests = {o.dest_map for o in options if o.kind in ("exit", "door") and o.dest_map is not None}
         self.exits.setdefault(map_id, set()).update(dests)
+        if any(o.kind == "door" and o.legs[0].dest_map == maps.WARP_LAST_MAP for o in options):
+            self.buildings.add(map_id)
 
-    def leads_on(self, here: int, dest: int) -> bool | None:
-        """Whether the maps beyond `dest` include one not yet visited, without coming back
-        through `here`: True when one does, False when every map out there is known and visited,
-        None when the search reaches a map whose exits were never seen (crossed on the way to
-        somewhere, never asked on), so there is nothing true to say.
+    def dead_end(self, here: int, dest: int) -> bool:
+        """Whether `dest` is a building whose only way out is back to `here`.
 
         A run past Brock walked in and out of the Pewter Pokémon Center for 20 minutes, both
-        doors reading "(visited)" while Route 3 led on to Mt. Moon's unvisited floors. Which
-        way leads somewhere new is a fact about the walked map, so code says it."""
-        seen, todo, unknown = {here, dest}, [dest], False
-        while todo:
-            map_id = todo.pop()
-            if map_id not in self.exits:
-                unknown = True
-                continue
-            for beyond in self.exits[map_id] - seen:
-                if beyond not in self.visited_maps:
-                    return True
-                seen.add(beyond)
-                todo.append(beyond)
-        return None if unknown else False
+        doors reading "(visited)". A search over map ids beyond a door said more, and said it
+        wrongly in Mt. Moon: a cave floor is several walled-off pockets under one id, so "nothing
+        new beyond" was claimed for a floor whose other ladders lead on. A building has no pockets,
+        so this one-step claim is the one that holds."""
+        return dest in self.buildings and dest in self.exits and self.exits[dest] <= {here}
 
     def note_talked(self, map_id: int, slot: int) -> None:
         self.talked.add((map_id, slot))
@@ -208,7 +203,7 @@ class Memory:
             # Only the dead end is said. "visited, leads on to new places" was tried and drew Jev
             # harder than "new" did: 4 of 4 probe runs went Pewter <-> Route 2 thousands of times,
             # both ways reading so, with Route 3 "(new)" at 0.20 against 0.72.
-            if self.leads_on(map_id, option.dest_map) is False:
+            if self.dead_end(map_id, option.dest_map):
                 return "visited, leads nowhere new"
             return "visited"
         return "new"
