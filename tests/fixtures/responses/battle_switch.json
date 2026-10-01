@@ -253,8 +253,8 @@
       "type": "noul",
       "instructions": "Should we throw a Poké Ball at `enemy_pokemon` this turn?",
       "criteria": {
-        "true": "We want a party of at least three, `enemy_pokemon` is worth having, and its hp is low enough (asleep or paralyzed helps) for a ball to work",
-        "false": "Its hp is still high, or it is not worth a ball"
+        "true": "We want a party of at least three and `enemy_pokemon` is worth having: a ball can work at any hp, more often the lower its hp (asleep or paralyzed helps)",
+        "false": "It is not worth a ball, or we would rather weaken it first"
       }
     },
     "faint": {
@@ -269,7 +269,7 @@
   "response": {
     "model": "jev-1.13.0",
     "usage": {
-      "input_tokens": 1028,
+      "input_tokens": 1032,
       "output_tokens": 136
     },
     "answers": {
@@ -283,7 +283,7 @@
       },
       "switch": {
         "type": "noul",
-        "noul": 0.19
+        "noul": 0.18
       },
       "switch_to": {
         "type": "choice",
@@ -299,17 +299,17 @@
       },
       "run": {
         "type": "noul",
-        "noul": 0.21
+        "noul": 0.19
       },
       "catch": {
         "type": "noul",
-        "noul": 0.09
+        "noul": 0.35
       },
       "faint": {
         "type": "noul",
-        "noul": 0.27
+        "noul": 0.25
       }
     }
   },
-  "latency_ms": 115
+  "latency_ms": 134
 }
