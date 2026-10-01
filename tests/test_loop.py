@@ -1054,6 +1054,21 @@ def test_the_memory_is_written_to_the_run_dir_as_it_changes(tmp_path):
     assert run_dir.load_memory()["visited_maps"] == [maps.PALLET_TOWN]
 
 
+def test_both_ends_of_a_ladder_the_run_used_are_remembered():
+    emu, bc = (
+        explore_emu(sprites=(), connections={}, warps=[(3, 3, 0, ram.WARP_LAST_MAP)]),
+        RecordingBroadcaster(),
+    )
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.memory.note_tried(UNMAPPED_MAP, "grass")
+    run(loop, 1)  # takes the only door and plans its warp leg
+    emu.mem[ram.wCurMap] = maps.PALLET_TOWN  # the warp lands us there...
+    here = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
+    emu.mem[ram.wWarpEntries : ram.wWarpEntries + 4] = [here[1], here[0], 5, UNMAPPED_MAP]  # ...on a ladder
+    run(loop, 1)
+    assert (maps.PALLET_TOWN, UNMAPPED_MAP, 5) in loop.memory.ladders
+
+
 def test_a_resumed_loop_starts_from_the_memory_it_is_handed():
     from jevplays.executor.options import Memory
 

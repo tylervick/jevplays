@@ -287,3 +287,44 @@ def test_dialogs_at_different_tiles_do_not_fail_the_leg():
         if results[-1] == "done":
             break
     assert "stuck" not in results and results[-1] == "done"
+
+
+POCKET = ["..##....", "..##....", "####....", "####....", "........", "........", "........", "........"]
+"""A walled-off pocket in the top-left corner, like one of Mt. Moon B1F's: its warp is the nearest
+as the crow flies from (4,2) and cannot be walked to."""
+
+
+def pocket_walker(x, y, warps):
+    emu = FakeEmulator()
+    install_map(emu, POCKET, warps=warps)
+    emu.mem[ram.wCurMap] = 1
+    emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = x, y
+    return emu
+
+
+def test_a_warp_leg_aims_at_a_warp_it_can_walk_to_not_the_nearest_one():
+    emu = pocket_walker(4, 2, warps=[(1, 1, 0, 99), (7, 7, 0, 99)])
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="warp", dest_map=99, label="down the ladder")])
+    assert nav.step(emu, snapshot(emu)) == "moving"
+    assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) in ((5, 2), (4, 3))  # towards (7,7)
+
+
+def test_a_warp_underfoot_is_taken_by_stepping_off_and_back_on():
+    """Arriving down a ladder leaves the player standing on the ladder up, which only works when
+    walked onto. The leg used to give up there at once."""
+    emu = pocket_walker(5, 5, warps=[(5, 5, 0, 99)])
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="warp", dest_map=99, label="back up the ladder")])
+    assert nav.step(emu, snapshot(emu)) == "moving"
+    assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) != (5, 5)
+    assert nav.step(emu, snapshot(emu)) == "moving"
+    assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == (5, 5)
+
+
+def test_a_warp_leg_naming_a_ladder_takes_that_one_not_the_nearest():
+    emu = pocket_walker(4, 4, warps=[(5, 4, 0, 99), (4, 7, 2, 99)])
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="warp", dest_map=99, warp_id=2, label="the far ladder")])
+    assert nav.step(emu, snapshot(emu)) == "moving"
+    assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == (4, 5)  # down, towards (4,7)
