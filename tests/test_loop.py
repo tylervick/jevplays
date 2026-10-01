@@ -1775,3 +1775,22 @@ def test_after_a_faint_the_party_list_sends_in_a_living_pokemon_not_the_one_unde
     assert state.mode is Mode.BATTLE_WAIT and "Bring out which" in state.text
     asyncio.run(loop.advance(state))
     assert emu.presses[:2] == ["down", "a"]
+
+
+def test_tried_marks_expire_when_a_milestone_is_done(monkeypatch):
+    """The parcel errand talks to the Viridian Mart clerk before the Mart sells anything; the shop
+    step came away empty and marked the clerk tried for the rest of the run, so after the Pokédex
+    Jev walked into the Mart 24 times, read "(tried)" on the clerk, and walked out (#110). A new
+    milestone is a new situation: what failed before it may not fail after."""
+    from jevplays.executor import goals as goal_table
+
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.milestone = MILESTONES[1]
+    loop.memory.note_tried(42, "npc_1")
+    monkeypatch.setattr(goal_table, "active_milestone", lambda state: MILESTONES[1])
+    asyncio.run(loop._refresh_milestone(snapshot(emu)))
+    assert (42, "npc_1") in loop.memory.tried  # same milestone: the mark stands
+    monkeypatch.setattr(goal_table, "active_milestone", lambda state: MILESTONES[2])
+    asyncio.run(loop._refresh_milestone(snapshot(emu)))
+    assert loop.memory.tried == set()
