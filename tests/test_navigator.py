@@ -320,3 +320,11 @@ def test_a_warp_underfoot_is_taken_by_stepping_off_and_back_on():
     assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) != (5, 5)
     assert nav.step(emu, snapshot(emu)) == "moving"
     assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == (5, 5)
+
+
+def test_a_warp_leg_naming_a_ladder_takes_that_one_not_the_nearest():
+    emu = pocket_walker(4, 4, warps=[(5, 4, 0, 99), (4, 7, 2, 99)])
+    nav = Navigator()
+    nav.plan(emu, snapshot(emu), [Leg(kind="warp", dest_map=99, warp_id=2, label="the far ladder")])
+    assert nav.step(emu, snapshot(emu)) == "moving"
+    assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == (4, 5)  # down, towards (4,7)

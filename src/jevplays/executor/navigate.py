@@ -110,6 +110,8 @@ class Leg:
     dest_map: int | None = None
     face: str | None = None
     label: str = ""
+    warp_id: int | None = None
+    """For a warp leg: the one ladder to take when several lead to `dest_map` (#129)."""
 
 
 @dataclass
@@ -276,7 +278,9 @@ class Navigator:
         if leg.kind == "edge":
             return world.reachable_edge(grid, here, leg.direction, blocked)
         if leg.kind == "warp":
-            return world.warp_target(grid, here, world.read_warps(mem), leg.dest_map, blocked)
+            return world.warp_target(
+                grid, here, world.read_warps(mem), leg.dest_map, blocked, warp_id=leg.warp_id
+            )
         return None
 
     def _step_off(self, emu, state, grid, here, blocked) -> str:

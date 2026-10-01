@@ -204,7 +204,13 @@ def walkable_warps(grid: MapGrid, warps: tuple[Warp, ...], dest: int) -> list[Wa
 
 
 def warp_target(
-    grid: MapGrid, here: tuple[int, int], warps: tuple[Warp, ...], dest: int, blocked: frozenset
+    grid: MapGrid,
+    here: tuple[int, int],
+    warps: tuple[Warp, ...],
+    dest: int,
+    blocked: frozenset,
+    *,
+    warp_id: int | None = None,
 ) -> tuple[int, int] | None:
     """The warp to `dest` a walk should aim at: one underfoot on the map's edge (a door mat, taken by
     stepping off the edge); else the one with the shortest path from `here`; else one underfoot
@@ -214,7 +220,7 @@ def warp_target(
     Mt. Moon B1F is several pockets in one map, each listing every ladder: the nearest ladder to
     B2F as the crow flies was in another pocket, the leg failed at once, and each probe run past
     Brock asked about the same three ladders thousands of times."""
-    candidates = walkable_warps(grid, warps, dest)
+    candidates = [w for w in walkable_warps(grid, warps, dest) if warp_id is None or w.warp_id == warp_id]
     if not candidates:
         return None
     best: tuple[int, tuple[int, int]] | None = None
