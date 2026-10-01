@@ -254,7 +254,7 @@ class Loop:
             return await self._send_out_next(state)
         if state.mode in (Mode.DIALOG, Mode.BATTLE_WAIT):
             return self.emu.press("a", settle=30)
-        if state.mode is Mode.MOVE_LIST:
+        if state.mode in (Mode.MOVE_LIST, Mode.BATTLE_LIST):
             # Only a stray A gets the loop here; the macros never leave this list open. Back out
             # to the battle menu, where Jev is asked, rather than use the move under the cursor.
             return self.emu.press("b", settle=20)
