@@ -88,10 +88,15 @@ class Memory:
     buildings: set[int] = field(default_factory=set)
     """Maps that offered a "go back outside" door: one room, or a few, with no walled-off pockets,
     so what was offered from one spot is all there is. `dead_end` trusts only these."""
+    ladders: set[tuple[int, int, int]] = field(default_factory=set)
+    """(map id, destination map, destination warp id) of each ladder this run has used, either
+    end: what makes one of several ladders to the same floor "visited" and the rest "new" (#129)."""
 
     @classmethod
     def empty(cls) -> "Memory":
-        return cls(visited_maps=set(), talked=set(), tried=set(), links={}, exits={}, buildings=set())
+        return cls(
+            visited_maps=set(), talked=set(), tried=set(), links={}, exits={}, buildings=set(), ladders=set()
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -104,6 +109,7 @@ class Memory:
             },
             "exits": {str(map_id): sorted(dests) for map_id, dests in sorted(self.exits.items())},
             "buildings": sorted(self.buildings),
+            "ladders": sorted([list(ladder) for ladder in self.ladders]),
         }
 
     @classmethod
@@ -120,6 +126,7 @@ class Memory:
             },
             exits={int(map_id): set(dests) for map_id, dests in d.get("exits", {}).items()},
             buildings=set(d.get("buildings", [])),
+            ladders={tuple(ladder) for ladder in d.get("ladders", [])},
         )
 
     def note_map(self, map_id: int) -> None:
@@ -185,6 +192,9 @@ class Memory:
         so this one-step claim is the one that holds."""
         return dest in self.buildings and dest in self.exits and self.exits[dest] <= {here}
 
+    def note_ladder(self, map_id: int, dest: int, warp_id: int) -> None:
+        self.ladders.add((map_id, dest, warp_id))
+
     def note_talked(self, map_id: int, slot: int) -> None:
         self.talked.add((map_id, slot))
 
@@ -197,6 +207,11 @@ class Memory:
         if option.kind == "npc":
             slot = int(option.id.split("_", 1)[1])
             return "talked already" if (map_id, slot) in self.talked else "new"
+        if option.kind == "door" and option.legs[0].warp_id is not None:
+            # One of several ladders to the same floor: the floor being visited says nothing
+            # about where this one lands.
+            ladder = (map_id, option.dest_map, option.legs[0].warp_id)
+            return "visited" if ladder in self.ladders else "new"
         if option.kind in ("exit", "door"):
             if option.dest_map not in self.visited_maps:
                 return "new"
@@ -228,7 +243,11 @@ def option_verb(noun: str) -> str:
 def place_words(player: tuple[int, int], sprite: Sprite, picture: int) -> str:
     if picture in COUNTER_PICTURES:
         return "behind the counter"
-    dx, dy = sprite.x - player[0], sprite.y - player[1]
+    return compass_words(player, (sprite.x, sprite.y))
+
+
+def compass_words(player: tuple[int, int], cell: tuple[int, int]) -> str:
+    dx, dy = cell[0] - player[0], cell[1] - player[1]
     ns = "north" if dy < 0 else "south" if dy > 0 else ""
     ew = "east" if dx > 0 else "west" if dx < 0 else ""
     compass = f"{ns}-{ew}" if ns and ew else ns or ew
@@ -279,32 +298,78 @@ def _exit_options(
     return options
 
 
-def _door_options(emu, warps: tuple[world.Warp, ...], state: GameState) -> list[Option]:
+def _door_options(
+    emu, warps: tuple[world.Warp, ...], state: GameState, grid: world.MapGrid, blocked: frozenset
+) -> list[Option]:
+    """One option per place a door leads to. Usually that is one per destination map; a cave
+    floor's ladders to the same floor land in different walled-off pockets, so each landing (the
+    warp's destination warp id) is an option of its own, told apart by where it is, and offered
+    only when it can be walked to: the others are in another pocket of this floor (#129)."""
     options = []
     for dest in sorted({w.dest for w in warps}):
-        # WARP_LAST_MAP means "back out the way you came in", whose map id is in `wLastMap`. The
-        # option's `dest_map` reads it so the door gets a memory word like any other; the leg
-        # keeps WARP_LAST_MAP, so the navigator still cannot check where it lands (#8).
-        text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
-        stock = world.mart_inventory(emu, dest)
-        # Only a shelf the run can buy from is worth naming: broke, or with nothing the clerk
-        # would buy, the door advertised a shelf it could not use and Jev walked in and out (#52).
-        if stock and shopping_list(state):
-            # What a Mart is for, in the game's own words: nothing else Jev saw said so, and a
-            # run passed the Mart 25 times with an empty bag and never caught anything (#110).
-            text += f", which sells {', '.join(stock)}"
-        options.append(
-            Option(
-                id=f"door_{dest}",
-                kind="door",
-                text=text,
-                memory="",
-                legs=(Leg(kind="warp", dest_map=dest, label=text),),
-                after=None,
-                dest_map=emu.mem[ram.wLastMap] if dest == ram.WARP_LAST_MAP else dest,
-            )
-        )
+        landings = sorted({w.warp_id for w in warps if w.dest == dest})
+        if len(landings) == 1:
+            options.append(_door_option(emu, dest, None, state))
+            continue
+        ladders = []
+        for warp_id in landings:
+            walk = _walk_to_landing(grid, state.tile, warps, dest, warp_id, blocked)
+            if walk is not None:
+                ladders.append((walk, warp_id))
+        ladders.sort()
+        drafts = [_door_option(emu, dest, warp_id, state, where=cell) for (_n, cell), warp_id in ladders]
+        texts = [d.text for d in drafts]
+        for rank, draft in enumerate(drafts):
+            same = [i for i, t in enumerate(texts) if t == draft.text]
+            if len(same) > 1:
+                draft = replace(draft, text=f"{draft.text}, the {_ORDINALS[same.index(rank)]}")
+                draft = replace(draft, legs=(replace(draft.legs[0], label=draft.text),))
+            options.append(draft)
     return options
+
+
+_ORDINALS = ("nearest", "second nearest", "third nearest", "fourth nearest", "fifth nearest")
+
+
+def _walk_to_landing(grid, here, warps, dest, warp_id, blocked) -> tuple[int, tuple[int, int]] | None:
+    """(steps, tile) to the nearest walkable warp of one landing, or None when none can be reached."""
+    best = None
+    for w in warps:
+        if w.dest != dest or w.warp_id != warp_id or not grid.walkable(w.x, w.y):
+            continue
+        path = [] if (w.x, w.y) == here else world.astar(grid, here, (w.x, w.y), blocked)
+        if path is not None and (best is None or len(path) < best[0]):
+            best = (len(path), (w.x, w.y))
+    return best
+
+
+def _door_option(
+    emu, dest: int, warp_id: int | None, state: GameState, where: tuple[int, int] | None = None
+) -> Option:
+    # WARP_LAST_MAP means "back out the way you came in", whose map id is in `wLastMap`. The
+    # option's `dest_map` reads it so the door gets a memory word like any other; the leg
+    # keeps WARP_LAST_MAP, so the navigator still cannot check where it lands (#8).
+    text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
+    stock = world.mart_inventory(emu, dest)
+    # Only a shelf the run can buy from is worth naming: broke, or with nothing the clerk
+    # would buy, the door advertised a shelf it could not use and Jev walked in and out (#52).
+    if stock and shopping_list(state):
+        # What a Mart is for, in the game's own words: nothing else Jev saw said so, and a
+        # run passed the Mart 25 times with an empty bag and never caught anything (#110).
+        text += f", which sells {', '.join(stock)}"
+    if where is not None and where != state.tile:
+        text += f" {compass_words(state.tile, where)}"
+    elif where is not None:
+        text += " right here"
+    return Option(
+        id=f"door_{dest}" if warp_id is None else f"door_{dest}_{warp_id}",
+        kind="door",
+        text=text,
+        memory="",
+        legs=(Leg(kind="warp", dest_map=dest, label=text, warp_id=warp_id),),
+        after=None,
+        dest_map=emu.mem[ram.wLastMap] if dest == ram.WARP_LAST_MAP else dest,
+    )
 
 
 _FACE_ORDER = ("left", "right", "up", "down")
@@ -492,7 +557,7 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
         drafts.append(heal_option)
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
     drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
-    drafts.extend(_door_options(emu, world.read_warps(mem), state))
+    drafts.extend(_door_options(emu, world.read_warps(mem), state, grid, blocked))
     drafts.extend(_npc_options(emu, grid, state))
     # Grass tiles are not the same thing as wild Pokémon: Pallet Town and Viridian City both
     # have patches with no encounter table, and standing in one waits out the whole option

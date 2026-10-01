@@ -1054,14 +1054,19 @@ def test_the_memory_is_written_to_the_run_dir_as_it_changes(tmp_path):
     assert run_dir.load_memory()["visited_maps"] == [maps.PALLET_TOWN]
 
 
-def test_the_exits_a_map_offers_are_written_to_the_run_dir(tmp_path):
-    from jevplays.runlog import RunDir
-
-    run_dir = RunDir.create(tmp_path, rom=None, flags={})
-    emu = explore_emu(map_id=maps.PALLET_TOWN, connections={"north": maps.ROUTE_1})
-    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), run_dir=run_dir)
+def test_both_ends_of_a_ladder_the_run_used_are_remembered():
+    emu, bc = (
+        explore_emu(sprites=(), connections={}, warps=[(3, 3, 0, ram.WARP_LAST_MAP)]),
+        RecordingBroadcaster(),
+    )
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.memory.note_tried(UNMAPPED_MAP, "grass")
+    run(loop, 1)  # takes the only door and plans its warp leg
+    emu.mem[ram.wCurMap] = maps.PALLET_TOWN  # the warp lands us there...
+    here = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
+    emu.mem[ram.wWarpEntries : ram.wWarpEntries + 4] = [here[1], here[0], 5, UNMAPPED_MAP]  # ...on a ladder
     run(loop, 1)
-    assert maps.ROUTE_1 in run_dir.load_memory()["exits"][str(maps.PALLET_TOWN)]
+    assert (maps.PALLET_TOWN, UNMAPPED_MAP, 5) in loop.memory.ladders
 
 
 def test_a_resumed_loop_starts_from_the_memory_it_is_handed():
@@ -1928,3 +1933,13 @@ def test_the_handover_from_brock_to_misty_clears_the_tried_marks():
     assert loop.memory.tried == set()
     done = [e for e in bc.events if e["type"] == "status" and e["message"] == "milestone done: beat_brock"]
     assert len(done) == 1
+
+
+def test_the_exits_a_map_offers_are_written_to_the_run_dir(tmp_path):
+    from jevplays.runlog import RunDir
+
+    run_dir = RunDir.create(tmp_path, rom=None, flags={})
+    emu = explore_emu(map_id=maps.PALLET_TOWN, connections={"north": maps.ROUTE_1})
+    loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), run_dir=run_dir)
+    run(loop, 1)
+    assert maps.ROUTE_1 in run_dir.load_memory()["exits"][str(maps.PALLET_TOWN)]
