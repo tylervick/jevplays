@@ -125,6 +125,33 @@ def test_memory_words():
     assert Memory.from_dict(memory.to_dict()) == memory
 
 
+def test_ladders_to_the_same_floor_are_separate_options_told_apart_by_where_they_are():
+    """Mt. Moon B2F: two ladders up to B1F land in different pockets. One option for both always
+    took the nearer one, the ladder the run came down (#129)."""
+    emu, state, memory = town(warps=[(7, 7, 0, 60), (0, 7, 2, 60), (7, 5, 0, 41)], connections={})
+    options = {o.id: o for o in generate(emu, state, memory, None)}
+    assert options["door_60_0"].text == "enter Mt. Moon B1F to the south-east"
+    assert options["door_60_2"].text == "enter Mt. Moon B1F to the south-west"
+    assert options["door_60_2"].legs[0].warp_id == 2
+    assert options["door_41"].legs[0].warp_id is None  # one way in: the id and leg are as before
+
+
+def test_ladders_that_read_the_same_are_ranked_by_distance():
+    emu, state, memory = town(warps=[(7, 7, 0, 60), (7, 6, 2, 60)], connections={})
+    texts = {o.id: o.text for o in generate(emu, state, memory, None)}
+    assert texts["door_60_2"] == "enter Mt. Moon B1F to the south-east, the nearest"
+    assert texts["door_60_0"] == "enter Mt. Moon B1F to the south-east, the second nearest"
+
+
+def test_a_ladder_is_visited_only_once_this_run_has_used_it():
+    emu, state, memory = town(warps=[(7, 7, 0, 60), (0, 7, 2, 60)], connections={})
+    memory.note_map(60)
+    memory.note_ladder(state.map_id, 60, 0)
+    words = {o.id: o.memory for o in generate(emu, state, memory, None)}
+    assert words["door_60_0"] == "visited" and words["door_60_2"] == "new"
+    assert Memory.from_dict(memory.to_dict()) == memory
+
+
 def test_npc_plan_walks_to_a_neighbour_and_faces_the_sprite():
     emu, state, memory = town()
     nurse = next(o for o in generate(emu, state, memory, None) if o.id == "npc_3")

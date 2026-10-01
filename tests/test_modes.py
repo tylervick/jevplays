@@ -182,3 +182,46 @@ def test_the_no_pp_message_is_still_battle_text_to_press_through():
 
 def test_a_move_list_outside_a_battle_is_not_one():
     assert detect(MOVE_LIST, in_battle=False, blank=False) is Mode.MENU
+
+
+STUCK_BAG = [
+    " RATTATA    ······· ",
+    "    ·5      ······· ",
+    " ···················",
+    " ····              ·",
+    "    ·▶TM34         ·",
+    " ····         × 1  ·",
+    " ···· CANCEL       ·",
+    " ····              ·",
+    " ····              ·",
+    " ····              ·",
+    " ····              ·",
+    " ····              ·",
+    "····················",
+    "·                  ·",
+    "·                  ·",
+    "·                  ·",
+    "·                  ·",
+    "····················",
+]
+"""A probe past Brock, in a wild battle: the Potion step found no Potion and left the bag open on
+TM34. Read as battle text, A used it ("OAK: RED! This isn't the time to use that!"), A closed
+that, and A used it again, forever."""
+
+
+def test_a_bag_left_open_in_battle_is_a_stray_list_not_battle_text():
+    rows = [list(line.ljust(20)[:20]) for line in STUCK_BAG]
+    assert detect(rows, in_battle=True, blank=False) is Mode.BATTLE_LIST
+
+
+def test_a_party_list_with_its_question_is_still_battle_text():
+    """The after-faint list ("Bring out which POKéMON?") and the PKMN list both show their question
+    in the text box; those stay with the loop's own handling (#116, the switch macro)."""
+    rows = [list(line.ljust(20)[:20]) for line in STUCK_BAG[:13]] + [
+        list("·Bring out which   ·"),
+        list("·                  ·"),
+        list("·POKéMON?          ·"),
+        list("·                  ·"),
+        list("····················"),
+    ]
+    assert detect(rows, in_battle=True, blank=False) is Mode.BATTLE_WAIT

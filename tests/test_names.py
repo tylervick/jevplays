@@ -74,3 +74,7 @@ def test_mt_moon_and_the_cerulean_buildings_have_display_names():
         "Cerulean Mart",
         "Mt. Moon Pokémon Center",
     ]
+
+
+def test_a_tm_is_named_by_its_number():
+    assert item_name(201) == "TM01" and item_name(234) == "TM34" and item_name(250) == "TM50"

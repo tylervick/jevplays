@@ -254,7 +254,7 @@ class Loop:
             return await self._send_out_next(state)
         if state.mode in (Mode.DIALOG, Mode.BATTLE_WAIT):
             return self.emu.press("a", settle=30)
-        if state.mode is Mode.MOVE_LIST:
+        if state.mode in (Mode.MOVE_LIST, Mode.BATTLE_LIST):
             # Only a stray A gets the loop here; the macros never leave this list open. Back out
             # to the battle menu, where Jev is asked, rather than use the move under the cursor.
             return self.emu.press("b", settle=20)
@@ -708,8 +708,21 @@ class Loop:
             direction=leg.direction if leg.kind == "edge" else None,
             dest_map=None if leg.kind == "edge" else to_map,
         )
+        if leg.kind == "warp":
+            self._note_ladders(leg, from_map)
         if len(self.memory.links.get(from_node, ())) != before:
             self._save_memory()
+
+    def _note_ladders(self, leg, from_map: int) -> None:
+        """Remember both ends of a ladder just used (#129): the one left by, when the leg named it,
+        and the one landed on, read from under our feet."""
+        if leg.warp_id is not None:
+            self.memory.note_ladder(from_map, leg.dest_map, leg.warp_id)
+        here = (self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
+        for warp in world.read_warps(self.emu.mem):
+            if (warp.x, warp.y) == here:
+                self.memory.note_ladder(self.emu.mem[ram.wCurMap], warp.dest, warp.warp_id)
+        self._save_memory()
 
     async def _option_budget_spent(self) -> int:
         """The option has had its turn. It is marked `tried` -- nothing came of it in the time it

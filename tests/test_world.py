@@ -12,6 +12,7 @@ from jevplays.executor.world import (
     read_warps,
     tile_pairs,
     walkable_warps,
+    warp_target,
 )
 from jevplays.state.snapshot import Sprite
 from tests.support import FakeEmulator, install_map
@@ -166,6 +167,30 @@ def test_a_map_with_no_known_inventory_or_a_malformed_one_has_none():
     assert mart_inventory(emu, 42) is None  # zeros where the table should be
     _shelf(emu, ram.MART_INVENTORIES[42], [0xFE, 4, 0x04, 0x0B, 0x0F, 0x0C, 0x00])  # no 0xFF end
     assert mart_inventory(emu, 42) is None
+
+
+def test_warp_target_prefers_the_shortest_walk_then_underfoot_then_the_nearest():
+    emu = FakeEmulator()
+    install_map(emu, ROWS)
+    grid = build_grid(emu)
+    walled = Warp(3, 4, 0, 9)  # 3 tiles from (5,5) as the crow flies, boxed in below
+    boxed = frozenset({(2, 4), (4, 4), (3, 5)})  # and (3,3) is wall
+    far = Warp(5, 0, 0, 9)
+    underfoot = Warp(5, 5, 0, 9)
+    assert warp_target(grid, (5, 5), (walled, far), 9, boxed) == (5, 0)
+    assert warp_target(grid, (5, 5), (walled, underfoot), 9, boxed) == (5, 5)
+    assert warp_target(grid, (5, 5), (walled,), 9, boxed) == (3, 4)  # nothing walkable: as before
+    assert warp_target(grid, (5, 5), (walled,), 8, boxed) is None
+
+
+def test_a_door_mat_underfoot_on_the_maps_edge_is_taken_where_it_is():
+    """The Viridian Mart's mat is two warp tiles on the bottom edge; aiming at the other one, a
+    step away, walked the player back and forth between them (a ROM test caught it)."""
+    emu = FakeEmulator()
+    install_map(emu, ROWS)
+    grid = build_grid(emu)
+    mat = (Warp(3, 5, 0, 9), Warp(4, 5, 0, 9))
+    assert warp_target(grid, (4, 5), mat, 9, frozenset()) == (4, 5)
 
 
 CAVE = [[0x20, 0x20, 0x05], [0x20, 0x20, 0x05], [0x20, 0x20, 0x20]]
