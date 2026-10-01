@@ -89,3 +89,74 @@ def test_the_brock_milestone_names_the_fight_it_walks_into():
     brock = next(g for g in MILESTONES if g.id == "beat_brock")
     assert brock.expects_level == 14
     assert next(g for g in MILESTONES if g.id == "get_pokedex").expects_level is None
+
+
+# --- Past Brock: Misty, opt-in with `until` ---
+
+PAST_BROCK = ("got_starter", "got_pokedex", "beat_brock")
+
+
+def test_the_story_goes_on_to_misty_after_the_default_spine():
+    """`MILESTONES` stays the default spine (it ends at the Boulder Badge); the full story,
+    which a run opts into with `--until`, carries on to the Cascade Badge."""
+    from jevplays.executor.goals import ALL_MILESTONES
+
+    assert [m.id for m in ALL_MILESTONES] == ["get_starter", "get_pokedex", "beat_brock", "beat_misty"]
+    assert ALL_MILESTONES[:3] == MILESTONES
+    misty = ALL_MILESTONES[3]
+    assert misty.description == "Challenge Misty at the Cerulean Gym and earn the Cascade Badge"
+    assert misty.after == "talk_leader" and misty.destination == "cerulean_gym"
+    assert misty.expects_level == 21 and misty.badge == "Cascade Badge"
+    assert milestone("beat_brock").badge == "Boulder Badge"
+    assert milestone("get_pokedex").badge is None and milestone("get_pokedex").destination is None
+
+
+def test_misty_is_available_with_one_badge_and_done_with_two():
+    from jevplays.executor.goals import ALL_MILESTONES
+
+    misty = ALL_MILESTONES[3]
+    assert not misty.available(state(flags=PAST_BROCK))
+    one = replace(state(flags=PAST_BROCK), badges=1)
+    assert misty.available(one) and not misty.done(one)
+    assert misty.done(replace(one, badges=2))
+
+
+def test_active_milestone_stops_at_until():
+    one = replace(state(flags=PAST_BROCK), badges=1)
+    assert active_milestone(one) is None  # the default ends at the Boulder Badge, as before
+    assert active_milestone(one, until="beat_brock") is None
+    assert active_milestone(one, until="beat_misty").id == "beat_misty"
+    assert active_milestone(replace(one, badges=2), until="beat_misty") is None
+    # Earlier milestones come first whatever `until` names.
+    assert active_milestone(state(), until="beat_misty").id == "get_starter"
+
+
+def test_active_milestone_rejects_an_unknown_until():
+    import pytest
+
+    with pytest.raises(ValueError):
+        active_milestone(state(), until="beat_giovanni")
+
+
+def test_misty_legs_route_over_the_walked_graph_and_add_no_walk():
+    """No links past Pewter are hand-written: with nothing walked there is no route, and with the
+    crossings the run made it routes to the gym door and stops (`talk_leader` does the rest)."""
+    from jevplays.executor.maps import CERULEAN_CITY, CERULEAN_GYM, PEWTER_CITY, edge, warp
+
+    misty = milestone_by_any_id("beat_misty")
+    one = replace(state(map_id=PEWTER_CITY, x=10, y=10, flags=PAST_BROCK), badges=1)
+    assert misty.legs(one, {}) == []
+    walked = {
+        "pewter_city": [edge("east", "cerulean_city")],
+        "cerulean_city": [warp(CERULEAN_GYM, "cerulean_gym")],
+    }
+    legs = misty.legs(one, walked)
+    assert [(leg.kind, leg.dest_map) for leg in legs] == [("edge", CERULEAN_CITY), ("warp", CERULEAN_GYM)]
+    in_gym = replace(one, map_id=CERULEAN_GYM)
+    assert misty.legs(in_gym, walked) == []
+
+
+def milestone_by_any_id(goal_id: str):
+    from jevplays.executor.goals import ALL_MILESTONES
+
+    return next(m for m in ALL_MILESTONES if m.id == goal_id)

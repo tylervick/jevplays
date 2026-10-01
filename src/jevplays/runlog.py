@@ -76,6 +76,12 @@ class RunDir:
             json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
 
+    def set_flag(self, name: str, value) -> None:
+        """Change one of the flags the run was started with, for a resume that changes it."""
+        info = self.info()
+        info["flags"][name] = value
+        self._write_info(info)
+
     def set_model(self, model: str) -> None:
         info = self.info()
         if info["model"] == model and model in info["models"]:

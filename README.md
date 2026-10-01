@@ -138,7 +138,9 @@ first when it is offered, so the story still moves; YES; closing the menu). The 
 with a battle question is the active milestone plus a standing clause ("Build a party of three
 and keep them healthy"), so what a fight is for changes as the run's progress does;
 `--battle-goal` (aliased as the older `--goal`) is the fallback used before a milestone has been
-picked, not an override.
+picked, not an override. A run finishes at the Boulder Badge; `--until beat_misty` carries it on
+past Pewter to the Cascade Badge, routing to the Cerulean Gym only over ground it has already
+walked (see `docs/superpowers/specs/2026-10-01-past-brock-design.md`).
 
 Recording API fixtures: TypeSafe responses used by the unit tests are recorded, not called live
 in CI. After changing a question's wording or the state fields Jev sees, re-record them with

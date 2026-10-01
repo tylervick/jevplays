@@ -218,3 +218,65 @@ def test_branch_needs_at_least_two_seeds_and_one_worker(capsys):
         with pytest.raises(SystemExit):
             parser.parse_args(["branch", "run", *bad])
         assert bad[0] in capsys.readouterr().err
+
+
+def test_run_stops_at_the_boulder_badge_unless_told_to_go_on(capsys):
+    import pytest
+
+    from jevplays.cli import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["run"]).until == "beat_brock"
+    assert parser.parse_args(["run", "--until", "beat_misty"]).until == "beat_misty"
+    with pytest.raises(SystemExit):
+        parser.parse_args(["run", "--until", "get_starter"])  # not a badge: nothing to finish on
+
+
+def test_the_finished_line_names_the_badge_the_run_stopped_at():
+    from jevplays.cli import finished_line
+
+    assert finished_line("beat_brock", 12) == "finished: Boulder Badge after 12 decisions"
+    assert finished_line("beat_misty", 340) == "finished: Cascade Badge after 340 decisions"
+
+
+def test_a_resumed_run_keeps_the_until_it_was_started_with(tmp_path):
+    """`--resume` reads `until` back from run.json; an explicit `--until` wins, and a run.json
+    from before the flag existed means the Boulder Badge."""
+    from jevplays.cli import build_parser, resolve_until
+    from jevplays.runlog import RunDir
+
+    parser = build_parser()
+    misty = RunDir.create(tmp_path / "a", rom=None, flags={"until": "beat_misty"})
+    old = RunDir.create(tmp_path / "b", rom=None, flags={})
+
+    assert resolve_until(parser.parse_args(["run", "--resume", str(misty.path)]), misty) == "beat_misty"
+    explicit = parser.parse_args(["run", "--resume", str(misty.path), "--until", "beat_brock"])
+    assert resolve_until(explicit, misty) == "beat_brock"
+    assert resolve_until(parser.parse_args(["run", "--resume", str(old.path)]), old) == "beat_brock"
+    # A fresh run takes the flag as given.
+    assert resolve_until(parser.parse_args(["run", "--until", "beat_misty"]), None) == "beat_misty"
+    assert resolve_until(parser.parse_args(["run"]), None) == "beat_brock"
+
+
+def test_an_explicit_until_on_resume_is_written_back_to_run_json(tmp_path):
+    """Later resumes and `jevplays branch` read run.json, so it says what the run went on to do."""
+    from jevplays.cli import build_parser, resolve_until
+    from jevplays.runlog import RunDir
+
+    run = RunDir.create(tmp_path, rom=None, flags={"until": "beat_brock", "port": 1})
+    args = build_parser().parse_args(["run", "--resume", str(run.path), "--until", "beat_misty"])
+    assert resolve_until(args, run) == "beat_misty"
+    assert run.info()["flags"] == {"until": "beat_misty", "port": 1}
+
+
+def test_an_unknown_until_in_run_json_is_refused_before_the_run_starts(tmp_path, monkeypatch, capsys):
+    from jevplays.runlog import RunDir
+
+    rom = tmp_path / "game.gb"
+    rom.write_bytes(b"rom")
+    monkeypatch.setenv("JEVPLAYS_ROM", str(rom))
+    run = RunDir.create(tmp_path / "runs", rom=rom, flags={"until": "beat_giovanni"})
+    assert main(["run", "--resume", str(run.path)]) == 2
+    err = capsys.readouterr().err
+    assert "beat_giovanni" in err and "beat_misty" in err  # names the bad value and the good ones
+    assert run.info()["resumed_at"] == []  # refused before anything was touched

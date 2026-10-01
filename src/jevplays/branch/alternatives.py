@@ -10,7 +10,7 @@ from jevplays.brain.battle import battle_state, bench_slots
 from jevplays.brain.buckets import pp_bucket
 from jevplays.brain.decision import BattleAction, ExploreAction
 from jevplays.brain.explore import explore_state
-from jevplays.executor.goals import MILESTONES, Goal, battle_goal
+from jevplays.executor.goals import ALL_MILESTONES, Goal, battle_goal
 from jevplays.executor.options import Memory, Option, generate
 from jevplays.state.modes import Mode
 from jevplays.state.snapshot import GameState, snapshot
@@ -79,7 +79,7 @@ def strongest_move(alternatives: list[Alternative]) -> str | None:
 
 
 def goal_by_id(milestone: str | None) -> Goal | None:
-    return next((g for g in MILESTONES if g.id == milestone), None)
+    return next((g for g in ALL_MILESTONES if g.id == milestone), None)
 
 
 def _as_logged(sj: dict) -> dict:

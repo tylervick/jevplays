@@ -58,3 +58,19 @@ def test_move_names_and_types_match_what_the_game_prints():
     assert all(re.fullmatch(r"[A-Z0-9 '\-]+", m.name) for m in MOVES.values())
     assert species_name(64) == "FARFETCH'D" and species_name(3) == "NIDORAN♂"
     assert all(re.fullmatch(r"[A-Z0-9 '.♂♀\-]+", s) for s in SPECIES.values())
+
+
+def test_mt_moon_and_the_cerulean_buildings_have_display_names():
+    """Exploration carries a run past Pewter (#35); the places it walks into read as places."""
+    assert map_name(14) == "Route 3" and map_name(15) == "Route 4"
+    assert [map_name(map_id) for map_id in range(60, 69)] == [
+        "Mt. Moon B1F",
+        "Mt. Moon B2F",
+        "Cerulean Trashed House",
+        "Cerulean Trade House",
+        "Cerulean Pokémon Center",
+        "Cerulean Gym",
+        "Bike Shop",
+        "Cerulean Mart",
+        "Mt. Moon Pokémon Center",
+    ]

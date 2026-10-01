@@ -185,8 +185,9 @@ def pp_current(pp: int) -> int:
 MART_SCRIPT = 0xFE
 """The first byte of a Mart's inventory in the ROM (pokered's `script_mart`): then a count, that
 many item ids, and 0xFF."""
-MART_INVENTORIES: dict[int, int] = {42: 0x2442, 56: 0x2449}
+MART_INVENTORIES: dict[int, int] = {42: 0x2442, 56: 0x2449, 67: 0x2453}
 """Map id -> the bank-0 address of that Mart's inventory, read off the ROM (#110): the Viridian Mart
-(POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL) and the Pewter Mart (POKE BALL, POTION, ESCAPE ROPE,
-ANTIDOTE, BURN HEAL, AWAKENING, PARLYZ HEAL), the shelves `tests/rom/test_shop.py` reads at the
-counter. Marts further on are added when a run can reach them."""
+(POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL), the Pewter Mart (POKE BALL, POTION, ESCAPE ROPE,
+ANTIDOTE, BURN HEAL, AWAKENING, PARLYZ HEAL) and the Cerulean Mart, the table's third entry (POKE
+BALL, POTION, REPEL, ANTIDOTE, BURN HEAL, AWAKENING, PARLYZ HEAL), the shelves
+`tests/rom/test_shop.py` checks. Marts further on are added when a run can reach them."""

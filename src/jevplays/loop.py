@@ -58,6 +58,7 @@ from jevplays.executor.goals import STARTER_TILES, Goal
 from jevplays.executor.maps import VIRIDIAN_MART
 from jevplays.executor.navigate import Navigator, goto_far
 from jevplays.executor.options import Memory, Option, generate
+from jevplays.executor.options import _npc_target as npc_target
 from jevplays.executor.talk import talk_to
 from jevplays.runlog import CHECKPOINT_EVERY, RunDir
 from jevplays.state.modes import Mode
@@ -134,6 +135,14 @@ class LoopConfig:
     budget, so the ceiling is carried by the process that spends it."""
     snapshot_every_decision: bool = False
     """Save the game and the loop's memory at every decision, for `jevplays branch` (#82)."""
+    until: str = goal_table.DEFAULT_UNTIL
+    """The last milestone this run works towards (`executor.goals.ALL_MILESTONES`); the run
+    finishes when it is done. The default ends at the Boulder Badge, as every run did before the
+    story went past Pewter; `beat_misty` carries on to the Cascade Badge."""
+
+    def __post_init__(self) -> None:
+        # Refused here, once, rather than by `active_milestone` on every turn of the run.
+        goal_table.check_until(self.until)
 
 
 def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision:
@@ -559,7 +568,14 @@ class Loop:
         """The milestone for this turn. Returns the frames to spend when the run is over, and
         None when there is still a milestone to work towards."""
         previous = self.milestone
-        self.milestone = goal_table.active_milestone(state)
+        until = self.config.until
+        # The default run asks exactly what it always asked, so nothing downstream of it (a
+        # stand-in for `active_milestone` included) has to know `until` exists.
+        self.milestone = (
+            goal_table.active_milestone(state)
+            if until == goal_table.DEFAULT_UNTIL
+            else goal_table.active_milestone(state, until=until)
+        )
         if previous is not None and (self.milestone is None or self.milestone.id != previous.id):
             if self.config.snapshot_every_decision and self.run_dir is not None:
                 self.run_dir.note_milestone(previous.id, self._game_clock())
@@ -577,7 +593,9 @@ class Loop:
                 # The last turn of the run still deserves its answer: nothing after this reaches
                 # a battle menu, so waiting for one would drop it (#51).
                 self._resolve_prediction(state, final=True)
-                await self.broadcaster.publish(status_event("finished", "Boulder Badge"))
+                await self.broadcaster.publish(
+                    status_event("finished", goal_table.finish_words(self.config.until))
+                )
             return self.emu.tick(self.config.idle_frames)
         return None
 
@@ -809,6 +827,8 @@ class Loop:
             return talk_to(emu, 5, 3, "up")
         if macro == "talk_brock":
             return talk_to(emu, 4, 2, "up")
+        if macro == "talk_leader":
+            return self._talk_leader(state)
         if macro == "heal":
             return shop.heal_at_nurse(emu)
         if macro == "shop":
@@ -827,6 +847,28 @@ class Loop:
             # nothing to do here but hand it the tile and the facing the option carries.
             return talk_to(emu, *self.option.target, self.option.face)
         raise ValueError(f"unknown option macro {macro!r}")
+
+    def _talk_leader(self, state: GameState) -> bool:
+        """Talk to the gym leader: the northernmost person on the map, since a leader stands at
+        the back of the gym, north of every trainer in it (ties go west, then to the lower slot,
+        so the choice does not depend on RAM order). Where to stand and which way to face come
+        from the search the NPC options use, which handles a neighbour that is taken or a counter
+        in between. Brock keeps his verified tile (`talk_brock`). Only on the map the active
+        milestone happens on: anywhere else the northernmost person is not a leader."""
+        destination = self.milestone.destination if self.milestone is not None else None
+        if destination is None or state.map_id != maps.map_id_of(destination):
+            return False
+        people = [sprite for sprite in state.sprites if sprite.picture]
+        if not people:
+            return False
+        leader = min(people, key=lambda sprite: (sprite.y, sprite.x, sprite.slot))
+        grid = world.build_grid(self.emu)
+        blocked = frozenset(world.blocked_by_sprites(state.sprites))
+        target = npc_target(grid, blocked, state.tile, leader)
+        if target is None:
+            return False
+        _length, tile, face = target
+        return talk_to(self.emu, *tile, face)
 
     def _take_starter(self, species: str) -> bool:
         """Take the ball Jev chose. The balls on Oak's table are not sprites, so this is a
