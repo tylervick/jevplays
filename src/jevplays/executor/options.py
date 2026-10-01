@@ -261,22 +261,28 @@ def _exit_options(
     return options
 
 
-def _door_options(
-    emu, warps: tuple[world.Warp, ...], state: GameState, grid: world.MapGrid, blocked: frozenset
-) -> list[Option]:
+def _door_options(emu, warps: tuple[world.Warp, ...], state: GameState, grid: world.MapGrid) -> list[Option]:
     """One option per place a door leads to. Usually that is one per destination map; a cave
     floor's ladders to the same floor land in different walled-off pockets, so each landing (the
-    warp's destination warp id) is an option of its own, told apart by where it is, and offered
-    only when it can be walked to: the others are in another pocket of this floor (#129)."""
+    warp's destination warp id) is an option of its own, told apart by where it is (#129).
+
+    A door is offered only when it can be walked to: Mt. Moon B1F's way out to Route 4 is in
+    another pocket of the floor, and offered from this one it failed, read "(tried)", and was
+    chosen again a hundred times over. "Walked to" is judged on the terrain alone -- a sprite in a
+    corridor moves -- and a warp on a tile the grid calls a wall cannot be judged, so it is offered
+    as it always was."""
     options = []
     for dest in sorted({w.dest for w in warps}):
         landings = sorted({w.warp_id for w in warps if w.dest == dest})
         if len(landings) == 1:
+            on_ground = any(w.dest == dest and grid.walkable(w.x, w.y) for w in warps)
+            if on_ground and _walk_to_landing(grid, state.tile, warps, dest, landings[0]) is None:
+                continue
             options.append(_door_option(emu, dest, None, state))
             continue
         ladders = []
         for warp_id in landings:
-            walk = _walk_to_landing(grid, state.tile, warps, dest, warp_id, blocked)
+            walk = _walk_to_landing(grid, state.tile, warps, dest, warp_id)
             if walk is not None:
                 ladders.append((walk, warp_id))
         ladders.sort()
@@ -294,16 +300,37 @@ def _door_options(
 _ORDINALS = ("nearest", "second nearest", "third nearest", "fourth nearest", "fifth nearest")
 
 
-def _walk_to_landing(grid, here, warps, dest, warp_id, blocked) -> tuple[int, tuple[int, int]] | None:
-    """(steps, tile) to the nearest walkable warp of one landing, or None when none can be reached."""
+def _walk_to_landing(grid, here, warps, dest, warp_id) -> tuple[int, tuple[int, int]] | None:
+    """(steps, tile) to the nearest walkable warp of one landing over the terrain, or None when
+    none can be reached."""
     best = None
     for w in warps:
         if w.dest != dest or w.warp_id != warp_id or not grid.walkable(w.x, w.y):
             continue
-        path = [] if (w.x, w.y) == here else world.astar(grid, here, (w.x, w.y), blocked)
+        path = [] if (w.x, w.y) == here else world.astar(grid, here, (w.x, w.y))
         if path is not None and (best is None or len(path) < best[0]):
             best = (len(path), (w.x, w.y))
     return best
+
+
+def first_leg_walkable(grid: world.MapGrid, here: tuple[int, int], warps, legs) -> bool:
+    """Whether a planned route can start from where we stand, judged on the terrain.
+
+    The run's map graph knows maps, not the walled-off pockets of a cave floor: a heal trip from
+    Mt. Moon B1F's exit pocket was planned up a ladder to 1F that only another pocket has, offered,
+    failed at once, and was chosen 2,300 times with the lead at critical HP. A first leg the grid
+    cannot judge -- no such warp on walkable ground -- is let through, as before."""
+    if not legs:
+        return True
+    leg = legs[0]
+    if leg.kind == "edge":
+        return world.reachable_edge(grid, here, leg.direction, frozenset()) is not None
+    if leg.kind != "warp":
+        return True
+    on_ground = [w for w in warps if w.dest == leg.dest_map and grid.walkable(w.x, w.y)]
+    if not on_ground:
+        return True
+    return any((w.x, w.y) == here or world.astar(grid, here, (w.x, w.y)) is not None for w in on_ground)
 
 
 def _door_option(
@@ -424,7 +451,7 @@ def _npc_options(emu, grid: world.MapGrid, state: GameState) -> list[Option]:
     return options
 
 
-def _heal_option(state: GameState, node: str, links: dict) -> Option | None:
+def _heal_option(state: GameState, node: str, links: dict, grid: world.MapGrid, warps) -> Option | None:
     if node in {n for n, _ in CENTERS}:
         return None  # the nurse there is the heal option
     lead = state.party[0] if state.party else None
@@ -440,17 +467,22 @@ def _heal_option(state: GameState, node: str, links: dict) -> Option | None:
     if best is None:
         return None
     _length, center_node, center_map = best
+    legs = tuple(legs_to(state, center_node, links))
+    if not first_leg_walkable(grid, state.tile, warps, legs):
+        return None
     return Option(
         id="heal",
         kind="heal",
         text=f"go heal at {map_name(center_map)}",
         memory="",
-        legs=tuple(legs_to(state, center_node, links)),
+        legs=legs,
         after="heal",
     )
 
 
-def _milestone_option(state: GameState, milestone: Goal | None, node: str, links: dict) -> Option | None:
+def _milestone_option(
+    state: GameState, milestone: Goal | None, node: str, links: dict, grid: world.MapGrid, warps
+) -> Option | None:
     if milestone is None or milestone.done(state):
         return None
     if node not in maps.LINKS and node not in links:
@@ -474,6 +506,8 @@ def _milestone_option(state: GameState, milestone: Goal | None, node: str, links
         # report itself done, stamp nothing, and come back `(new)` for Jev to pick again. A probe
         # past Brock chose one 654 times in 86 seconds that way (#53). Offer nothing instead and
         # let the exits and doors carry the run: a beat Jev can reach by exploring is not a goal.
+        return None
+    if not first_leg_walkable(grid, state.tile, warps, legs):
         return None
     return Option(
         id="milestone",
@@ -507,15 +541,16 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
     grid = world.build_grid(emu)
 
     drafts: list[Option] = []
-    milestone_option = _milestone_option(state, milestone, node, memory.links)
+    warps = world.read_warps(mem)
+    milestone_option = _milestone_option(state, milestone, node, memory.links, grid, warps)
     if milestone_option is not None:
         drafts.append(milestone_option)
-    heal_option = _heal_option(state, node, memory.links)
+    heal_option = _heal_option(state, node, memory.links, grid, warps)
     if heal_option is not None:
         drafts.append(heal_option)
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
     drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
-    drafts.extend(_door_options(emu, world.read_warps(mem), state, grid, blocked))
+    drafts.extend(_door_options(emu, world.read_warps(mem), state, grid))
     drafts.extend(_npc_options(emu, grid, state))
     # Grass tiles are not the same thing as wild Pokémon: Pallet Town and Viridian City both
     # have patches with no encounter table, and standing in one waits out the whole option

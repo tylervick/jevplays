@@ -8,11 +8,13 @@ from jevplays.executor.navigate import Leg
 from jevplays.executor.options import (
     NPC_CAP,
     Memory,
+    first_leg_walkable,
     generate,
     option_verb,
     place_words,
     sprite_noun,
 )
+from jevplays.executor.world import Warp, build_grid
 from jevplays.state.snapshot import Sprite, snapshot
 from tests.support import OVERWORLD_LEAD, FakeEmulator, install_map, write_mon
 
@@ -141,6 +143,52 @@ def test_ladders_that_read_the_same_are_ranked_by_distance():
     texts = {o.id: o.text for o in generate(emu, state, memory, None)}
     assert texts["door_60_2"] == "enter Mt. Moon B1F to the south-east, the nearest"
     assert texts["door_60_0"] == "enter Mt. Moon B1F to the south-east, the second nearest"
+
+
+POCKET = ["..##....", "..##....", "####....", "####....", "........", "........", "........", "........"]
+"""A walled-off pocket in the top-left corner, like one of Mt. Moon B1F's."""
+
+
+def test_a_door_in_another_pocket_of_the_map_is_not_offered():
+    """Mt. Moon B1F's way out to Route 4 is in a pocket the run cannot walk to from here: offered,
+    it failed, read "(tried)", and was chosen again a hundred times. A warp on a tile the grid
+    calls a wall cannot be judged, so it is offered as before."""
+    emu = FakeEmulator()
+    install_map(emu, POCKET, warps=[(1, 1, 0, 41), (7, 7, 0, 42), (3, 0, 0, 43)])
+    emu.mem[0xD362], emu.mem[0xD361] = 5, 5  # the player at (5,5), outside the pocket
+    ids = [o.id for o in generate(emu, snapshot(emu), Memory.empty(), None)]
+    assert "door_41" not in ids and "door_42" in ids and "door_43" in ids
+
+
+def heal_from_a_pocketed_floor(warp):
+    """A hurt lead on Mt. Moon B1F, with the run's graph knowing a warp from B1F to a Center."""
+    emu = FakeEmulator()
+    install_map(emu, POCKET, warps=[warp])
+    emu.mem[ram.wCurMap] = 60  # Mt. Moon B1F
+    emu.mem[0xD362], emu.mem[0xD361] = 5, 5
+    hurt_lead(emu)
+    memory = Memory.empty()
+    memory.note_crossing("map_60", "mt_moon_pokecenter", dest_map=maps.MT_MOON_POKECENTER)
+    return [o.id for o in generate(emu, snapshot(emu), memory, None)]
+
+
+def test_a_heal_trip_that_starts_in_another_pocket_is_not_offered():
+    """The run's graph knows maps, not pockets: a heal trip planned up a ladder only another
+    pocket of the floor has was offered, failed at once, and was chosen 2,300 times."""
+    assert "heal" not in heal_from_a_pocketed_floor((1, 1, 0, maps.MT_MOON_POKECENTER))
+    assert "heal" in heal_from_a_pocketed_floor((7, 7, 0, maps.MT_MOON_POKECENTER))
+
+
+def test_first_leg_walkable_lets_through_what_the_grid_cannot_judge():
+    emu = FakeEmulator()
+    install_map(emu, POCKET)
+    grid = build_grid(emu)
+    assert first_leg_walkable(grid, (5, 5), (), [])
+    assert first_leg_walkable(grid, (5, 5), (), [Leg(kind="warp", dest_map=41)])  # no such warp: as before
+    walled = (Warp(3, 0, 0, 41),)  # on a wall tile
+    assert first_leg_walkable(grid, (5, 5), walled, [Leg(kind="warp", dest_map=41)])
+    assert first_leg_walkable(grid, (5, 5), (), [Leg(kind="edge", direction="east")])
+    assert not first_leg_walkable(grid, (5, 5), (Warp(1, 1, 0, 41),), [Leg(kind="warp", dest_map=41)])
 
 
 def test_a_ladder_is_visited_only_once_this_run_has_used_it():
