@@ -4,10 +4,11 @@ change never needs a new request."""
 from jevplays.brain.decision import BattleAction
 
 HEAL_THRESHOLD = 0.7
-CATCH_THRESHOLD = 0.5
-"""Throw when Jev says a catch is more likely right than not. At 0.6 its own answers on a
-critical-HP target (0.55, 0.58) never cleared it, so a run that had balls and had weakened the
-enemy still threw nothing (#110)."""
+CATCH_THRESHOLD = 0.25
+"""Throw when Jev rates the ball worth throwing at one chance in four or better. Its catch answer
+reads as how likely the ball is to work: about 0.30 at a full-HP PIDGEY or RATTATA, close to the
+real one-in-three, and 0.53-0.62 at critical HP. A threshold of 0.5 never threw at full HP, and a
+run trained on Route 2 for hundreds of decisions for a party it could not finish (#110)."""
 RUN_THRESHOLD = 0.7
 SWITCH_THRESHOLD = 0.7
 HEAL_FIRST_THRESHOLD = 0.7
