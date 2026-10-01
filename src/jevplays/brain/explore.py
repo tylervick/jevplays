@@ -73,9 +73,9 @@ def explore_questions(sj: dict) -> dict[str, dict]:
                 '"milestone" and the "standing_goal", given "progress"? Each option ends with a '
                 "word in parentheses: "
                 '"new" means we have never done it from here; "visited" or "talked already" means '
-                "we have done it before and may not need to again; a visited way out adds, when "
-                'it is known, whether it "leads on to new places" or "leads nowhere new" (every '
-                'place beyond it already visited); "tried" means we chose it '
+                'we have done it before and may not need to again, and "leads nowhere new" '
+                "after it means every place beyond that way out is already visited; "
+                '"tried" means we chose it '
                 "before from here and nothing came of it, so repeat it only if nothing else is "
                 'worth doing. "readiness", when present, says how the lead measures up to the '
                 "fight the milestone walks into: training first is worth more than a milestone "

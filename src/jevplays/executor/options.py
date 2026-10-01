@@ -52,7 +52,7 @@ class Option:
     id: str  # exit_north | door_41 | npc_3 | grass | milestone | heal
     kind: str  # exit | door | npc | grass | milestone | heal
     text: str  # what Jev reads, without the memory word
-    memory: str  # new | visited[, leads on to new places | leads nowhere new] | talked already | tried
+    memory: str  # new | visited | visited, leads nowhere new | talked already | tried
     legs: tuple[Leg, ...]
     after: str | None  # macro name: talk_<slot> | heal | shop | wander | the milestone's after | None
     target: tuple[int, int] | None = None  # the tile the npc option talks from
@@ -205,10 +205,12 @@ class Memory:
         if option.kind in ("exit", "door"):
             if option.dest_map not in self.visited_maps:
                 return "new"
-            beyond = self.leads_on(map_id, option.dest_map)
-            if beyond is None:
-                return "visited"
-            return "visited, leads on to new places" if beyond else "visited, leads nowhere new"
+            # Only the dead end is said. "visited, leads on to new places" was tried and drew Jev
+            # harder than "new" did: 4 of 4 probe runs went Pewter <-> Route 2 thousands of times,
+            # both ways reading so, with Route 3 "(new)" at 0.20 against 0.72.
+            if self.leads_on(map_id, option.dest_map) is False:
+                return "visited, leads nowhere new"
+            return "visited"
         return "new"
 
 

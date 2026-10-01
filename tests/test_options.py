@@ -142,14 +142,16 @@ def test_a_visited_door_into_a_dead_end_leads_nowhere_new():
     assert words["door_41"] == "visited, leads nowhere new"
 
 
-def test_a_visited_exit_with_an_unvisited_map_beyond_it_leads_on():
+def test_a_visited_exit_with_an_unvisited_map_beyond_it_is_plain_visited():
+    """Only the dead end is worded: "leads on to new places" drew Jev back and forth between two
+    visited maps that both said it, past a "(new)" exit (the second past-Brock probe)."""
     emu, state, memory = town()
     memory.note_map(12)
     memory.note_map(50)
     memory.exits[12] = {state.map_id, 50}
     memory.exits[50] = {12, 51}  # 51, two maps out, has never been visited
     words = {o.id: o.memory for o in generate(emu, state, memory, None)}
-    assert words["exit_east"] == "visited, leads on to new places"
+    assert words["exit_east"] == "visited"
 
 
 def test_a_new_place_reached_only_back_through_here_does_not_count():
