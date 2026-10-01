@@ -96,11 +96,16 @@ class _ExplicitUntil(argparse.Action):
 
 def resolve_until(args: argparse.Namespace, run_dir) -> str:
     """The milestone this run stops at: `--until` when given; on `--resume`, what the run was
-    started with (run.json); otherwise the default. Takes a RunDir or None (untyped here so
-    importing cli never pulls the log module in)."""
+    started with (run.json); otherwise the default. A `--resume` with an explicit `--until` writes
+    it back to run.json, so later resumes and `jevplays branch` see what the run went on to do.
+    ValueError when run.json names no milestone a run can stop at. Takes a RunDir or None
+    (untyped here so importing cli never pulls the log module in)."""
     from jevplays.executor.goals import until_from_flags
 
-    if getattr(args, "until_given", False) or run_dir is None or args.resume is None:
+    if run_dir is None or args.resume is None:
+        return args.until
+    if getattr(args, "until_given", False):
+        run_dir.set_flag("until", args.until)
         return args.until
     return until_from_flags(run_dir.info().get("flags", {}))
 
@@ -118,8 +123,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.resume is not None:
         try:
             run_dir = RunDir.open(args.resume)
+            # Before resolve_resume, which sets later decisions aside: a run.json that cannot be
+            # resumed is refused with nothing touched.
+            args.until = resolve_until(args, run_dir)
             start_state, checkpoint_n, orphaned = resolve_resume(run_dir)
-        except FileNotFoundError as error:
+        except (FileNotFoundError, ValueError) as error:
             print(f"jevplays run: {error}", file=sys.stderr)
             return 2
         memory = resume_memory(run_dir)
@@ -144,7 +152,6 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "until": args.until,
             },
         )
-    args.until = resolve_until(args, run_dir)
 
     from jevplays.dashboard.events import status_event
     from jevplays.dashboard.server import Broadcaster, create_app, serve

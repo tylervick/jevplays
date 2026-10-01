@@ -103,3 +103,26 @@ def test_every_branch_carries_the_recorded_runs_until(tmp_path):
     assert jobs[0].milestone == "beat_misty" and jobs[0].until == "beat_misty"
     config = branch_config(jobs[0])
     assert config.until == "beat_misty" and config.goal == "g" and config.paced is False
+
+
+def test_an_unknown_until_is_refused_before_any_branch_runs(tmp_path, capsys):
+    from jevplays.branch.runner import measure, recorded_until
+
+    with pytest.raises(ValueError, match="beat_giovanni"):
+        recorded_until({"flags": {"until": "beat_giovanni"}})
+
+    run = RunDir.create(tmp_path, rom=None, flags={"until": "beat_giovanni"})
+    run.append(decision())
+    run.snapshot(FakeEmulator(), 1, {"frame": 0, "milestone": "beat_misty", "memory": {}})
+    rom = tmp_path / "rom.gb"
+    rom.write_bytes(b"")
+    assert measure(run.path, rom=rom, seeds=2, sample=None, workers=1) == 2
+    assert "beat_giovanni" in capsys.readouterr().err
+    assert not (run.path / "branches").exists()
+
+
+def test_the_loop_refuses_an_unknown_until_when_it_is_built():
+    from jevplays.loop import LoopConfig
+
+    with pytest.raises(ValueError, match="beat_giovanni"):
+        LoopConfig(until="beat_giovanni")

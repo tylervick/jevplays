@@ -204,10 +204,20 @@ def milestone_by_id(goal_id: str) -> Goal:
     raise ValueError(f"unknown milestone {goal_id!r}")
 
 
+def check_until(until: str) -> str:
+    """`until` itself, when it names a milestone a run can stop at (`BADGE_MILESTONES`); a
+    ValueError that says which ones can, when it does not."""
+    if until not in BADGE_MILESTONES:
+        raise ValueError(
+            f"until {until!r} is not a milestone a run can stop at ({', '.join(BADGE_MILESTONES)})"
+        )
+    return until
+
+
 def until_from_flags(flags: dict) -> str:
     """The `until` a run was started with, from its run.json flags. A run.json from before the
-    flag existed ran the default spine."""
-    return flags.get("until") or DEFAULT_UNTIL
+    flag existed ran the default spine. ValueError for a value that names no badge milestone."""
+    return check_until(flags.get("until") or DEFAULT_UNTIL)
 
 
 def finish_words(until: str) -> str:

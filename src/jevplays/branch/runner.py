@@ -191,9 +191,13 @@ def run_branch(job: Job, brain_factory=None) -> BranchResult:
 
 
 def measure(run_path: Path, *, rom: Path, seeds: int, sample: int | None, workers: int) -> int:
-    from jevplays.emulator.pyboy import Emulator
-
     run_dir = RunDir.open(run_path)
+    info = run_dir.info()
+    try:
+        until = recorded_until(info)
+    except ValueError as error:
+        print(f"jevplays branch: {error}", file=sys.stderr)
+        return 2
     try:
         found = candidates(run_dir)
     except FileNotFoundError as error:
@@ -208,14 +212,14 @@ def measure(run_path: Path, *, rom: Path, seeds: int, sample: int | None, worker
     except SeedsMismatch as error:
         print(f"jevplays branch: {error}", file=sys.stderr)
         return 2
-    info = run_dir.info()
     model = info.get("model", "")
     goal = info.get("flags", {}).get("battle_goal") or DEFAULT_GOAL
-    until = recorded_until(info)
     store.set_meta("run", str(run_path))
     store.set_meta("model", model)
     done = store.done()
     jobs: list[Job] = []
+    from jevplays.emulator.pyboy import Emulator
+
     with Emulator(rom) as emu:
         for c in found:
             if c.reference_frames is None:

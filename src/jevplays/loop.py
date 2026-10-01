@@ -140,6 +140,10 @@ class LoopConfig:
     finishes when it is done. The default ends at the Boulder Badge, as every run did before the
     story went past Pewter; `beat_misty` carries on to the Cascade Badge."""
 
+    def __post_init__(self) -> None:
+        # Refused here, once, rather than by `active_milestone` on every turn of the run.
+        goal_table.check_until(self.until)
+
 
 def local_decision(kind: str, sj: dict, action: Action, reason: str) -> Decision:
     """A decision code made on its own, because there is no brain to ask or because policy
