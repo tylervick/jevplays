@@ -16,6 +16,7 @@ from jevplays.emulator import ram
 from jevplays.executor import maps, world
 from jevplays.executor.goals import Goal, legs_to
 from jevplays.executor.navigate import Leg
+from jevplays.executor.shop import shopping_list
 from jevplays.executor.talk import FACING_OFFSET, adjacent_tile
 from jevplays.state.names import MAP_NAMES, map_name
 from jevplays.state.snapshot import GameState, Sprite
@@ -240,7 +241,7 @@ def _exit_options(
     return options
 
 
-def _door_options(emu, warps: tuple[world.Warp, ...]) -> list[Option]:
+def _door_options(emu, warps: tuple[world.Warp, ...], state: GameState) -> list[Option]:
     options = []
     for dest in sorted({w.dest for w in warps}):
         # WARP_LAST_MAP means "back out the way you came in", whose map id is only in `wLastMap`,
@@ -248,7 +249,9 @@ def _door_options(emu, warps: tuple[world.Warp, ...]) -> list[Option]:
         # for the navigator to check. Reading `wLastMap` would fix both; deferred with #8.
         text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
         stock = world.mart_inventory(emu, dest)
-        if stock:
+        # Only a shelf the run can buy from is worth naming: broke, or with nothing the clerk
+        # would buy, the door advertised a shelf it could not use and Jev walked in and out (#52).
+        if stock and shopping_list(state):
             # What a Mart is for, in the game's own words: nothing else Jev saw said so, and a
             # run passed the Mart 25 times with an empty bag and never caught anything (#110).
             text += f", which sells {', '.join(stock)}"
@@ -331,6 +334,11 @@ def _npc_options(emu, grid: world.MapGrid, state: GameState) -> list[Option]:
         if sprite.picture == NURSE_PICTURE:
             after = "heal"
         elif sprite.picture == CLERK_PICTURE:
+            if not shopping_list(state):
+                # Nothing the clerk would buy can be afforded or carried: the step would come back
+                # at once as a success, never be marked tried, and read "(new)" for good. Past Brock
+                # four runs chose it 200 times in a row.
+                continue
             after = "shop"
             stock = world.mart_inventory(emu, state.map_id)
             if stock:
@@ -435,7 +443,7 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
         drafts.append(heal_option)
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
     drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
-    drafts.extend(_door_options(emu, world.read_warps(mem)))
+    drafts.extend(_door_options(emu, world.read_warps(mem), state))
     drafts.extend(_npc_options(emu, grid, state))
     # Grass tiles are not the same thing as wild Pokémon: Pallet Town and Viridian City both
     # have patches with no encounter table, and standing in one waits out the whole option

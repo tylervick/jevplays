@@ -380,16 +380,24 @@ def test_walking_a_warp_both_ways_keeps_one_link_with_a_destination_to_check():
 
 def test_a_mart_door_and_its_clerk_say_what_the_shop_sells():
     """Jev passed the Mart 25 times with an empty bag: nothing said a Mart sells Poké Balls (#110)."""
+    from dataclasses import replace
+
     from tests.test_world import VIRIDIAN_SHELF, _shelf
 
+    # With money to spend: a shelf the run cannot buy from is not advertised (the clerk loop past
+    # Brock), and the fake emulator's money is zero unless a test sets it.
     emu, state, memory = town()
     _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
-    door = next(o for o in generate(emu, snapshot(emu), memory, None) if o.id == "door_42")
+    door = next(
+        o for o in generate(emu, replace(snapshot(emu), money=3000), memory, None) if o.id == "door_42"
+    )
     assert door.text == "enter Viridian Mart, which sells POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL"
 
     emu, state, memory = town(sprites=((1, 0x26, 6, 1),), map_id=42)  # the clerk, in the Mart
     _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
-    clerk = next(o for o in generate(emu, snapshot(emu), memory, None) if o.after == "shop")
+    clerk = next(
+        o for o in generate(emu, replace(snapshot(emu), money=3000), memory, None) if o.after == "shop"
+    )
     assert clerk.text.endswith("to buy POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL")
 
 
@@ -411,3 +419,25 @@ def test_grass_says_when_there_is_nothing_to_catch_with():
     assert empty.text == "train in the tall grass here, with no Poké Balls to catch with"
     assert grass(bag=(BagItem("POKE BALL", 3),), party=(lead,)).text == "train in the tall grass here"
     assert grass(bag=(), party=(lead, lead, lead)).text == "train in the tall grass here"
+
+
+def test_a_mart_the_run_cannot_buy_anything_in_is_not_sold_to_jev():
+    """Broke, with a few balls: the clerk step had nothing it could buy, came back at once as a
+    success, and the option still read "to buy POKE BALL, ... (new)". Past Brock, four runs chose it
+    200 times in a row and one walked in and out of the Pewter Mart 93 times (#52's ping-pong, back).
+    Where nothing can be bought, the clerk is not offered and the door does not advertise a shelf."""
+    from dataclasses import replace
+
+    from tests.test_world import VIRIDIAN_SHELF, _shelf
+
+    emu, state, memory = town()
+    _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
+    broke = replace(snapshot(emu), money=0)
+    door = next(o for o in generate(emu, broke, memory, None) if o.id == "door_42")
+    assert door.text == "enter Viridian Mart"
+
+    emu, state, memory = town(sprites=((1, 0x26, 6, 1),), map_id=42)
+    _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
+    broke = replace(snapshot(emu), money=0)
+    assert not [o for o in generate(emu, broke, memory, None) if o.after == "shop"]
+    assert [o for o in generate(emu, replace(snapshot(emu), money=3000), memory, None) if o.after == "shop"]
