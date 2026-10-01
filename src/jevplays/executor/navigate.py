@@ -207,8 +207,10 @@ class Navigator:
             direction = (
                 world.EDGE_DIRECTION[leg.direction] if leg.kind == "edge" else self._off_edge(target, grid)
             )
-            if direction is None:  # a warp tile inside the map: standing on it should have warped already
-                return self._fail_leg(emu)
+            if direction is None:
+                # A warp tile inside the map, under our feet: arriving on a ladder does not take
+                # it back. Step off; the next turn walks back on, which does.
+                return self._step_off(emu, state, grid, here, blocked)
             # The long hold is deliberate here, unlike the short press every other step uses
             # (#20): off the edge of a map the second step is what carries the player into the
             # connected map, and on a warp tile the map changes on the first step, so the extra
@@ -274,12 +276,15 @@ class Navigator:
         if leg.kind == "edge":
             return world.reachable_edge(grid, here, leg.direction, blocked)
         if leg.kind == "warp":
-            candidates = world.walkable_warps(grid, world.read_warps(mem), leg.dest_map)
-            if not candidates:
-                return None
-            nearest = min(candidates, key=lambda w: abs(w.x - here[0]) + abs(w.y - here[1]))
-            return (nearest.x, nearest.y)
+            return world.warp_target(grid, here, world.read_warps(mem), leg.dest_map, blocked)
         return None
+
+    def _step_off(self, emu, state, grid, here, blocked) -> str:
+        for direction, (dx, dy) in world.DIRECTIONS.items():
+            cell = (here[0] + dx, here[1] + dy)
+            if grid.walkable(*cell) and cell not in blocked and step(emu, direction):
+                return "moving"
+        return self._fail_step(emu, state, None)
 
     @staticmethod
     def _off_edge(cell, grid):

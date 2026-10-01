@@ -201,3 +201,37 @@ def reachable_edge(
 
 def walkable_warps(grid: MapGrid, warps: tuple[Warp, ...], dest: int) -> list[Warp]:
     return [w for w in warps if w.dest == dest and grid.walkable(w.x, w.y)]
+
+
+def warp_target(
+    grid: MapGrid, here: tuple[int, int], warps: tuple[Warp, ...], dest: int, blocked: frozenset
+) -> tuple[int, int] | None:
+    """The warp to `dest` a walk should aim at: one underfoot on the map's edge (a door mat, taken by
+    stepping off the edge); else the one with the shortest path from `here`; else one underfoot
+    inside the map (stepping off and back on takes it); else the nearest as the crow flies, so a
+    sprite standing on it is still waited out.
+
+    Mt. Moon B1F is several pockets in one map, each listing every ladder: the nearest ladder to
+    B2F as the crow flies was in another pocket, the leg failed at once, and each probe run past
+    Brock asked about the same three ladders thousands of times."""
+    candidates = walkable_warps(grid, warps, dest)
+    if not candidates:
+        return None
+    best: tuple[int, tuple[int, int]] | None = None
+    underfoot = None
+    for w in candidates:
+        cell = (w.x, w.y)
+        if cell == here:
+            if here[0] in (0, grid.width - 1) or here[1] in (0, grid.height - 1):
+                return cell  # a door mat on the map's edge: stepping off the edge takes it
+            underfoot = cell
+            continue
+        path = astar(grid, here, cell, blocked)
+        if path is not None and (best is None or len(path) < best[0]):
+            best = (len(path), cell)
+    if best is not None:
+        return best[1]
+    if underfoot is not None:
+        return underfoot
+    nearest = min(candidates, key=lambda w: abs(w.x - here[0]) + abs(w.y - here[1]))
+    return (nearest.x, nearest.y)
