@@ -395,6 +395,12 @@ def _milestone_option(state: GameState, milestone: Goal | None, node: str, links
         # walking up to a table that is not there. One crossing out of here is enough to lift it.
         return None
     legs = tuple(milestone.legs(state, links))
+    if not legs and milestone.destination is not None and node != milestone.destination:
+        # The same two meanings of empty legs, told apart by where the milestone happens rather
+        # than by its macro: past Pewter nothing is hand-written, so until the run has walked to
+        # the gym there is no route, and `talk_leader` run here would talk to whoever is
+        # northernmost on the wrong map. Offer nothing; the exits and doors carry the run (#53).
+        return None
     if not legs and milestone.after is None:
         # Empty legs mean one of two things: we are standing where the milestone happens (talk to
         # Oak in his lab), or `maps.route` found no way there at all. The macro tells them apart

@@ -441,3 +441,25 @@ def test_a_mart_the_run_cannot_buy_anything_in_is_not_sold_to_jev():
     broke = replace(snapshot(emu), money=0)
     assert not [o for o in generate(emu, broke, memory, None) if o.after == "shop"]
     assert [o for o in generate(emu, replace(snapshot(emu), money=3000), memory, None) if o.after == "shop"]
+
+
+def test_a_milestone_with_a_destination_is_not_offered_until_the_run_has_walked_there():
+    """Past Pewter there are no hand-written links (#35): a milestone that names where it
+    happens, cannot be routed there, and is not standing there is not offered, even though its
+    `after` macro would otherwise keep it on the list. The exits and doors carry the run (#53)."""
+    from dataclasses import replace as with_fields
+
+    far = with_fields(milestone_stub(dest="cerulean_gym", after="talk_leader"), destination="cerulean_gym")
+    emu, state, _memory = town(map_id=maps.PEWTER_CITY)
+    assert not any(o.kind == "milestone" for o in generate(emu, state, Memory.empty(), far))
+
+    walked = Memory.empty()
+    walked.note_crossing("pewter_city", "cerulean_city", direction="east")
+    walked.note_crossing("cerulean_city", "cerulean_gym", dest_map=maps.CERULEAN_GYM)
+    opts = generate(emu, state, walked, far)
+    assert opts[0].kind == "milestone" and opts[0].legs and opts[0].after == "talk_leader"
+
+    # Standing in the gym, the legs are empty for the other reason: this is where it happens.
+    emu, state, _memory = town(map_id=maps.CERULEAN_GYM)
+    opts = generate(emu, state, walked, far)
+    assert opts[0].kind == "milestone" and opts[0].legs == () and opts[0].after == "talk_leader"

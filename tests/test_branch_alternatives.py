@@ -132,3 +132,10 @@ def test_prepare_an_explore_decision_lists_every_option_and_the_offline_pick():
     assert prepared.chosen == f"explore:{options[-1].id}"
     assert prepared.offline is not None and prepared.offline.startswith("explore:")
     assert explore_alternatives(options)[0].action.option_id == options[0].id
+
+
+def test_a_logged_milestone_past_brock_is_found_again():
+    """A `--until beat_misty` run logs `beat_misty` as its milestone; replaying it must find it."""
+    assert goal_by_id("beat_misty").badge == "Cascade Badge"
+    assert goal_by_id("beat_brock").badge == "Boulder Badge"
+    assert goal_by_id(None) is None
