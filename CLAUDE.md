@@ -46,8 +46,9 @@ without an issue behind it.
 - Type effectiveness lives in `state/types.py` for measurement only; never pass it to Jev.
 - A change to a question's wording or a state field Jev sees re-records the fixtures
   (`Scripts/record-fixtures.py`) in the same PR.
-- Options are generated from the map (`executor/options.py`); the three milestones in
-  `executor/goals.py` are the only hand-written story. Never add a goal for a beat Jev can reach
-  by exploring.
+- Options are generated from the map (`executor/options.py`); the milestones in
+  `executor/goals.py` are the only hand-written story: the starter, the Pokédex, and one per gym
+  badge (Brock; Misty behind `--until beat_misty`). Never add a goal for a beat Jev can reach by
+  exploring, and never hand-write the way to a milestone: it is routed over the graph the run walks.
 - RAM facts (addresses, layouts) live in `src/jevplays/emulator/ram.py`.
 - Never hand-write map waypoints; read the map (`src/jevplays/executor/world.py`).
