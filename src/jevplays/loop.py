@@ -702,11 +702,15 @@ class Loop:
         from_node = maps.node_of(from_map, *from_tile)
         to_node = maps.node_of(to_map, self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
         before = len(self.memory.links.get(from_node, ()))
+        # The way back is a warp to the map we left when this map has one (a ladder); otherwise it
+        # is the building's "back out the way you came in".
+        straight_back = any(w.dest == from_map for w in world.read_warps(self.emu.mem))
         self.memory.note_crossing(
             from_node,
             to_node,
             direction=leg.direction if leg.kind == "edge" else None,
             dest_map=None if leg.kind == "edge" else to_map,
+            back_dest_map=from_map if straight_back else maps.WARP_LAST_MAP,
         )
         if leg.kind == "warp":
             self._note_ladders(leg, from_map)

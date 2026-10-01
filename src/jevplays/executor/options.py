@@ -121,7 +121,13 @@ class Memory:
         self.visited_maps.add(map_id)
 
     def note_crossing(
-        self, from_node: str, to_node: str, *, direction: str | None = None, dest_map: int | None = None
+        self,
+        from_node: str,
+        to_node: str,
+        *,
+        direction: str | None = None,
+        dest_map: int | None = None,
+        back_dest_map: int = maps.WARP_LAST_MAP,
     ) -> None:
         """Remember a crossing the run actually walked, and the way back along it.
 
@@ -133,14 +139,16 @@ class Memory:
 
         Gen 1's overworld connections are symmetric, so one walk teaches both directions; a
         warp's reverse is the `WARP_LAST_MAP` door that `maps.LINKS` already uses for a
-        building's way out.
+        building's way out, unless the caller saw a warp straight back (`back_dest_map`): a cave
+        ladder names the floor it leads to, has no `WARP_LAST_MAP` warp at all, and a way back
+        recorded as one sent a heal trip from Mt. Moon B2F looking for a warp that is not there.
         """
         if direction is not None:
             forward = maps.edge(direction, to_node)
             back = maps.edge(_OPPOSITE[direction], from_node)
         else:
             forward = maps.warp(dest_map, to_node)
-            back = maps.warp(maps.WARP_LAST_MAP, from_node)
+            back = maps.warp(back_dest_map, from_node)
         self._add_link(from_node, forward)
         self._add_link(to_node, back)
 

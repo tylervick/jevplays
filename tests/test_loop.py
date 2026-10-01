@@ -1010,6 +1010,24 @@ def test_a_crossing_the_run_walked_is_added_to_its_map_graph():
     assert ("warp", here) in [(x.kind, x.dest_node) for x in loop.memory.links["pallet_town"]]
 
 
+def test_a_ladder_the_run_went_down_is_recorded_as_the_way_back_up():
+    """Mt. Moon's floors warp to each other by map id; none has a "back the way you came" warp,
+    so the way back is recorded as the ladder that leads straight there."""
+    emu, bc = (
+        explore_emu(sprites=(), connections={}, warps=[(3, 3, 0, ram.WARP_LAST_MAP)]),
+        RecordingBroadcaster(),
+    )
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    loop.memory.note_tried(UNMAPPED_MAP, "grass")
+    run(loop, 1)  # takes the only door and plans its warp leg
+    assert loop.navigator.current.kind == "warp"
+    emu.mem[ram.wCurMap] = maps.PALLET_TOWN  # the warp lands us there...
+    emu.mem[ram.wWarpEntries : ram.wWarpEntries + 4] = [3, 3, 0, UNMAPPED_MAP]  # ...by a ladder back
+    run(loop, 1)
+    back = [(x.kind, x.dest_node, x.dest_map) for x in loop.memory.links["pallet_town"]]
+    assert back == [("warp", f"map_{UNMAPPED_MAP}", UNMAPPED_MAP)]
+
+
 def test_a_blackout_mid_walk_teaches_the_graph_nothing():
     """A leg that came back `lost` never crossed anything -- the map changed under it. Recording
     that as a link would invent a road from wherever we were to wherever the blackout put us."""
