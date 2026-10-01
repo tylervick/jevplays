@@ -564,6 +564,13 @@ class Loop:
             if self.config.snapshot_every_decision and self.run_dir is not None:
                 self.run_dir.note_milestone(previous.id, self._game_clock())
             await self.broadcaster.publish(status_event("running", f"milestone done: {previous.id}"))
+            # A new milestone is a new situation: an option that came to nothing before it may
+            # not now. The parcel errand talks to the Viridian Mart clerk before the Mart sells
+            # anything, and the "tried" it left kept Jev from buying a ball there for the rest of
+            # the run (#110).
+            if self.memory.tried:
+                self.memory.tried.clear()
+                self._save_memory()
         if self.milestone is None:
             if not self.finished:
                 self.finished = True
