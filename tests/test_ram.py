@@ -95,3 +95,9 @@ def test_fake_memory_serves_rom_reads():
     mem.rom[(25, 0x4000)] = 0x77
     assert mem[25, 0x4000] == 0x77
     assert mem[25, 0x4001] == 0
+
+
+def test_the_cerulean_mart_inventory_is_the_third_entry_of_the_rom_table():
+    from jevplays.emulator.ram import MART_INVENTORIES
+
+    assert MART_INVENTORIES[67] == 0x2453

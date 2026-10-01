@@ -73,3 +73,27 @@ def test_the_hand_written_table_is_searched_before_the_overlay():
     links = {"pallet_town": [maps.edge("north", "map_99")]}
     out = maps.route("pallet_town", "route_1", links=links)
     assert [link.dest_node for link in out] == ["route_1"]
+
+
+def test_cerulean_has_node_names_but_no_hand_written_links():
+    """Crossings into Cerulean record names a milestone can route to; the way there comes only
+    from the run's own walked graph, never from LINKS (no waypoints past Pewter)."""
+    assert node_of(3, 10, 10) == "cerulean_city"
+    assert [node_of(map_id, 0, 0) for map_id in (64, 65, 67)] == [
+        "cerulean_pokecenter",
+        "cerulean_gym",
+        "cerulean_mart",
+    ]
+    assert MAP_IDS["cerulean_gym"] == maps.CERULEAN_GYM == 65
+    cerulean = {"cerulean_city", "cerulean_pokecenter", "cerulean_gym", "cerulean_mart"}
+    assert not cerulean & set(LINKS)
+    assert not any(link.dest_node in cerulean for links in LINKS.values() for link in links)
+    assert route("pewter_city", "cerulean_gym") is None
+    walked = {
+        "pewter_city": [maps.edge("east", "cerulean_city")],
+        "cerulean_city": [maps.warp(65, "cerulean_gym")],
+    }
+    assert [link.dest_node for link in route("pewter_city", "cerulean_gym", links=walked)] == [
+        "cerulean_city",
+        "cerulean_gym",
+    ]
