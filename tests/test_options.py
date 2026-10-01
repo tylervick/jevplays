@@ -380,16 +380,24 @@ def test_walking_a_warp_both_ways_keeps_one_link_with_a_destination_to_check():
 
 def test_a_mart_door_and_its_clerk_say_what_the_shop_sells():
     """Jev passed the Mart 25 times with an empty bag: nothing said a Mart sells Poké Balls (#110)."""
+    from dataclasses import replace
+
     from tests.test_world import VIRIDIAN_SHELF, _shelf
 
+    # With money to spend: a shelf the run cannot buy from is not advertised (the clerk loop past
+    # Brock), and the fake emulator's money is zero unless a test sets it.
     emu, state, memory = town()
     _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
-    door = next(o for o in generate(emu, snapshot(emu), memory, None) if o.id == "door_42")
+    door = next(
+        o for o in generate(emu, replace(snapshot(emu), money=3000), memory, None) if o.id == "door_42"
+    )
     assert door.text == "enter Viridian Mart, which sells POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL"
 
     emu, state, memory = town(sprites=((1, 0x26, 6, 1),), map_id=42)  # the clerk, in the Mart
     _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
-    clerk = next(o for o in generate(emu, snapshot(emu), memory, None) if o.after == "shop")
+    clerk = next(
+        o for o in generate(emu, replace(snapshot(emu), money=3000), memory, None) if o.after == "shop"
+    )
     assert clerk.text.endswith("to buy POKE BALL, ANTIDOTE, PARLYZ HEAL, BURN HEAL")
 
 
@@ -411,3 +419,97 @@ def test_grass_says_when_there_is_nothing_to_catch_with():
     assert empty.text == "train in the tall grass here, with no Poké Balls to catch with"
     assert grass(bag=(BagItem("POKE BALL", 3),), party=(lead,)).text == "train in the tall grass here"
     assert grass(bag=(), party=(lead, lead, lead)).text == "train in the tall grass here"
+
+
+def test_a_mart_the_run_cannot_buy_anything_in_is_not_sold_to_jev():
+    """Broke, with a few balls: the clerk step had nothing it could buy, came back at once as a
+    success, and the option still read "to buy POKE BALL, ... (new)". Past Brock, four runs chose it
+    200 times in a row and one walked in and out of the Pewter Mart 93 times (#52's ping-pong, back).
+    Where nothing can be bought, the clerk is not offered and the door does not advertise a shelf."""
+    from dataclasses import replace
+
+    from tests.test_world import VIRIDIAN_SHELF, _shelf
+
+    emu, state, memory = town()
+    _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
+    broke = replace(snapshot(emu), money=0)
+    door = next(o for o in generate(emu, broke, memory, None) if o.id == "door_42")
+    assert door.text == "enter Viridian Mart"
+
+    emu, state, memory = town(sprites=((1, 0x26, 6, 1),), map_id=42)
+    _shelf(emu, ram.MART_INVENTORIES[42], VIRIDIAN_SHELF)
+    broke = replace(snapshot(emu), money=0)
+    assert not [o for o in generate(emu, broke, memory, None) if o.after == "shop"]
+    assert [o for o in generate(emu, replace(snapshot(emu), money=3000), memory, None) if o.after == "shop"]
+
+
+def test_a_milestone_with_a_destination_is_not_offered_until_the_run_has_walked_there():
+    """Past Pewter there are no hand-written links (#35): a milestone that names where it
+    happens, cannot be routed there, and is not standing there is not offered, even though its
+    `after` macro would otherwise keep it on the list. The exits and doors carry the run (#53)."""
+    from dataclasses import replace as with_fields
+
+    far = with_fields(milestone_stub(dest="cerulean_gym", after="talk_leader"), destination="cerulean_gym")
+    emu, state, _memory = town(map_id=maps.PEWTER_CITY)
+    assert not any(o.kind == "milestone" for o in generate(emu, state, Memory.empty(), far))
+
+    walked = Memory.empty()
+    walked.note_crossing("pewter_city", "cerulean_city", direction="east")
+    walked.note_crossing("cerulean_city", "cerulean_gym", dest_map=maps.CERULEAN_GYM)
+    opts = generate(emu, state, walked, far)
+    assert opts[0].kind == "milestone" and opts[0].legs and opts[0].after == "talk_leader"
+
+    # Standing in the gym, the legs are empty for the other reason: this is where it happens.
+    emu, state, _memory = town(map_id=maps.CERULEAN_GYM)
+    opts = generate(emu, state, walked, far)
+    assert opts[0].kind == "milestone" and opts[0].legs == () and opts[0].after == "talk_leader"
+
+
+def test_a_hurt_lead_in_cerulean_heals_at_the_cerulean_center_once_the_run_has_walked_there():
+    """Past Pewter the heal trip finds the nearest center the run has walked to, not the one
+    before Mt. Moon; the way there is still only the walked graph."""
+    emu, _state, _memory = town(map_id=maps.CERULEAN_CITY)
+    hurt_lead(emu)
+    state = snapshot(emu)
+    walked = Memory.empty()
+    walked.note_crossing("pewter_city", "cerulean_city", direction="east")
+    walked.note_crossing("cerulean_city", "cerulean_pokecenter", dest_map=maps.CERULEAN_POKECENTER)
+    heal = next(o for o in generate(emu, state, walked, None) if o.kind == "heal")
+    assert heal.text == "go heal at Cerulean Pokémon Center"
+    assert [leg.dest_map for leg in heal.legs] == [maps.CERULEAN_POKECENTER]
+
+    # Without that crossing the nearest known center is Pewter's, back the way the run came.
+    back = Memory.empty()
+    back.note_crossing("pewter_city", "cerulean_city", direction="east")
+    heal = next(o for o in generate(emu, state, back, None) if o.kind == "heal")
+    assert heal.text == "go heal at Pewter Pokémon Center"
+
+
+def test_the_past_pewter_centers_heal_and_are_not_left_to_heal_in():
+    from jevplays.executor.options import CENTERS
+
+    assert ("cerulean_pokecenter", maps.CERULEAN_POKECENTER) in CENTERS
+    assert ("mt_moon_pokecenter", maps.MT_MOON_POKECENTER) in CENTERS
+    assert maps.node_of(68, 0, 0) == "mt_moon_pokecenter"
+    for center in (maps.CERULEAN_POKECENTER, 68):
+        emu, _state, _memory = town(map_id=center)
+        hurt_lead(emu)
+        assert not any(o.kind == "heal" for o in generate(emu, snapshot(emu), Memory.empty(), None))
+
+
+def test_the_real_misty_milestone_is_withheld_until_the_run_has_walked_to_her_gym():
+    """The no-route rule with BEAT_MISTY itself, not a stub: from Pewter with nothing walked east
+    it is not offered; with the crossings to the gym it is, and leads there."""
+    from dataclasses import replace as with_fields
+
+    from jevplays.executor.goals import BEAT_MISTY
+
+    emu, _state, _memory = town(map_id=maps.PEWTER_CITY)
+    state = with_fields(snapshot(emu), badges=1)
+    assert not any(o.kind == "milestone" for o in generate(emu, state, Memory.empty(), BEAT_MISTY))
+
+    walked = Memory.empty()
+    walked.note_crossing("pewter_city", "cerulean_city", direction="east")
+    walked.note_crossing("cerulean_city", "cerulean_gym", dest_map=maps.CERULEAN_GYM)
+    milestone = next(o for o in generate(emu, state, walked, BEAT_MISTY) if o.kind == "milestone")
+    assert milestone.after == "talk_leader" and milestone.legs[-1].dest_map == maps.CERULEAN_GYM

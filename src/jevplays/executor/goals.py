@@ -33,6 +33,14 @@ class Goal:
     """The level of the toughest Pokémon this milestone walks into, or None when it walks into no
     fight. A story fact, so it lives here; `brain.buckets.readiness_bucket` turns it and the
     lead's level into the word Jev judges with (#42)."""
+    destination: str | None = None
+    """The map graph node where `after` happens, for a milestone whose way there is only ever the
+    run's walked graph. Standing anywhere else with no route there, the milestone is not offered
+    (`options._milestone_option`): the run has not walked there yet, and the exits and doors carry
+    it. None for the milestones the hand-written table reaches."""
+    badge: str | None = None
+    """The badge this milestone ends in, or None. A run that stops at this milestone (`--until`)
+    finishes naming it."""
 
 
 def lead(state: GameState):
@@ -101,6 +109,12 @@ def _beat_brock_legs(state: GameState, links: dict) -> list[Leg]:
     return legs_to(state, "pewter_gym", links) + [Leg(kind="walk", target=(4, 2))]
 
 
+def _beat_misty_legs(state: GameState, links: dict) -> list[Leg]:
+    # To the gym door and no further: where Misty stands is read off the map by `talk_leader`,
+    # not typed in here.
+    return legs_to(state, "cerulean_gym", links)
+
+
 GET_STARTER = Goal(
     id="get_starter",
     description="Get a starter Pokémon from Professor Oak",
@@ -149,17 +163,74 @@ MILESTONES: list[Goal] = [
         # Brock's Onix. The Jr. Trainer before him fields level 11s, so the run that can take the
         # Onix can take the gym.
         expects_level=14,
+        badge="Boulder Badge",
     ),
 ]
 """Milestone 4b's spine: the three moments the run always passes through, in order. Everything
 else Jev may do at a given moment is generated from the map it is standing on
 (`executor.options`); this is the handful of destinations that motivate those options, and the
-last one being done is what ends a run."""
+last one being done is what ends a run that takes the default `until`."""
+
+BEAT_MISTY = Goal(
+    id="beat_misty",
+    description="Challenge Misty at the Cerulean Gym and earn the Cascade Badge",
+    available=lambda s: s.badges >= 1,
+    done=lambda s: s.badges >= 2,
+    legs=_beat_misty_legs,
+    after="talk_leader",
+    destination="cerulean_gym",
+    # Misty's Starmie.
+    expects_level=21,
+    badge="Cascade Badge",
+)
+
+ALL_MILESTONES: list[Goal] = [*MILESTONES, BEAT_MISTY]
+"""The whole story a run can be pointed at: the default spine, then what lies past it, which a
+run opts into with `--until` (`LoopConfig.until`). `MILESTONES` stays the default spine so every
+run, measurement series and the demo still end at the Boulder Badge."""
+
+DEFAULT_UNTIL = "beat_brock"
+"""The last milestone a run works towards unless told otherwise."""
+
+BADGE_MILESTONES: tuple[str, ...] = tuple(goal.id for goal in ALL_MILESTONES if goal.badge)
+"""The milestones a run can be told to stop at: the ones that end in a badge."""
 
 
-def active_milestone(state: GameState) -> Goal | None:
-    """The first of `MILESTONES` that's available and not yet done, or None once all three are."""
-    for goal in MILESTONES:
+def milestone_by_id(goal_id: str) -> Goal:
+    """The milestone called `goal_id`; ValueError for a name that is not one."""
+    for goal in ALL_MILESTONES:
+        if goal.id == goal_id:
+            return goal
+    raise ValueError(f"unknown milestone {goal_id!r}")
+
+
+def check_until(until: str) -> str:
+    """`until` itself, when it names a milestone a run can stop at (`BADGE_MILESTONES`); a
+    ValueError that says which ones can, when it does not."""
+    if until not in BADGE_MILESTONES:
+        raise ValueError(
+            f"until {until!r} is not a milestone a run can stop at ({', '.join(BADGE_MILESTONES)})"
+        )
+    return until
+
+
+def until_from_flags(flags: dict) -> str:
+    """The `until` a run was started with, from its run.json flags. A run.json from before the
+    flag existed ran the default spine. ValueError for a value that names no badge milestone."""
+    return check_until(flags.get("until") or DEFAULT_UNTIL)
+
+
+def finish_words(until: str) -> str:
+    """What a run that stops at `until` says when it gets there: the badge, or the milestone."""
+    goal = milestone_by_id(until)
+    return goal.badge or goal.description
+
+
+def active_milestone(state: GameState, until: str = DEFAULT_UNTIL) -> Goal | None:
+    """The first milestone, up to and including `until`, that's available and not yet done, or
+    None once they all are. Raises ValueError when `until` names no milestone."""
+    last = ALL_MILESTONES.index(milestone_by_id(until))
+    for goal in ALL_MILESTONES[: last + 1]:
         if goal.available(state) and not goal.done(state):
             return goal
     return None

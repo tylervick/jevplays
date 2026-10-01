@@ -6,12 +6,13 @@ from dataclasses import dataclass
 
 from jevplays.emulator.ram import WARP_LAST_MAP
 
-PALLET_TOWN, VIRIDIAN_CITY, PEWTER_CITY = 0, 1, 2
+PALLET_TOWN, VIRIDIAN_CITY, PEWTER_CITY, CERULEAN_CITY = 0, 1, 2, 3
 ROUTE_1, ROUTE_2, ROUTE_22 = 12, 13, 33
 REDS_HOUSE_1F, REDS_HOUSE_2F, BLUES_HOUSE, OAKS_LAB = 37, 38, 39, 40
 VIRIDIAN_POKECENTER, VIRIDIAN_MART = 41, 42
 VIRIDIAN_FOREST_NORTH_GATE, VIRIDIAN_FOREST_SOUTH_GATE, VIRIDIAN_FOREST = 47, 50, 51
 PEWTER_GYM, PEWTER_MART, PEWTER_POKECENTER = 54, 56, 58
+CERULEAN_POKECENTER, CERULEAN_GYM, CERULEAN_MART, MT_MOON_POKECENTER = 64, 65, 67, 68
 
 NODE_NAMES = {
     PALLET_TOWN: "pallet_town",
@@ -31,6 +32,14 @@ NODE_NAMES = {
     PEWTER_GYM: "pewter_gym",
     PEWTER_MART: "pewter_mart",
     PEWTER_POKECENTER: "pewter_pokecenter",
+    # Past Pewter a node has a name and nothing else: LINKS stays silent, and the way there is
+    # only ever the crossings the run walked (`options.Memory.links`). The name is what lets a
+    # milestone route to the gym, and the heal and shop trips find the center and the Mart.
+    CERULEAN_CITY: "cerulean_city",
+    CERULEAN_POKECENTER: "cerulean_pokecenter",
+    CERULEAN_GYM: "cerulean_gym",
+    CERULEAN_MART: "cerulean_mart",
+    MT_MOON_POKECENTER: "mt_moon_pokecenter",
 }
 ROUTE_2_SPLIT_ROW = 25
 

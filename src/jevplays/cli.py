@@ -78,6 +78,38 @@ def resolve_resume(run_dir) -> tuple[Path, int, int]:
     return path, n, orphaned
 
 
+def finished_line(until: str, decisions: int) -> str:
+    """What the terminal says when a run gets to the milestone it was told to stop at."""
+    from jevplays.executor.goals import finish_words
+
+    return f"finished: {finish_words(until)} after {decisions} decisions"
+
+
+class _ExplicitUntil(argparse.Action):
+    """`--until`, remembering that it was given: a resumed run keeps the `until` it was started
+    with unless the command line says otherwise, and a default cannot say that."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        namespace.until_given = True
+
+
+def resolve_until(args: argparse.Namespace, run_dir) -> str:
+    """The milestone this run stops at: `--until` when given; on `--resume`, what the run was
+    started with (run.json); otherwise the default. A `--resume` with an explicit `--until` writes
+    it back to run.json, so later resumes and `jevplays branch` see what the run went on to do.
+    ValueError when run.json names no milestone a run can stop at. Takes a RunDir or None
+    (untyped here so importing cli never pulls the log module in)."""
+    from jevplays.executor.goals import until_from_flags
+
+    if run_dir is None or args.resume is None:
+        return args.until
+    if getattr(args, "until_given", False):
+        run_dir.set_flag("until", args.until)
+        return args.until
+    return until_from_flags(run_dir.info().get("flags", {}))
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     rom = args.rom or _rom_from_env()
     if rom is None:
@@ -91,8 +123,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.resume is not None:
         try:
             run_dir = RunDir.open(args.resume)
+            # Before resolve_resume, which sets later decisions aside: a run.json that cannot be
+            # resumed is refused with nothing touched.
+            args.until = resolve_until(args, run_dir)
             start_state, checkpoint_n, orphaned = resolve_resume(run_dir)
-        except FileNotFoundError as error:
+        except (FileNotFoundError, ValueError) as error:
             print(f"jevplays run: {error}", file=sys.stderr)
             return 2
         memory = resume_memory(run_dir)
@@ -114,6 +149,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 "no_brain": args.no_brain,
                 "battle_goal": args.battle_goal,
                 "snapshot_every_decision": args.snapshot_every_decision,
+                "until": args.until,
             },
         )
 
@@ -167,6 +203,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                     pause_after=args.pause_after,
                     max_decisions=args.max_decisions,
                     snapshot_every_decision=args.snapshot_every_decision,
+                    until=args.until,
                 )
                 loop = Loop(emu, broadcaster, config, brain=brain, run_dir=run_dir, memory=memory)
                 watcher = asyncio.create_task(_print_progress(loop))
@@ -190,10 +227,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 if loop.finished:
                     # The last milestone is done, so the run ended of its own accord rather
                     # than being interrupted: say so on the terminal, after the exit checkpoint.
-                    print(
-                        f"finished: Boulder Badge after {loop.decision_count} decisions",
-                        flush=True,
-                    )
+                    print(finished_line(args.until, loop.decision_count), flush=True)
         finally:
             # Ask uvicorn to stop and give it a moment; cancel only if it does not. A cancelled
             # lifespan prints a traceback on the way out, a stopped one does not. uvicorn also
@@ -333,6 +367,7 @@ def dashboard_url(host: str, port: int) -> str:
 def build_parser() -> argparse.ArgumentParser:
     # Imported here, not at module scope, so `import jevplays.cli` alone never touches the
     # brain/executor/pyboy stack (see test_imports.py); build_parser() only runs from main().
+    from jevplays.executor.goals import BADGE_MILESTONES, DEFAULT_UNTIL
     from jevplays.loop import LoopConfig
 
     parser = argparse.ArgumentParser(prog="jevplays", description=__doc__)
@@ -388,6 +423,13 @@ def build_parser() -> argparse.ArgumentParser:
         dest="battle_goal",
         default=LoopConfig().goal,
         help="the objective told to Jev with every battle question",
+    )
+    run.add_argument(
+        "--until",
+        action=_ExplicitUntil,
+        choices=BADGE_MILESTONES,
+        default=DEFAULT_UNTIL,
+        help="the last milestone the run works towards; it finishes there (default: %(default)s)",
     )
     run.set_defaults(func=cmd_run)
 

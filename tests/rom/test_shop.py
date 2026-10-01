@@ -70,3 +70,12 @@ def test_the_mart_inventories_in_the_rom_match_the_shelves_at_the_counter(rom):
             "AWAKENING",
             "PARLYZ HEAL",
         )
+        assert mart_inventory(emu, 67) == (
+            "POKE BALL",
+            "POTION",
+            "REPEL",
+            "ANTIDOTE",
+            "BURN HEAL",
+            "AWAKENING",
+            "PARLYZ HEAL",
+        )

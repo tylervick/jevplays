@@ -16,6 +16,7 @@ from jevplays.emulator import ram
 from jevplays.executor import maps, world
 from jevplays.executor.goals import Goal, legs_to
 from jevplays.executor.navigate import Leg
+from jevplays.executor.shop import shopping_list
 from jevplays.executor.talk import FACING_OFFSET, adjacent_tile
 from jevplays.state.names import MAP_NAMES, map_name
 from jevplays.state.snapshot import GameState, Sprite
@@ -34,8 +35,11 @@ COUNTER_PICTURES = frozenset((NURSE_PICTURE, CLERK_PICTURE))
 CENTERS: tuple[tuple[str, int], ...] = (
     ("viridian_pokecenter", maps.VIRIDIAN_POKECENTER),
     ("pewter_pokecenter", maps.PEWTER_POKECENTER),
+    ("mt_moon_pokecenter", maps.MT_MOON_POKECENTER),
+    ("cerulean_pokecenter", maps.CERULEAN_POKECENTER),
 )
-"""Pokémon Center nodes the `heal` option can route to, and their map ids."""
+"""Pokémon Center nodes the `heal` option can route to, and their map ids. The ones past Pewter
+are reached only over the run's walked graph: until the run has been inside, there is no route."""
 
 _SPRITES_PATH = Path(__file__).resolve().parent.parent / "state" / "data" / "sprites.json"
 SPRITE_NOUNS: dict[int, str] = {
@@ -240,7 +244,7 @@ def _exit_options(
     return options
 
 
-def _door_options(emu, warps: tuple[world.Warp, ...]) -> list[Option]:
+def _door_options(emu, warps: tuple[world.Warp, ...], state: GameState) -> list[Option]:
     options = []
     for dest in sorted({w.dest for w in warps}):
         # WARP_LAST_MAP means "back out the way you came in", whose map id is only in `wLastMap`,
@@ -248,7 +252,9 @@ def _door_options(emu, warps: tuple[world.Warp, ...]) -> list[Option]:
         # for the navigator to check. Reading `wLastMap` would fix both; deferred with #8.
         text = "go back outside" if dest == ram.WARP_LAST_MAP else f"enter {_place_name(dest)}"
         stock = world.mart_inventory(emu, dest)
-        if stock:
+        # Only a shelf the run can buy from is worth naming: broke, or with nothing the clerk
+        # would buy, the door advertised a shelf it could not use and Jev walked in and out (#52).
+        if stock and shopping_list(state):
             # What a Mart is for, in the game's own words: nothing else Jev saw said so, and a
             # run passed the Mart 25 times with an empty bag and never caught anything (#110).
             text += f", which sells {', '.join(stock)}"
@@ -331,6 +337,11 @@ def _npc_options(emu, grid: world.MapGrid, state: GameState) -> list[Option]:
         if sprite.picture == NURSE_PICTURE:
             after = "heal"
         elif sprite.picture == CLERK_PICTURE:
+            if not shopping_list(state):
+                # Nothing the clerk would buy can be afforded or carried: the step would come back
+                # at once as a success, never be marked tried, and read "(new)" for good. Past Brock
+                # four runs chose it 200 times in a row.
+                continue
             after = "shop"
             stock = world.mart_inventory(emu, state.map_id)
             if stock:
@@ -387,6 +398,12 @@ def _milestone_option(state: GameState, milestone: Goal | None, node: str, links
         # walking up to a table that is not there. One crossing out of here is enough to lift it.
         return None
     legs = tuple(milestone.legs(state, links))
+    if not legs and milestone.destination is not None and node != milestone.destination:
+        # The same two meanings of empty legs, told apart by where the milestone happens rather
+        # than by its macro: past Pewter nothing is hand-written, so until the run has walked to
+        # the gym there is no route, and `talk_leader` run here would talk to whoever is
+        # northernmost on the wrong map. Offer nothing; the exits and doors carry the run (#53).
+        return None
     if not legs and milestone.after is None:
         # Empty legs mean one of two things: we are standing where the milestone happens (talk to
         # Oak in his lab), or `maps.route` found no way there at all. The macro tells them apart
@@ -435,7 +452,7 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
         drafts.append(heal_option)
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
     drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
-    drafts.extend(_door_options(emu, world.read_warps(mem)))
+    drafts.extend(_door_options(emu, world.read_warps(mem), state))
     drafts.extend(_npc_options(emu, grid, state))
     # Grass tiles are not the same thing as wild Pokémon: Pallet Town and Viridian City both
     # have patches with no encounter table, and standing in one waits out the whole option

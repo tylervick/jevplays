@@ -42,6 +42,15 @@ _EARLY_GAME = {
     57: "Pewter Speech House",
     58: "Pewter Pokémon Center",
     59: "Mt. Moon 1F",
+    60: "Mt. Moon B1F",
+    61: "Mt. Moon B2F",
+    62: "Cerulean Trashed House",
+    63: "Cerulean Trade House",
+    64: "Cerulean Pokémon Center",
+    65: "Cerulean Gym",
+    66: "Bike Shop",
+    67: "Cerulean Mart",
+    68: "Mt. Moon Pokémon Center",
 }
 
 MAP_NAMES: dict[int, str] = {**_CITIES, **_EARLY_GAME}
