@@ -182,8 +182,8 @@ It does stream a commercial game to whoever has the link, and every decision a r
 TypeSafe quota. Three limits keep that bounded, all flags on `Scripts/demo-loop.py`:
 
 - `--pause-after 60`: a run stops stepping the game once no dashboard has been open for this many
-  seconds -- no frames, no decisions -- and carries on where it left off when a tab opens. The
-  page says "unwatched" meanwhile. A crawler or a link preview fetches the page without running it,
+  seconds -- no frames, no decisions -- and carries on where it left off when a tab opens. A tab
+  that opens meanwhile says the game paused while nobody was watching and is waking up. A crawler or a link preview fetches the page without running it,
   so it never opens the socket and never wakes the game, and a tab in the background lets go of its
   socket until it is shown again.
 - `--daily-decisions 1500`: the day's budget (UTC), about five watched hours at 6x. It is counted
@@ -344,6 +344,12 @@ only do that on a network you trust.
 For streaming or recording, add `http://127.0.0.1:8765/?layout=stream` as an OBS browser source at
 1920x1080; it lays the game, the decision panel, and the log out to fill that fixed canvas instead
 of the responsive page layout.
+
+The page is two sides: the game on the left with the party, what code is doing, and the goal;
+Jev on the right with the question it was asked in a few words, the options as it saw them with
+the probability it gave each one, and the line that hands the answer back to code. Design:
+`docs/superpowers/specs/2026-10-02-dashboard-redesign-design.md`. `?debug=1` adds the raw state
+readout for development.
 
 ## Layout
 
