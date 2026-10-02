@@ -274,7 +274,7 @@ def snapshot(emu: EmulatorLike) -> GameState:
         active_slot = mem[ram.wPlayerMonNumber]
         if active_slot >= len(party):
             active_slot = 0
-        slot = mem[ram.wPlayerDisabledMove] & 0xF
+        slot = mem[ram.wPlayerDisabledMove] >> 4
         if 0 < slot <= len(active.moves):
             disabled_move = active.moves[slot - 1].name
     return GameState(

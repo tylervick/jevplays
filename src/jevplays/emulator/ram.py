@@ -139,9 +139,11 @@ wBattleMonMaxHP = 0xD023  # u16
 wBattleMonPP = 0xD02D  # 4 bytes
 wTrainerClass = 0xD031
 wPlayerDisabledMove = 0xD06D
-"""pokered's `wPlayerDisabledMove`: high nibble the turns DISABLE has left, low nibble the 1-based
-slot of our disabled move; 0 when none is. A disabled move chosen at the menu is refused without a
-turn passing, so the counter never runs down while it keeps being chosen (#140)."""
+"""pokered's `wPlayerDisabledMove`: high nibble the 1-based slot of our disabled move, low nibble
+the turns DISABLE has left; 0 when none is. Checked against two checkpoints: 0x33 was EMBER (slot
+3) and 0x13 was SCRATCH (slot 1), which the game confirmed with "The move is disabled!" when
+SCRATCH was picked. A disabled move chosen at the menu is refused without a turn passing, so the
+counter never runs down while it keeps being chosen (#140)."""
 
 # Party records, 0x2C bytes each, six slots. Offsets within a record:
 wPartyMons = 0xD16B
