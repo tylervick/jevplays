@@ -296,3 +296,30 @@ def install_map(emu, rows, warps=(), connections=None, tileset=(25, 0x4000, 0x50
         flags |= 1 << CONNECTION_BITS[d]
         m[CONNECTION_MAP_ADDRESSES[d]] = mid
     m[wMapConnections] = flags
+
+
+def install_town_map(emu, cells: dict[int, tuple[int, int]]) -> None:
+    """Town-map positions for the fake ROM, laid out the way the game's tables are: outdoor maps
+    (ids below `FIRST_INDOOR_MAP`) one three-byte entry each at their id, indoor maps as ranges
+    in ascending order, each range here one map wide, closed by an entry ending at 0xFF. A cell
+    is (column, row); the byte packs it as (row << 4) | column."""
+    from jevplays.emulator.ram import (
+        FIRST_INDOOR_MAP,
+        TOWN_MAP_BANK,
+        TOWN_MAP_INDOOR,
+        TOWN_MAP_INDOOR_ENTRY_SIZE,
+        TOWN_MAP_OUTDOOR,
+        TOWN_MAP_OUTDOOR_ENTRY_SIZE,
+    )
+
+    rom = emu.mem.rom
+    for map_id, (x, y) in cells.items():
+        if map_id < FIRST_INDOOR_MAP:
+            rom[(TOWN_MAP_BANK, TOWN_MAP_OUTDOOR + map_id * TOWN_MAP_OUTDOOR_ENTRY_SIZE)] = (y << 4) | x
+    indoor = sorted((m, c) for m, c in cells.items() if m >= FIRST_INDOOR_MAP)
+    addr = TOWN_MAP_INDOOR
+    for map_id, (x, y) in indoor:
+        rom[(TOWN_MAP_BANK, addr)] = map_id + 1
+        rom[(TOWN_MAP_BANK, addr + 1)] = (y << 4) | x
+        addr += TOWN_MAP_INDOOR_ENTRY_SIZE
+    rom[(TOWN_MAP_BANK, addr)] = 0xFF

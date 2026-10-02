@@ -179,3 +179,12 @@ def test_the_explore_question_asks_for_progress_towards_both_goals():
         'Which of "options" should we do next to make progress towards both the "milestone" and '
         'the "standing_goal", given "progress"?'
     )
+
+
+def test_the_question_says_what_towards_means():
+    """An exit or door nearer the milestone's town on the town map ends ", towards <town>" (#136);
+    the question says that is a direction, not a memory word."""
+    instructions = explore_questions(explore_state(overworld_state(), [], milestone=None))["explore"][
+        "instructions"
+    ]
+    assert '"towards"' in instructions and "town map" in instructions.lower()

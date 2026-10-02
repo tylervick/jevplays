@@ -232,3 +232,34 @@ def test_build_grid_carries_the_tilesets_pairs():
     for i, byte in enumerate([0x11, 0x01, 0x02, ram.COLLISION_END]):
         emu.mem.rom[(0, ram.TILE_PAIR_COLLISIONS_LAND + i)] = byte
     assert build_grid(emu).pairs == {frozenset((0x01, 0x02))}
+
+
+def test_town_map_cells_come_from_the_outdoor_table_and_the_indoor_ranges():
+    """Pallet Town is entry 0 of the outdoor table; Red's house is in the first indoor range,
+    which ends at 41 (exclusive); Mt. Moon's floors share one range (#136)."""
+    from jevplays.executor.world import town_map_cell
+    from tests.support import install_town_map
+
+    emu = FakeEmulator()
+    install_town_map(emu, {0: (2, 11), 2: (2, 3), 3: (10, 2), 37: (2, 11), 54: (2, 3), 60: (6, 2)})
+    assert town_map_cell(emu, 0) == (2, 11)
+    assert town_map_cell(emu, 3) == (10, 2)
+    assert town_map_cell(emu, 37) == (2, 11)
+    assert town_map_cell(emu, 54) == (2, 3)
+    assert town_map_cell(emu, 60) == (6, 2)
+
+
+def test_an_indoor_range_covers_every_map_up_to_its_end():
+    """The game compares the map id against each range's end and takes the first range it is
+    below, so one entry ending at 62 covers 59, 60 and 61 -- all three Mt. Moon floors."""
+    from jevplays.emulator import ram as r
+    from jevplays.executor.world import town_map_cell
+
+    emu = FakeEmulator()
+    rom = emu.mem.rom
+    rom[(r.TOWN_MAP_BANK, r.TOWN_MAP_INDOOR)] = 59
+    rom[(r.TOWN_MAP_BANK, r.TOWN_MAP_INDOOR + 1)] = (3 << 4) | 2
+    rom[(r.TOWN_MAP_BANK, r.TOWN_MAP_INDOOR + 4)] = 62
+    rom[(r.TOWN_MAP_BANK, r.TOWN_MAP_INDOOR + 5)] = (2 << 4) | 6
+    rom[(r.TOWN_MAP_BANK, r.TOWN_MAP_INDOOR + 8)] = 0xFF
+    assert [town_map_cell(emu, m) for m in (58, 59, 60, 61)] == [(2, 3), (6, 2), (6, 2), (6, 2)]
