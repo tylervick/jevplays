@@ -337,3 +337,15 @@ def test_the_catch_question_does_not_say_a_ball_needs_low_hp():
     qs = battle_questions(battle_state(make_state(bag=(BagItem("POKE BALL", 5),)), goal="g"))
     true = qs["catch"]["criteria"]["true"]
     assert "can work at any hp" in true and "low enough" not in true
+
+
+def test_a_disabled_move_reads_disabled_and_is_not_offered():
+    """The game refuses a disabled move and returns to the menu with no turn passed, so DISABLE
+    never wears off while it keeps being chosen (#140). Not Jev's call: the move is not usable."""
+    ember = Move(name="EMBER", type="Fire", power=40, pp=20, max_pp=25)
+    lead = CHARMANDER.__class__(**{**CHARMANDER.__dict__, "moves": (SCRATCH, GROWL, ember)})
+    state = make_state()
+    state = state.__class__(**{**state.__dict__, "party": (lead,), "active": lead, "disabled_move": "EMBER"})
+    sj = battle_state(state, goal="g")
+    assert [m["pp"] for m in sj["our_pokemon"]["moves"]] == ["plenty", "plenty", "disabled"]
+    assert list(battle_questions(sj)["move"]["criteria"]) == ["SCRATCH", "GROWL"]

@@ -98,3 +98,18 @@ def test_route1_state_carries_flags_and_size(rom, state_path):
         assert state.map_size == (20, 36)
         assert "got_starter" in state.flags and "got_pokedex" not in state.flags
         assert all(0 <= s.x < 20 and 0 <= s.y < 36 for s in state.sprites)
+
+
+def test_a_disabled_move_in_the_real_game(rom, state_path):
+    """`states/disabled.state` is the last checkpoint of probe round 8's second run (#140): a
+    Jigglypuff has DISABLEd Charmeleon's EMBER. It is copied by hand from that run, not written by
+    `make-states.py`, so this test skips without it."""
+    from jevplays.brain.battle import battle_questions, battle_state
+
+    with Emulator(rom) as emu:
+        emu.load(state_path("disabled"))
+        state = snapshot(emu)
+    assert state.in_battle and state.enemy.name == "JIGGLYPUFF"
+    assert [m.name for m in state.active.moves] == ["SCRATCH", "GROWL", "EMBER", "LEER"]
+    assert state.disabled_move == "EMBER"
+    assert "EMBER" not in battle_questions(battle_state(state, goal="g"))["move"]["criteria"]

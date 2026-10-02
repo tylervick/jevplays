@@ -46,7 +46,7 @@ def bench_slots(state: GameState) -> list[tuple[str, int]]:
     return [(label, i) for (i, _), label in zip(indexed, labels, strict=True)]
 
 
-def _mon(mon: Mon, *, with_moves: bool, with_status: bool = False) -> dict:
+def _mon(mon: Mon, *, with_moves: bool, with_status: bool = False, disabled: str | None = None) -> dict:
     d = {"name": mon.name, "level": mon.level, "types": list(mon.types), "hp": hp_bucket(mon.hp, mon.max_hp)}
     if with_moves or with_status:
         d["status"] = mon.status
@@ -57,7 +57,9 @@ def _mon(mon: Mon, *, with_moves: bool, with_status: bool = False) -> dict:
                 "type": m.type,
                 "kind": "attack" if m.power > 0 else "status",
                 "power": power_bucket(m.power),
-                "pp": pp_bucket(m.pp),
+                # DISABLE makes a move unusable whatever its PP; "disabled" takes the PP word's
+                # place so the filter in `battle_questions` treats it like "out" (#140).
+                "pp": "disabled" if m.name == disabled else pp_bucket(m.pp),
             }
             for m in mon.moves
         ]
@@ -78,7 +80,7 @@ def battle_state(state: GameState, goal: str) -> dict:
     # Pokémon, or the run would be over -- but the word is there so the count is never a lie.
     party_word = "none" if alive == 0 else "one" if alive == 1 else "two" if alive == 2 else "three or more"
     return {
-        "our_pokemon": _mon(state.active, with_moves=True),
+        "our_pokemon": _mon(state.active, with_moves=True, disabled=state.disabled_move),
         "enemy_pokemon": _mon(state.enemy, with_moves=False, with_status=True),
         "battle": {"kind": state.battle.kind},
         "bench": bench,
@@ -105,7 +107,7 @@ Pokémon in one hit, so the catch question only ever met a full-HP target (#110)
 
 
 def battle_questions(sj: dict) -> dict[str, dict]:
-    usable = [m for m in sj["our_pokemon"]["moves"] if m["pp"] != "out"]
+    usable = [m for m in sj["our_pokemon"]["moves"] if m["pp"] not in ("out", "disabled")]
     if not usable:
         usable = sj["our_pokemon"]["moves"]
     instructions = MOVE_INSTRUCTIONS

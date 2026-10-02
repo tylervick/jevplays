@@ -299,3 +299,23 @@ def test_a_party_slot_with_species_zero_is_skipped_mid_catch():
     emu.mem[ram.wPartyMons + ram.PARTY_MON_SIZE] = 0  # species byte for the still-empty second slot
     s = snapshot(emu)
     assert [m.name for m in s.party] == ["CHARMANDER"] and s.party_count == 2
+
+
+def test_the_disabled_move_is_read_off_the_disable_counter():
+    """A Jigglypuff's DISABLE on EMBER was invisible: Jev chose EMBER 13,000 times and the game
+    answered "disabled!" without a turn passing (#140). The byte packs turns left in the high
+    nibble and the 1-based slot in the low one; 0x33 is what that run's checkpoint held."""
+    emu = FakeEmulator()
+    bedroom(emu)
+    charmander(emu, in_battle=True)
+    emu.mem[ram.wIsInBattle] = 1
+    emu.mem[ram.wPlayerMonNumber] = 0
+    emu.mem[ram.wPlayerDisabledMove] = 0x22  # two turns left, slot 2 (GROWL)
+    assert snapshot(emu).disabled_move == "GROWL"
+    emu.mem[ram.wPlayerDisabledMove] = 0
+    assert snapshot(emu).disabled_move is None
+    emu.mem[ram.wPlayerDisabledMove] = 0x14  # a slot this Pokémon has no move in
+    assert snapshot(emu).disabled_move is None
+    emu.mem[ram.wIsInBattle] = 0
+    emu.mem[ram.wPlayerDisabledMove] = 0x22  # stale outside battle
+    assert snapshot(emu).disabled_move is None
