@@ -74,7 +74,7 @@ def explore_questions(sj: dict) -> dict[str, dict]:
                 "word in parentheses: "
                 '"new" means we have never done it from here; "visited" or "talked already" means '
                 'we have done it before and may not need to again, and "leads nowhere new" '
-                "after it means a building whose only way out is back here; "
+                "after it means a place beyond which everything has already been seen; "
                 '"tried" means we chose it '
                 "before from here and nothing came of it, so repeat it only if nothing else is "
                 'worth doing. An exit or door ending in "towards" a place lies that way: nearer '

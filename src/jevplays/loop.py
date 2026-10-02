@@ -609,9 +609,9 @@ class Loop:
 
     async def _choose_option(self, state: GameState) -> int:
         """Generate what this map affords, ask Jev which one to do, and start it."""
-        known_exits = len(self.memory.exits.get(state.map_id, ()))
+        known_exits = len(self.memory.exits.get(goal_table.node(state), ()))
         options = generate(self.emu, state, self.memory, self.milestone)
-        if len(self.memory.exits.get(state.map_id, ())) != known_exits:
+        if len(self.memory.exits.get(goal_table.node(state), ())) != known_exits:
             self._save_memory()
         if not options:
             if not self._announced_no_options:
@@ -676,6 +676,7 @@ class Loop:
     async def _walk(self, state: GameState) -> int:
         # Read before stepping: `_advance` begins the next leg, which resets both of these.
         from_map, from_tile = self.navigator.start_map, self.navigator.start_tile
+        from_place = self.navigator.start_place
         leg = self.navigator.current
         result = self.navigator.step(self.emu, state)
         if from_map is not None and self.emu.mem[ram.wCurMap] != from_map:
@@ -686,7 +687,7 @@ class Loop:
             # next turn no longer counted the map as new (#134).
             self.emu.tick(MAP_SETTLE_FRAMES)
         if result in ("leg_done", "done"):
-            self._note_crossing(leg, from_map, from_tile)
+            self._note_crossing(leg, from_map, from_tile, from_place)
         if result == "stuck":
             return await self._option_tried("the navigator gave up")
         if result == "lost":
@@ -708,8 +709,11 @@ class Loop:
             await self.broadcaster.publish(status_event("running", f"arrived: {self.option.text}"))
         return NAV_STEP_FRAMES
 
-    def _note_crossing(self, leg, from_map: int | None, from_tile: tuple[int, int] | None) -> None:
-        """Add a leg the run just walked across a map boundary to its own map graph (#35).
+    def _note_crossing(
+        self, leg, from_map: int | None, from_tile: tuple[int, int] | None, from_place: str | None = None
+    ) -> None:
+        """Add a leg the run just walked across a map boundary to its own map graph (#35), between
+        the places it left and arrived in (#137), and remember where the way out it took lands.
 
         Only `edge` and `warp` legs, and only when the map really changed: a `walk` leg finishing
         teaches nothing, and a leg that came back `lost` never got here -- the map changed under
@@ -721,8 +725,8 @@ class Loop:
         to_map = self.emu.mem[ram.wCurMap]
         if to_map == from_map:
             return
-        from_node = maps.node_of(from_map, *from_tile)
-        to_node = maps.node_of(to_map, self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
+        from_node = from_place or maps.node_of(from_map, *from_tile)
+        to_node = snapshot(self.emu).place
         before = len(self.memory.links.get(from_node, ()))
         # The way back is a warp to the map we left when this map has one (a ladder); otherwise it
         # is the building's "back out the way you came in".
@@ -734,20 +738,22 @@ class Loop:
             dest_map=None if leg.kind == "edge" else to_map,
             back_dest_map=from_map if straight_back else maps.WARP_LAST_MAP,
         )
-        if leg.kind == "warp":
-            self._note_ladders(leg, from_map)
+        self._note_landings(leg, to_map, from_node, to_node)
         if len(self.memory.links.get(from_node, ())) != before:
             self._save_memory()
 
-    def _note_ladders(self, leg, from_map: int) -> None:
-        """Remember both ends of a ladder just used (#129): the one left by, when the leg named it,
-        and the one landed on, read from under our feet."""
-        if leg.warp_id is not None:
-            self.memory.note_ladder(from_map, leg.dest_map, leg.warp_id)
-        here = (self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
-        for warp in world.read_warps(self.emu.mem):
-            if (warp.x, warp.y) == here:
-                self.memory.note_ladder(self.emu.mem[ram.wCurMap], warp.dest, warp.warp_id)
+    def _note_landings(self, leg, to_map: int, from_place: str, to_place: str) -> None:
+        """Where the way out just taken lands, and where the warp under our feet on arrival leads
+        back to (#129, #137). The leg's destination is read as the map arrived on, which is what
+        the option generator will key the same door by next time (`option_landing`)."""
+        if leg.kind == "edge":
+            self.memory.note_landing(("edge", to_map, leg.direction), to_place)
+        else:
+            self.memory.note_landing(("warp", to_map, leg.warp_id), to_place)
+            here = (self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
+            for warp in world.read_warps(self.emu.mem):
+                if (warp.x, warp.y) == here:
+                    self.memory.note_landing(("warp", warp.dest, warp.warp_id), from_place)
         self._save_memory()
 
     async def _option_budget_spent(self) -> int:

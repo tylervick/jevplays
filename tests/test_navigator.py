@@ -328,3 +328,15 @@ def test_a_warp_leg_naming_a_ladder_takes_that_one_not_the_nearest():
     nav.plan(emu, snapshot(emu), [Leg(kind="warp", dest_map=99, warp_id=2, label="the far ladder")])
     assert nav.step(emu, snapshot(emu)) == "moving"
     assert (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord]) == (4, 5)  # down, towards (4,7)
+
+
+def test_a_leg_remembers_the_place_it_began_in():
+    from dataclasses import replace
+
+    from jevplays.executor.navigate import Leg, Navigator
+    from tests.support import FakeEmulator, overworld_state
+
+    nav = Navigator()
+    state = replace(overworld_state(map_id=60), place="map_60_p2")
+    nav.plan(FakeEmulator(), state, [Leg(kind="walk", target=(1, 1))])
+    assert nav.start_place == "map_60_p2"

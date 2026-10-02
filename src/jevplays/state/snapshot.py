@@ -97,6 +97,10 @@ class GameState:
     """The name of our active Pokémon's move the enemy's DISABLE is on, or None. The game refuses
     it at the menu with no turn passing, so DISABLE never runs down while it keeps being chosen:
     Jev chose EMBER 13,000 times against a Jigglypuff (#140)."""
+    place: str = ""
+    """Where we stand in the run's walked graph: `maps.node_of` for a named map, one name per
+    walled-off pocket for a map past the table (`maps.place_name`, #137). Empty on a state built
+    by hand; `goals.node` falls back to the map-level name then."""
 
     def to_dict(self) -> dict:
         d = _listify(asdict(self))
@@ -277,11 +281,13 @@ def snapshot(emu: EmulatorLike) -> GameState:
         slot = mem[ram.wPlayerDisabledMove] >> 4
         if 0 < slot <= len(active.moves):
             disabled_move = active.moves[slot - 1].name
+    tile = (mem[ram.wXCoord], mem[ram.wYCoord])
     return GameState(
         mode=mode,
         map_id=map_id,
         map=map_name(map_id),
-        tile=(mem[ram.wXCoord], mem[ram.wYCoord]),
+        tile=tile,
+        place=_place(emu, map_id, tile),
         player_name=ram.read_name(mem, ram.wPlayerName),
         party_count=mem[ram.wPartyCount],
         badges=mem[ram.wObtainedBadges].bit_count(),
@@ -302,3 +308,14 @@ def snapshot(emu: EmulatorLike) -> GameState:
         sprites=read_sprites(mem),
         map_size=(mem[ram.wCurMapWidth] * 2, mem[ram.wCurMapHeight] * 2),
     )
+
+
+def _place(emu: EmulatorLike, map_id: int, tile: tuple[int, int]) -> str:
+    """Build the grid only for a map that can have pockets: a named map is one place (#137)."""
+    # Local: `executor.world` imports this module for `Sprite`.
+    from jevplays.executor import maps, world
+
+    if map_id in maps.NODE_NAMES or map_id == maps.ROUTE_2:
+        return maps.node_of(map_id, *tile)
+    grid = world.build_grid(emu)
+    return maps.place_name(map_id, *tile, world.pocket_of(grid, *tile), len(world.pockets(grid)))

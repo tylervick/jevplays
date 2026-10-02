@@ -15,6 +15,7 @@ from jevplays.brain.buckets import hp_bucket
 from jevplays.emulator import ram
 from jevplays.executor import maps, world
 from jevplays.executor.goals import Goal, legs_to
+from jevplays.executor.goals import node as goals_node
 from jevplays.executor.navigate import Leg
 from jevplays.executor.shop import shopping_list
 from jevplays.executor.talk import FACING_OFFSET, adjacent_tile
@@ -67,6 +68,26 @@ _OPPOSITE = {"north": "south", "south": "north", "east": "west", "west": "east"}
 """The way back along a map connection. Gen 1's are symmetric."""
 
 
+Landing = tuple[str, int, int | str | None]
+"""The identity of a way out as the option generator sees it, before anyone knows where it lands:
+("warp", destination map, destination warp id or None) for a door, ("edge", destination map,
+direction) for a map connection. `Memory.landings` records the place each one led to (#137)."""
+
+
+def option_landing(option: "Option") -> Landing | None:
+    if option.kind not in ("exit", "door") or option.dest_map is None or not option.legs:
+        return None
+    leg = option.legs[0]
+    if option.kind == "exit":
+        return ("edge", option.dest_map, leg.direction)
+    return ("warp", option.dest_map, leg.warp_id)
+
+
+def _outdoors(place: str) -> bool:
+    map_id = maps.map_id_of(place)
+    return map_id is not None and map_id < ram.FIRST_INDOOR_MAP
+
+
 @dataclass
 class Memory:
     """What this run has already done, so Jev can be told rather than have to remember.
@@ -82,21 +103,16 @@ class Memory:
     """The map graph this run has walked: node name -> the links crossed out of it. `maps.route`
     searches it alongside the hand-written `maps.LINKS`, which is what lets a milestone or a heal
     trip be planned from a map nobody typed into the table (#35)."""
-    exits: dict[int, set[int]] = field(default_factory=dict)
-    """map id -> the maps its exits and doors were offered towards, from every map Jev was asked
-    on."""
-    buildings: set[int] = field(default_factory=set)
-    """Maps that offered a "go back outside" door: one room, or a few, with no walled-off pockets,
-    so what was offered from one spot is all there is. `dead_end` trusts only these."""
-    ladders: set[tuple[int, int, int]] = field(default_factory=set)
-    """(map id, destination map, destination warp id) of each ladder this run has used, either
-    end: what makes one of several ladders to the same floor "visited" and the rest "new" (#129)."""
+    exits: dict[str, set[Landing]] = field(default_factory=dict)
+    """place -> the ways out offered there, from every spot in it Jev was asked on (a union: what is
+    offered depends on where we stand)."""
+    landings: dict[Landing, str | None] = field(default_factory=dict)
+    """way out -> the place it was found to lead to, written at the crossing. None for one taken by
+    a run from before places existed: still "visited", but the frontier search cannot follow it."""
 
     @classmethod
     def empty(cls) -> "Memory":
-        return cls(
-            visited_maps=set(), talked=set(), tried=set(), links={}, exits={}, buildings=set(), ladders=set()
-        )
+        return cls(visited_maps=set(), talked=set(), tried=set(), links={}, exits={}, landings={})
 
     def to_dict(self) -> dict:
         return {
@@ -107,9 +123,11 @@ class Memory:
                 node: [[link.kind, link.dest_node, link.direction, link.dest_map] for link in crossed]
                 for node, crossed in sorted(self.links.items())
             },
-            "exits": {str(map_id): sorted(dests) for map_id, dests in sorted(self.exits.items())},
-            "buildings": sorted(self.buildings),
-            "ladders": sorted([list(ladder) for ladder in self.ladders]),
+            "exits": {
+                place: sorted((list(way) for way in offered), key=str)
+                for place, offered in sorted(self.exits.items())
+            },
+            "landings": [[list(way), place] for way, place in sorted(self.landings.items(), key=str)],
         }
 
     @classmethod
@@ -124,9 +142,18 @@ class Memory:
                 node: [maps.Link(kind=k, dest_node=n, direction=w, dest_map=m) for k, n, w, m in crossed]
                 for node, crossed in d.get("links", {}).items()
             },
-            exits={int(map_id): set(dests) for map_id, dests in d.get("exits", {}).items()},
-            buildings=set(d.get("buildings", [])),
-            ladders={tuple(ladder) for ladder in d.get("ladders", [])},
+            # A memory.json from before places existed keys exits by map id and lists ladders:
+            # those exits are dropped (they named maps, not places) and each ladder becomes a
+            # landing with no known place (#137).
+            exits={
+                place: {tuple(way) for way in offered}
+                for place, offered in d.get("exits", {}).items()
+                if not str(place).isdigit()
+            },
+            landings={
+                **{("warp", dest, warp_id): None for _map, dest, warp_id in d.get("ladders", [])},
+                **{tuple(way): place for way, place in d.get("landings", [])},
+            },
         )
 
     def note_map(self, map_id: int) -> None:
@@ -182,26 +209,48 @@ class Memory:
             return
         here.append(link)
 
-    def note_exits(self, map_id: int, options: "list[Option]") -> None:
-        """Remember where this map's exits and doors were offered towards (a union: what is offered
-        depends on where we stand), and whether it is a building."""
-        dests = {o.dest_map for o in options if o.kind in ("exit", "door") and o.dest_map is not None}
-        self.exits.setdefault(map_id, set()).update(dests)
-        if any(o.kind == "door" and o.legs[0].dest_map == maps.WARP_LAST_MAP for o in options):
-            self.buildings.add(map_id)
+    def note_exits(self, place: str, options: "list[Option]") -> None:
+        """Remember the ways out this place offered."""
+        offered = {landing for o in options if (landing := option_landing(o)) is not None}
+        self.exits.setdefault(place, set()).update(offered)
 
-    def dead_end(self, here: int, dest: int) -> bool:
-        """Whether `dest` is a building whose only way out is back to `here`.
+    def note_landing(self, landing: Landing, place: str | None) -> None:
+        """Remember where a way out was found to lead, at the moment it was crossed."""
+        self.landings[landing] = place
 
-        A run past Brock walked in and out of the Pewter Pokémon Center for 20 minutes, both
-        doors reading "(visited)". A search over map ids beyond a door said more, and said it
-        wrongly in Mt. Moon: a cave floor is several walled-off pockets under one id, so "nothing
-        new beyond" was claimed for a floor whose other ladders lead on. A building has no pockets,
-        so this one-step claim is the one that holds."""
-        return dest in self.buildings and dest in self.exits and self.exits[dest] <= {here}
+    def leads_nowhere_new(self, here: str, landing: Landing) -> bool:
+        """Whether everything beyond `landing` has been seen: every place reachable from where it
+        lands, over ways out already taken and never back through `here` nor into an outdoor
+        map, has had every way out it offered taken. A building is the one-place case; a cave
+        ladder whose pockets below are exhausted is the case this exists for (#137).
 
-    def note_ladder(self, map_id: int, dest: int, warp_id: int) -> None:
-        self.ladders.add((map_id, dest, warp_id))
+        Said only when it is sure: a landing never taken, one whose place is unknown, one that
+        opens onto an outdoor map other than here, or a place Jev was never asked on all answer
+        False, because any of them may lead somewhere new."""
+        start = self.landings.get(landing)
+        if start is None or start == here or _outdoors(start):
+            return False
+        seen = {here}
+        stack = [start]
+        while stack:
+            place = stack.pop()
+            if place in seen:
+                continue
+            seen.add(place)
+            if place not in self.exits:
+                return False
+            for way in self.exits[place]:
+                if way not in self.landings:
+                    return False
+                beyond = self.landings[way]
+                if beyond is None:
+                    return False
+                if beyond in seen:
+                    continue
+                if _outdoors(beyond):
+                    return False
+                stack.append(beyond)
+        return True
 
     def note_talked(self, map_id: int, slot: int) -> None:
         self.talked.add((map_id, slot))
@@ -209,24 +258,24 @@ class Memory:
     def note_tried(self, map_id: int, option_id: str) -> None:
         self.tried.add((map_id, option_id))
 
-    def word(self, map_id: int, option: "Option") -> str:
+    def word(self, map_id: int, place: str, option: "Option") -> str:
         if (map_id, option.id) in self.tried:
             return "tried"
         if option.kind == "npc":
             slot = int(option.id.split("_", 1)[1])
             return "talked already" if (map_id, slot) in self.talked else "new"
+        landing = option_landing(option)
         if option.kind == "door" and option.legs[0].warp_id is not None:
             # One of several ladders to the same floor: the floor being visited says nothing
-            # about where this one lands.
-            ladder = (map_id, option.dest_map, option.legs[0].warp_id)
-            return "visited" if ladder in self.ladders else "new"
+            # about where this one lands (#129).
+            return "visited" if landing in self.landings else "new"
         if option.kind in ("exit", "door"):
             if option.dest_map not in self.visited_maps:
                 return "new"
             # Only the dead end is said. "visited, leads on to new places" was tried and drew Jev
             # harder than "new" did: 4 of 4 probe runs went Pewter <-> Route 2 thousands of times,
             # both ways reading so, with Route 3 "(new)" at 0.20 against 0.72.
-            if self.dead_end(map_id, option.dest_map):
+            if landing is not None and self.leads_nowhere_new(place, landing):
                 return "visited, leads nowhere new"
             return "visited"
         return "new"
@@ -626,7 +675,7 @@ def _towards(
         if o.kind in ("exit", "door")
         and o.dest_map is not None
         and o.legs[0].dest_map != ram.WARP_LAST_MAP
-        and not memory.dead_end(state.map_id, o.dest_map)
+        and not ((way := option_landing(o)) is not None and memory.leads_nowhere_new(goals_node(state), way))
     ]
     if not candidates:
         return drafts
@@ -664,7 +713,7 @@ def _grass_text(state: GameState) -> str:
 
 def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> list[Option]:
     mem = emu.mem
-    node = maps.node_of(state.map_id, *state.tile)
+    node = goals_node(state)
     grid = world.build_grid(emu)
 
     drafts: list[Option] = []
@@ -695,6 +744,6 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
             )
         )
 
-    memory.note_exits(state.map_id, drafts)
+    memory.note_exits(node, drafts)
     drafts = _towards(emu, state, memory, milestone, connections, drafts)
-    return [replace(option, memory=memory.word(state.map_id, option)) for option in drafts]
+    return [replace(option, memory=memory.word(state.map_id, node, option)) for option in drafts]

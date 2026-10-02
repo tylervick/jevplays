@@ -322,3 +322,29 @@ def test_the_disabled_move_is_read_off_the_disable_counter():
     emu.mem[ram.wIsInBattle] = 0
     emu.mem[ram.wPlayerDisabledMove] = 0x22  # stale outside battle
     assert snapshot(emu).disabled_move is None
+
+
+def test_the_snapshot_names_the_place_by_pocket_for_a_map_past_the_table():
+    """Two pockets under one id; the player in the right-hand one (#137)."""
+    from tests.support import install_map
+
+    emu = FakeEmulator()
+    install_map(emu, ["..##..", "..##..", "..##..", "..##..", "..##..", "..##.."])
+    emu.mem[ram.wCurMap] = 60
+    emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = 5, 2
+    assert snapshot(emu).place == "map_60_p1"
+    emu.mem[ram.wXCoord] = 1
+    assert snapshot(emu).place == "map_60_p0"
+
+
+def test_a_named_map_is_one_place_and_a_map_with_no_grid_keeps_its_plain_name():
+    from tests.support import install_map
+
+    emu = FakeEmulator()
+    install_map(emu, ["..##..", "..##..", "..##..", "..##..", "..##..", "..##.."])
+    emu.mem[ram.wCurMap] = 2  # Pewter City, named
+    emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = 5, 2
+    assert snapshot(emu).place == "pewter_city"
+    bare = FakeEmulator()  # nothing installed: a map of width 0
+    bare.mem[ram.wCurMap] = 200
+    assert snapshot(bare).place == "map_200"

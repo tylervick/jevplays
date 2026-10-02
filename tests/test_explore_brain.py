@@ -188,3 +188,11 @@ def test_the_question_says_what_towards_means():
         "instructions"
     ]
     assert '"towards"' in instructions and "town map" in instructions.lower()
+
+
+def test_the_question_says_leads_nowhere_new_means_everything_beyond_was_seen():
+    instructions = explore_questions(explore_state(overworld_state(), [], milestone=None))["explore"][
+        "instructions"
+    ]
+    assert "a place beyond which everything has already been seen" in instructions
+    assert "building whose only way out" not in instructions

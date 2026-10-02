@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from jevplays.emulator import ram
 from jevplays.executor import world
 from jevplays.state.modes import Mode
+from jevplays.state.snapshot import snapshot
 
 PLAYER_ROW = 4
 PLAYER_COL = 4
@@ -126,6 +127,9 @@ class Navigator:
     start_tile: tuple[int, int] | None = None
     """The tile it was begun on, so a crossing can be named with `maps.node_of` -- which is what
     tells Route 2's two nodes apart, where the map id alone cannot (#35)."""
+    start_place: str | None = None
+    """The place the current leg was begun in (`GameState.place`), so a crossing is recorded
+    between places rather than maps (#137)."""
     plan_map: int | None = None
     """The map the whole plan was built on, for the dashboard and for debugging a stale plan."""
 
@@ -141,12 +145,15 @@ class Navigator:
         self.legs, self.index, self.failed_legs = list(legs), 0, 0
         self._turned_back, self._turned_back_at = 0, None
         self.plan_map = emu.mem[ram.wCurMap]
-        self._begin_leg(emu)
+        self._begin_leg(emu, state.place)
 
-    def _begin_leg(self, emu) -> None:
+    def _begin_leg(self, emu, place: str | None = None) -> None:
+        """`place` is the state's when the caller has one; a leg begun after a map change reads
+        it fresh, since the state in hand is the map just left (#137)."""
         self.blocked, self.failed_steps = set(), 0
         self.start_map = emu.mem[ram.wCurMap]
         self.start_tile = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
+        self.start_place = place if place is not None else snapshot(emu).place
 
     def describe(self) -> str:
         leg = self.current

@@ -85,3 +85,20 @@ def test_town_map_cells_match_the_games_tables(rom, state_path):
     assert cells[54] == (2, 3) and cells[65] == (10, 2)
     assert cells[59] == cells[60] == cells[61] == (6, 2)
     assert cells[68] == (5, 2)
+
+
+def test_mt_moon_b1f_is_several_pockets_and_the_player_is_in_one(rom, state_path):
+    """`states/mt_moon_b1f.state` is a probe-run checkpoint on Mt. Moon B1F, copied by hand (not
+    written by make-states.py), so this skips without it. The floor is walled-off pockets under
+    one map id; the place name says which one (#137)."""
+    from jevplays.executor.world import pocket_of, pockets
+    from jevplays.state.snapshot import snapshot
+
+    with Emulator(rom) as emu:
+        emu.load(state_path("mt_moon_b1f"))
+        grid = build_grid(emu)
+        state = snapshot(emu)
+    found = pockets(grid)
+    assert len(found) > 1
+    k = pocket_of(grid, *state.tile)
+    assert k is not None and state.place == f"map_60_p{k}"

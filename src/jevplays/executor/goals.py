@@ -54,8 +54,9 @@ def balls(state: GameState) -> int:
 
 
 def node(state: GameState) -> str:
-    """The map graph node the player is standing on."""
-    return maps.node_of(state.map_id, *state.tile)
+    """The place the player is standing in: the snapshot's pocket-aware name, or the map-level
+    name for a state built without one (#137)."""
+    return state.place or maps.node_of(state.map_id, *state.tile)
 
 
 def legs_to(state: GameState, dest_node: str, links: dict | None = None) -> list[Leg]:
