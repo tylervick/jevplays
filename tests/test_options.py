@@ -195,7 +195,7 @@ def test_first_leg_walkable_lets_through_what_the_grid_cannot_judge():
 def test_a_ladder_is_visited_only_once_this_run_has_used_it():
     emu, state, memory = town(warps=[(7, 7, 0, 60), (0, 7, 2, 60)], connections={})
     memory.note_map(60)
-    memory.note_ladder(state.map_id, 60, 0)
+    memory.note_landing(("warp", 60, 0), "map_60_p0")
     words = {o.id: o.memory for o in generate(emu, state, memory, None)}
     assert words["door_60_0"] == "visited" and words["door_60_2"] == "new"
     assert Memory.from_dict(memory.to_dict()) == memory
@@ -597,42 +597,46 @@ def test_the_real_misty_milestone_is_withheld_until_the_run_has_walked_to_her_gy
     assert milestone.after == "talk_leader" and milestone.legs[-1].dest_map == maps.CERULEAN_GYM
 
 
-def test_generate_remembers_where_this_maps_exits_and_doors_lead_and_whether_it_is_a_building():
+def test_generate_remembers_what_this_place_offered_as_landings():
     emu, state, memory = town()
     generate(emu, state, memory, None)
-    assert memory.exits == {state.map_id: {13, 12, 41, 42}} and memory.buildings == set()
+    assert memory.exits == {
+        state.place: {("edge", 13, "north"), ("edge", 12, "east"), ("warp", 41, None), ("warp", 42, None)}
+    }
     emu, state, memory = town(warps=[(7, 7, 0, ram.WARP_LAST_MAP)], connections={})
     emu.mem[ram.wLastMap] = 12
     generate(emu, state, memory, None)
-    assert memory.exits == {state.map_id: {12}} and memory.buildings == {state.map_id}
+    assert memory.exits == {state.place: {("warp", 12, None)}}
     assert Memory.from_dict(memory.to_dict()) == memory
 
 
 def test_a_visited_building_whose_only_way_out_is_back_here_leads_nowhere_new():
-    """The Pewter Pokémon Center ping-pong past Brock."""
+    """The Pewter Pokémon Center ping-pong past Brock: a building is the one-place case."""
     emu, state, memory = town()
     memory.note_map(41)
-    memory.exits[41] = {state.map_id}
-    memory.buildings.add(41)
+    memory.note_landing(("warp", 41, None), "viridian_pokecenter")
+    memory.exits["viridian_pokecenter"] = {("warp", state.map_id, None)}
+    memory.note_landing(("warp", state.map_id, None), state.place)
     words = {o.id: o.memory for o in generate(emu, state, memory, None)}
     assert words["door_41"] == "visited, leads nowhere new"
 
 
-def test_a_building_with_another_way_out_is_plain_visited():
+def test_a_building_with_an_untaken_way_out_is_plain_visited():
     emu, state, memory = town()
     memory.note_map(41)
-    memory.exits[41] = {state.map_id, 50}  # the Museum's stairs, say
-    memory.buildings.add(41)
+    memory.note_landing(("warp", 41, None), "viridian_pokecenter")
+    memory.exits["viridian_pokecenter"] = {("warp", state.map_id, None), ("warp", 50, None)}  # stairs, say
+    memory.note_landing(("warp", state.map_id, None), state.place)
     words = {o.id: o.memory for o in generate(emu, state, memory, None)}
     assert words["door_41"] == "visited"
 
 
-def test_a_map_that_is_not_a_building_is_never_called_a_dead_end():
-    """Mt. Moon B2F offered only the ladder back from where the run stood, but it is several
-    walled-off pockets under one map id: its other ladders lead on."""
+def test_a_place_never_asked_on_is_never_called_a_dead_end():
+    """Taken, but Jev was never asked there (a cutscene walked us through): nothing is known
+    about its ways out, so nothing is claimed."""
     emu, state, memory = town()
     memory.note_map(41)
-    memory.exits[41] = {state.map_id}
+    memory.note_landing(("warp", 41, None), "viridian_pokecenter")
     words = {o.id: o.memory for o in generate(emu, state, memory, None)}
     assert words["door_41"] == "visited"
 
@@ -776,8 +780,9 @@ def test_when_the_maps_own_way_on_is_out_of_reach_the_nearest_way_on_says_toward
 def test_a_dead_end_building_never_says_towards_even_when_it_is_the_nearest_way():
     emu, state, memory, far = route_4_west(warps=((5, 0, 0, 68),))
     memory.note_map(68)
-    memory.exits[68] = {15}
-    memory.buildings.add(68)
+    memory.note_landing(("warp", 68, None), "mt_moon_pokecenter")
+    memory.exits["mt_moon_pokecenter"] = {("warp", 15, None)}
+    memory.note_landing(("warp", 15, None), state.place)
     texts = {o.id: o.labelled() for o in generate(emu, state, memory, far)}
     assert texts["door_68"] == "enter Mt. Moon Pokémon Center (visited, leads nowhere new)"
     assert not any("towards" in t for t in texts.values()), texts
@@ -803,3 +808,62 @@ def test_the_way_back_outside_never_says_towards():
     far = with_fields(milestone_stub(dest="cerulean_gym", after="talk_leader"), destination="cerulean_gym")
     texts = {o.id: o.text for o in generate(emu, snapshot(emu), memory, far)}
     assert texts["door_255"] == "go back outside"
+
+
+def test_a_ladder_whose_whole_subtree_is_taken_leads_nowhere_new_and_one_with_more_beyond_does_not():
+    """Mt. Moon from 1F: ladder A's B1F pocket goes down to a B2F pocket whose every ladder has
+    been taken; ladder B's B2F pocket still has an untaken ladder. Only A is a dead end (#137)."""
+    memory = Memory.empty()
+    a, b = ("warp", 60, 0), ("warp", 60, 1)
+    memory.note_landing(a, "map_60_p0")
+    memory.exits["map_60_p0"] = {("warp", 59, 0), ("warp", 61, 0)}
+    memory.note_landing(("warp", 59, 0), "map_59")
+    memory.note_landing(("warp", 61, 0), "map_61_p0")
+    memory.exits["map_61_p0"] = {("warp", 60, 0)}
+    memory.note_landing(b, "map_60_p1")
+    memory.exits["map_60_p1"] = {("warp", 59, 1), ("warp", 61, 1)}
+    memory.note_landing(("warp", 59, 1), "map_59")
+    memory.note_landing(("warp", 61, 1), "map_61_p1")
+    memory.exits["map_61_p1"] = {("warp", 60, 1), ("warp", 60, 5)}  # 60/5 never taken
+    assert memory.leads_nowhere_new("map_59", a) is True
+    assert memory.leads_nowhere_new("map_59", b) is False
+
+
+def test_the_frontier_search_stops_at_the_world_and_at_an_untaken_landing():
+    memory = Memory.empty()
+    assert memory.leads_nowhere_new("map_59", ("warp", 60, 0)) is False  # never taken
+    memory.note_landing(("warp", 15, None), "map_15_p0")  # back outside onto Route 4
+    assert memory.leads_nowhere_new("map_59", ("warp", 15, None)) is False  # outdoors: the world
+    memory.note_landing(("warp", 60, 0), "map_60_p0")
+    memory.exits["map_60_p0"] = {("warp", 61, 0)}
+    memory.note_landing(("warp", 61, 0), "map_61_p0")
+    memory.exits["map_61_p0"] = {("warp", 15, None)}  # a way out of the cave, taken
+    assert memory.leads_nowhere_new("map_59", ("warp", 60, 0)) is False
+
+
+def test_the_frontier_search_terminates_on_a_cycle_and_never_passes_back_through_here():
+    memory = Memory.empty()
+    memory.note_landing(("warp", 60, 0), "map_60_p0")
+    memory.exits["map_60_p0"] = {("warp", 61, 0), ("warp", 59, 0)}
+    memory.note_landing(("warp", 61, 0), "map_61_p0")
+    memory.note_landing(("warp", 59, 0), "map_59")
+    memory.exits["map_61_p0"] = {("warp", 60, 0)}  # back up to the same pocket: a cycle
+    memory.exits["map_59"] = {("warp", 60, 9)}  # an untaken ladder *here* must not count
+    assert memory.leads_nowhere_new("map_59", ("warp", 60, 0)) is True
+
+
+def test_a_memory_written_before_places_existed_still_loads():
+    old = {
+        "visited_maps": [59, 60],
+        "talked": [],
+        "tried": [],
+        "links": {},
+        "exits": {"59": [15, 60]},
+        "buildings": [58],
+        "ladders": [[59, 60, 0], [60, 59, 0]],
+    }
+    memory = Memory.from_dict(old)
+    assert memory.exits == {} and memory.landings == {("warp", 60, 0): None, ("warp", 59, 0): None}
+    assert memory.leads_nowhere_new("map_59", ("warp", 60, 0)) is False
+    emu, state, _ = town(warps=[(7, 7, 0, 60)], connections={})
+    assert {o.id: o.memory for o in generate(emu, state, memory, None)}["door_60"] == "visited"
