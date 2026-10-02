@@ -263,3 +263,43 @@ def test_an_indoor_range_covers_every_map_up_to_its_end():
     rom[(r.TOWN_MAP_BANK, r.TOWN_MAP_INDOOR + 5)] = (2 << 4) | 6
     rom[(r.TOWN_MAP_BANK, r.TOWN_MAP_INDOOR + 8)] = 0xFF
     assert [town_map_cell(emu, m) for m in (58, 59, 60, 61)] == [(2, 3), (6, 2), (6, 2), (6, 2)]
+
+
+def test_pockets_are_the_walkable_components_in_top_left_order():
+    """Mt. Moon B1F is several walled-off pockets under one map id (#129, #137). Ids are the rank
+    of each pocket's top-left cell, so a pocket keeps its id across visits and across runs."""
+    from jevplays.executor.world import pocket_of, pockets
+
+    emu = FakeEmulator()
+    install_map(emu, ["..##..", "..##..", "..##..", "..##..", "######", "######", "..##..", "..##.."])
+    grid = build_grid(emu)
+    assert [min((y, x) for x, y in p) for p in pockets(grid)] == [(0, 0), (0, 4), (6, 0), (6, 4)]
+    assert pocket_of(grid, 1, 1) == 0 and pocket_of(grid, 5, 3) == 1
+    assert pocket_of(grid, 0, 7) == 2 and pocket_of(grid, 5, 7) == 3
+
+
+def test_a_tile_pair_splits_a_pocket():
+    """Mt. Moon's raised floor against its lower floor: both walkable, no step between (#126)."""
+    from jevplays.executor.world import pockets
+
+    emu = FakeEmulator()
+    install_map(emu, ["....", "....", "....", "...."])
+    grid = build_grid(emu)
+    assert len(pockets(grid)) == 1
+    grid.tiles = [[1 if x < 2 else 2 for x in range(4)] for _ in range(4)]
+    grid.pairs = frozenset({frozenset((1, 2))})
+    assert [min((y, x) for x, y in p) for p in pockets(grid)] == [(0, 0), (0, 2)]
+
+
+def test_a_cell_the_grid_calls_a_wall_takes_its_neighbours_pocket():
+    """A door mat or a ladder tile is often a wall to the grid; the player stands on it all the
+    same, and the place must not change name because of it."""
+    from jevplays.executor.world import pocket_of
+
+    emu = FakeEmulator()
+    install_map(emu, ["..##..", "..##..", "..##..", "..##..", "..##..", "..##.."])
+    grid = build_grid(emu)
+    assert pocket_of(grid, 2, 2) == 0  # wall, left neighbour is pocket 0
+    assert pocket_of(grid, 3, 2) == 1  # wall, right neighbour is pocket 1
+    grid.cells = [[0] * 6 for _ in range(6)]
+    assert pocket_of(grid, 2, 2) is None

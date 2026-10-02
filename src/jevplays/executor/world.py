@@ -72,6 +72,47 @@ class MapGrid:
         )
 
 
+def pockets(grid: MapGrid) -> list[frozenset[tuple[int, int]]]:
+    """The walled-off parts of a map: the connected components of its walkable cells under
+    `can_step`, in order of each one's top-left cell, so a pocket's index is the same on every
+    visit and in every run. A cave floor is several of these under one map id (#137)."""
+    seen: set[tuple[int, int]] = set()
+    found: list[frozenset[tuple[int, int]]] = []
+    for y in range(grid.height):
+        for x in range(grid.width):
+            if (x, y) in seen or not grid.walkable(x, y):
+                continue
+            component = _flood(grid, (x, y))
+            seen |= component
+            found.append(frozenset(component))
+    return sorted(found, key=lambda p: min((cy, cx) for cx, cy in p))
+
+
+def _flood(grid: MapGrid, start: tuple[int, int]) -> set[tuple[int, int]]:
+    component = {start}
+    queue = deque([start])
+    while queue:
+        cx, cy = queue.popleft()
+        for nx, ny in ((cx, cy - 1), (cx, cy + 1), (cx - 1, cy), (cx + 1, cy)):
+            if (nx, ny) not in component and grid.can_step((cx, cy), (nx, ny)):
+                component.add((nx, ny))
+                queue.append((nx, ny))
+    return component
+
+
+def pocket_of(grid: MapGrid, x: int, y: int) -> int | None:
+    """Which of `pockets(grid)` holds `(x, y)`. A door mat or a ladder tile is often a wall to the
+    grid while the player stands on it; such a cell takes the pocket of its first walkable
+    neighbour (up, down, left, right). None when there is no pocket to take."""
+    cells = [(x, y)] if grid.walkable(x, y) else [(x, y - 1), (x, y + 1), (x - 1, y), (x + 1, y)]
+    for cell in cells:
+        if grid.walkable(*cell):
+            for i, pocket in enumerate(pockets(grid)):
+                if cell in pocket:
+                    return i
+    return None
+
+
 def mart_inventory(emu, map_id: int) -> tuple[str, ...] | None:
     """What the Mart on `map_id` sells, in the game's item names, read from its inventory in the
     ROM; None for a map with no known inventory or bytes that are not one."""
