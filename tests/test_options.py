@@ -867,3 +867,26 @@ def test_a_memory_written_before_places_existed_still_loads():
     assert memory.leads_nowhere_new("map_59", ("warp", 60, 0)) is False
     emu, state, _ = town(warps=[(7, 7, 0, 60)], connections={})
     assert {o.id: o.memory for o in generate(emu, state, memory, None)}["door_60"] == "visited"
+
+
+def test_a_heal_trip_is_planned_only_from_a_pocket_that_has_left():
+    """Round 11: at critical HP in a Mt. Moon 1F pocket that cannot reach the entrance, "go heal
+    at Pewter Pokémon Center" was offered, failed on the spot, and was chosen 4,731 times. With
+    places as pockets the crossing out of the cave was recorded from the entrance pocket, so the
+    other pocket has no way out and no trip (#137)."""
+    emu = FakeEmulator()
+    install_map(emu, ["..##..", "..##..", "..##..", "..##..", "..##..", "..##.."], warps=[(0, 0, 0, 15)])
+    emu.mem[ram.wCurMap] = 59
+    emu.mem[ram.wXCoord], emu.mem[ram.wYCoord] = 5, 2  # the right-hand pocket; the entrance is left
+    hurt_lead(emu)
+    walked = Memory.empty()
+    walked.note_crossing("pewter_city", "map_14", direction="east")
+    walked.note_crossing("map_14", "map_15", direction="north")
+    walked.note_crossing("map_15", "map_59_p0", dest_map=59, back_dest_map=15)
+    walked.note_crossing("pewter_city", "pewter_pokecenter", dest_map=maps.PEWTER_POKECENTER)
+    state = snapshot(emu)
+    assert state.place == "map_59_p1"
+    assert not any(o.kind == "heal" for o in generate(emu, state, walked, None))
+    emu.mem[ram.wXCoord] = 1
+    heal = next(o for o in generate(emu, snapshot(emu), walked, None) if o.kind == "heal")
+    assert heal.text == "go heal at Pewter Pokémon Center"
