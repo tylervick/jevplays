@@ -55,20 +55,36 @@ and is not checked."""
 def map_id_of(node: str) -> int | None:
     """The map id a node name stands for, or None for a name that is neither.
 
-    The inverse of `node_of`, including its `map_<id>` form for a map with no name of its own
-    (#35). An edge leg built for such a node still carries a `dest_map`, so a blackout mid-walk
-    reads as `lost` rather than as the crossing the leg was waiting for."""
+    The inverse of `node_of` and `place_name`: `map_<id>` for a map with no name of its own (#35)
+    and `map_<id>_p<k>` for one pocket of it (#137). An edge leg built for such a node still
+    carries a `dest_map`, so a blackout mid-walk reads as `lost` rather than as the crossing the
+    leg was waiting for."""
     if node in MAP_IDS:
         return MAP_IDS[node]
-    if node.startswith("map_") and node[4:].isdigit():
-        return int(node[4:])
-    return None
+    if not node.startswith("map_"):
+        return None
+    map_part, _, pocket_part = node[4:].partition("_p")
+    if not map_part.isdigit() or (pocket_part and not pocket_part.isdigit()):
+        return None
+    return int(map_part)
 
 
 def node_of(map_id: int, x: int, y: int) -> str:
     if map_id == ROUTE_2:
         return "route_2_south" if y >= ROUTE_2_SPLIT_ROW else "route_2_north"
     return NODE_NAMES.get(map_id, f"map_{map_id}")
+
+
+def place_name(map_id: int, x: int, y: int, pocket: int | None, pocket_count: int) -> str:
+    """The place the player is standing in. A named map is one place whatever its grid says, so
+    `LINKS`, Route 2's split and `CENTERS` stand; a map past the table is one place per walled-off
+    pocket when it has several (#137). With no pocket to name (the player on a tile the grid cannot
+    place) the map-level name is used, as before."""
+    if map_id in NODE_NAMES or map_id == ROUTE_2:
+        return node_of(map_id, x, y)
+    if pocket is None or pocket_count <= 1:
+        return f"map_{map_id}"
+    return f"map_{map_id}_p{pocket}"
 
 
 @dataclass(frozen=True)

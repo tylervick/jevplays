@@ -97,3 +97,18 @@ def test_cerulean_has_node_names_but_no_hand_written_links():
         "cerulean_city",
         "cerulean_gym",
     ]
+
+
+def test_place_name_suffixes_the_pocket_only_for_an_unnamed_map_with_several():
+    """A cave floor is several places under one id (#137); a town or a building is one place
+    whatever its grid says, so LINKS and the Route 2 split are untouched."""
+    assert maps.place_name(60, 5, 5, 2, 4) == "map_60_p2"
+    assert maps.place_name(60, 5, 5, 0, 1) == "map_60"
+    assert maps.place_name(60, 5, 5, None, 4) == "map_60"
+    assert maps.place_name(maps.PEWTER_CITY, 5, 5, 1, 3) == "pewter_city"
+    assert maps.place_name(ROUTE_2, 8, 71, 1, 3) == "route_2_south"
+
+
+def test_map_id_of_reads_a_pocket_suffix():
+    assert maps.map_id_of("map_60_p2") == 60
+    assert maps.map_id_of("map_60_px") is None
