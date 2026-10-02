@@ -779,20 +779,21 @@ class Loop:
         landed where this one started, with nothing done in between, the first was a round trip
         for nothing: it is marked `tried` on the map it was chosen from, which is what `tried`
         means (#53). Probe rounds 8 and 9 past Brock were two such pairs, both answers cached:
-        Route 3 <-> Route 4 5,600 times, then Mt. Moon 1F <-> Route 4 1,160 times (#136). Only
-        the option that started the trip is stamped: the way back is still a way out."""
+        Route 3 <-> Route 4 5,600 times, then Mt. Moon 1F <-> Route 4 1,160 times (#136). The
+        hop that closed the trip stays on record, so a second bounce stamps the other door too:
+        round 10 marked only Route 4's door, because the record was cleared after each match and
+        the pair always began on the same side, and the cave's "go back outside" stayed
+        "(visited)" through 5,000 more cycles."""
         started_on, arrived_on = self._option_map, self.emu.mem[ram.wCurMap]
         if started_on is None:
             return
         previous = self._last_hop
+        self._last_hop = (started_on, arrived_on, option.id, option.text)
         if previous is not None and previous[0] == arrived_on and previous[1] == started_on:
             self.memory.note_tried(previous[0], previous[2])
             self._save_memory()
-            self._last_hop = None
             message = f"tried: {previous[3]} (led straight back here)"
             await self.broadcaster.publish(status_event("running", message))
-            return
-        self._last_hop = (started_on, arrived_on, option.id, option.text)
 
     def _clear_option(self) -> None:
         self.option = None

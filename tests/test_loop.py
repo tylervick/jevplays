@@ -2023,8 +2023,11 @@ def test_a_round_trip_with_something_done_in_between_is_not_tried():
     assert loop.memory.tried == set()
 
 
-def test_only_the_option_that_started_the_round_trip_is_tried():
-    """The way back is not stamped: leaving the cave to heal later is still a way out."""
+def test_a_second_bounce_stamps_the_other_door_too():
+    """One round trip stamps the door that started it; the way back is still a way out. Bounce
+    again and the way back has led straight back as well. Round 10 cleared the record after each
+    match, so the pair always began on the same side and the cave's "go back outside" stayed
+    "(visited)" through 5,000 more cycles."""
     emu, bc = explore_emu(), RecordingBroadcaster()
     loop = Loop(emu, bc, LoopConfig(paced=False))
     a, b = 14, 15
@@ -2035,8 +2038,7 @@ def test_only_the_option_that_started_the_round_trip_is_tried():
     start_option(loop, door("exit_south", "go south"), b, arrived_on=a)
     asyncio.run(loop._run_macro(snapshot(emu)))
     assert loop.memory.tried == {(a, "exit_north")}
-    # A third hop onward is a new trip, not a second round trip.
     emu.mem[ram.wCurMap] = b
     start_option(loop, door("exit_north", "go north"), a, arrived_on=b)
     asyncio.run(loop._run_macro(snapshot(emu)))
-    assert loop.memory.tried == {(a, "exit_north")}
+    assert loop.memory.tried == {(a, "exit_north"), (b, "exit_south")}
