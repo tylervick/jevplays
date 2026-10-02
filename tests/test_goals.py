@@ -160,3 +160,15 @@ def milestone_by_any_id(goal_id: str):
     from jevplays.executor.goals import ALL_MILESTONES
 
     return next(m for m in ALL_MILESTONES if m.id == goal_id)
+
+
+def test_node_falls_back_to_the_map_level_name_for_a_state_with_no_place():
+    """Test-built states carry no place; the goal tables must still route from them."""
+    from dataclasses import replace
+
+    from jevplays.executor.goals import node
+    from tests.support import overworld_state
+
+    state = overworld_state(map_id=1)
+    assert state.place == "" and node(state) == "viridian_city"
+    assert node(replace(state, place="map_60_p2")) == "map_60_p2"

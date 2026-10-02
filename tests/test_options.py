@@ -168,8 +168,9 @@ def heal_from_a_pocketed_floor(warp):
     emu.mem[0xD362], emu.mem[0xD361] = 5, 5
     hurt_lead(emu)
     memory = Memory.empty()
-    memory.note_crossing("map_60", "mt_moon_pokecenter", dest_map=maps.MT_MOON_POKECENTER)
-    return [o.id for o in generate(emu, snapshot(emu), memory, None)]
+    state = snapshot(emu)
+    memory.note_crossing(state.place, "mt_moon_pokecenter", dest_map=maps.MT_MOON_POKECENTER)
+    return [o.id for o in generate(emu, state, memory, None)]
 
 
 def test_a_heal_trip_that_starts_in_another_pocket_is_not_offered():

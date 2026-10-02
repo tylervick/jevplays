@@ -15,6 +15,7 @@ from jevplays.brain.buckets import hp_bucket
 from jevplays.emulator import ram
 from jevplays.executor import maps, world
 from jevplays.executor.goals import Goal, legs_to
+from jevplays.executor.goals import node as goals_node
 from jevplays.executor.navigate import Leg
 from jevplays.executor.shop import shopping_list
 from jevplays.executor.talk import FACING_OFFSET, adjacent_tile
@@ -664,7 +665,7 @@ def _grass_text(state: GameState) -> str:
 
 def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> list[Option]:
     mem = emu.mem
-    node = maps.node_of(state.map_id, *state.tile)
+    node = goals_node(state)
     grid = world.build_grid(emu)
 
     drafts: list[Option] = []
