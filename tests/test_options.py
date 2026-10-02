@@ -726,3 +726,79 @@ def test_the_direction_word_names_the_outdoor_map_at_the_destinations_cell():
     assert towards_name(emu, maps.CERULEAN_GYM) == "Cerulean City"
     emu.mem.rom[(0x1C, 0x5313 + 3 * 3)] = 0  # Cerulean City moved off the gym's cell
     assert towards_name(emu, maps.CERULEAN_GYM) == "Cerulean Gym"
+
+
+ROUTE_4_WEST = {
+    15: (8, 2),  # Route 4: the ROM's cell is its eastern part, beyond Mt. Moon
+    14: (4, 3),  # Route 3
+    maps.CERULEAN_CITY: (10, 2),
+    maps.CERULEAN_GYM: (10, 2),
+    59: (6, 2),  # Mt. Moon 1F
+    68: (5, 2),  # Mt. Moon Pokémon Center
+}
+
+
+def route_4_west(*, memory=None, warps=((5, 7, 0, 59), (5, 0, 0, 68))):
+    """Route 4's west end: the east edge (to Cerulean) is walled off, the south edge (to Route 3)
+    is open, and the doors lead into Mt. Moon and the Pokémon Center."""
+    from dataclasses import replace as with_fields
+
+    from tests.support import install_town_map
+
+    emu = FakeEmulator()
+    install_map(
+        emu,
+        ["......##"] * 8,
+        warps=list(warps),
+        connections={"south": 14, "east": maps.CERULEAN_CITY},
+    )
+    emu.mem[ram.wCurMap] = 15
+    emu.mem[0xD362], emu.mem[0xD361] = 1, 1  # the player in the open west
+    install_town_map(emu, ROUTE_4_WEST)
+    far = with_fields(milestone_stub(dest="cerulean_gym", after="talk_leader"), destination="cerulean_gym")
+    return emu, snapshot(emu), memory or Memory.empty(), far
+
+
+def test_when_the_maps_own_way_on_is_out_of_reach_the_nearest_way_on_says_towards():
+    """Route 4's town-map cell lies east of Mt. Moon, so from its west end nothing was nearer than
+    "here" and nothing said "towards": 7 of 8 probe runs stepped back to Route 3, whose Route 4 exit
+    did say it, 5,600 times (#136). The map's east connection is unreachable from here, which is
+    the game's own sign that its cell is not where we stand: then the nearest way on is the way."""
+    emu, state, memory, far = route_4_west()
+    texts = {o.id: o.text for o in generate(emu, state, memory, far)}
+    assert texts["door_59"] == "enter Mt. Moon 1F, towards Cerulean City"
+    assert texts["door_68"] == "enter Mt. Moon Pokémon Center"
+    assert texts["exit_south"] == "go south to Route 3"
+    assert "exit_east" not in texts
+
+
+def test_a_dead_end_building_never_says_towards_even_when_it_is_the_nearest_way():
+    emu, state, memory, far = route_4_west(warps=((5, 0, 0, 68),))
+    memory.note_map(68)
+    memory.exits[68] = {15}
+    memory.buildings.add(68)
+    texts = {o.id: o.labelled() for o in generate(emu, state, memory, far)}
+    assert texts["door_68"] == "enter Mt. Moon Pokémon Center (visited, leads nowhere new)"
+    assert not any("towards" in t for t in texts.values()), texts
+
+
+def test_two_ways_on_that_tie_on_the_town_map_say_nothing():
+    emu, state, memory, far = route_4_west(warps=((5, 7, 0, 59), (5, 0, 1, 59)))
+    texts = [o.text for o in generate(emu, state, memory, far)]
+    assert not any("towards" in t for t in texts), texts
+
+
+def test_the_way_back_outside_never_says_towards():
+    """From Mt. Moon 1F "go back outside, towards Cerulean City" was taken on first entry, past
+    three new ladders: Route 4's cell is nearer than Mt. Moon's. Where we came from is never the
+    way on."""
+    from dataclasses import replace as with_fields
+
+    from tests.support import install_town_map
+
+    emu, _state, memory = town(map_id=59, warps=[(7, 7, 0, ram.WARP_LAST_MAP)], connections={})
+    emu.mem[ram.wLastMap] = 15
+    install_town_map(emu, ROUTE_4_WEST)
+    far = with_fields(milestone_stub(dest="cerulean_gym", after="talk_leader"), destination="cerulean_gym")
+    texts = {o.id: o.text for o in generate(emu, snapshot(emu), memory, far)}
+    assert texts["door_255"] == "go back outside"

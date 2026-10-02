@@ -579,28 +579,67 @@ def towards_name(emu, dest_map: int) -> str:
     return _place_name(dest_map)
 
 
-def _towards(emu, state: GameState, milestone: Goal | None, drafts: list[Option]) -> list[Option]:
-    """An exit or door nearer the milestone's town on the town map than here ends ", towards
-    <town>" (#136). The word is a bucket on the game's own map, not a bearing or a distance: past
-    Brock every exit read "(visited)" and nothing said which way Cerulean lay, so all 8 probe runs
-    got into Mt. Moon and drifted back west. Only a milestone that names where it happens
-    (`Goal.destination`) has a town to point at; the hand-routed ones are offered as a route."""
+def _towards(
+    emu,
+    state: GameState,
+    memory: Memory,
+    milestone: Goal | None,
+    connections: dict[str, int],
+    drafts: list[Option],
+) -> list[Option]:
+    """The one way out of here that ends nearest the milestone's town on the town map, when it is
+    nearer than here, ends ", towards <town>" (#136). The word is a bucket on the game's own map,
+    not a bearing or a distance: past Brock every exit read "(visited)" and nothing said which way
+    Cerulean lay, so all 8 probe runs got into Mt. Moon and drifted back west. Only a milestone
+    that names where it happens (`Goal.destination`) has a town to point at; the hand-routed ones
+    are offered as a route.
+
+    Never "go back outside" or a building that leads nowhere new: where we came from is not the
+    way on, and the first version pulled a run straight back out of Mt. Moon 1F past three new
+    ladders because Route 4's cell is nearer than the cave's. Never a tie: two ladders to one
+    floor say nothing.
+
+    "Here" is this map's cell, unless the map's own way on is out of reach: Route 4's cell is its
+    eastern part, beyond Mt. Moon, and from its west end the east edge to Cerulean cannot be
+    walked to, so nothing read nearer than "here" and 7 of 8 runs stepped back to Route 3, whose
+    Route 4 exit did read "towards", 5,600 times. A connection the RAM lists but the grid cannot
+    reach, leading somewhere nearer than this cell, is the game's own sign that the cell is not
+    where we stand: then "here" is the nearest exit we can take, and the cave reads as the way."""
     if milestone is None or milestone.destination is None:
         return drafts
     goal_map = maps.map_id_of(milestone.destination)
     if goal_map is None:
         return drafts
     goal = world.town_map_cell(emu, goal_map)
-    here = _town_map_distance(world.town_map_cell(emu, state.map_id), goal)
+
+    def distance(map_id: int) -> int:
+        return _town_map_distance(world.town_map_cell(emu, map_id), goal)
+
+    here = distance(state.map_id)
+    offered = {o.id for o in drafts}
+    if any(f"exit_{d}" not in offered and distance(dest) < here for d, dest in connections.items()):
+        exits = [distance(o.dest_map) for o in drafts if o.kind == "exit" and o.dest_map is not None]
+        here = min(exits, default=_FAR)
+    candidates = [
+        o
+        for o in drafts
+        if o.kind in ("exit", "door")
+        and o.dest_map is not None
+        and o.legs[0].dest_map != ram.WARP_LAST_MAP
+        and not memory.dead_end(state.map_id, o.dest_map)
+    ]
+    if not candidates:
+        return drafts
+    best = min(distance(o.dest_map) for o in candidates)
+    nearest = [o for o in candidates if distance(o.dest_map) == best]
+    if best >= here or len(nearest) != 1:
+        return drafts
     name = towards_name(emu, goal_map)
-    out = []
-    for option in drafts:
-        if option.kind in ("exit", "door") and option.dest_map is not None:
-            there = _town_map_distance(world.town_map_cell(emu, option.dest_map), goal)
-            if there < here:
-                option = replace(option, text=f"{option.text}, towards {name}")
-        out.append(option)
-    return out
+    return [replace(o, text=f"{o.text}, towards {name}") if o is nearest[0] else o for o in drafts]
+
+
+_FAR = 1 << 8
+"""Farther than any town-map cell: "here" when no exit can be taken at all."""
 
 
 def _town_map_distance(a: tuple[int, int], b: tuple[int, int]) -> int:
@@ -637,7 +676,8 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
     if heal_option is not None:
         drafts.append(heal_option)
     blocked = frozenset(world.blocked_by_sprites(state.sprites))
-    drafts.extend(_exit_options(world.read_connections(mem), grid, state.tile, blocked))
+    connections = world.read_connections(mem)
+    drafts.extend(_exit_options(connections, grid, state.tile, blocked))
     drafts.extend(_door_options(emu, world.read_warps(mem), state, grid))
     drafts.extend(_npc_options(emu, grid, state))
     # Grass tiles are not the same thing as wild Pokémon: Pallet Town and Viridian City both
@@ -656,5 +696,5 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
         )
 
     memory.note_exits(state.map_id, drafts)
-    drafts = _towards(emu, state, milestone, drafts)
+    drafts = _towards(emu, state, memory, milestone, connections, drafts)
     return [replace(option, memory=memory.word(state.map_id, option)) for option in drafts]
