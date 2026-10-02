@@ -1039,6 +1039,22 @@ def test_a_blackout_mid_walk_teaches_the_graph_nothing():
     assert loop.memory.links == {}
 
 
+def test_a_map_change_under_a_walk_lets_the_new_map_load_before_anything_reads_it():
+    """`wCurMap` changes a few frames before the warp table does. `lost` used to return with no
+    frame passing, the next turn no longer counted the map as new, and options were generated
+    from Mt. Moon 1F's warps under B1F's name (#134)."""
+    from jevplays.loop import MAP_SETTLE_FRAMES
+
+    emu, bc = explore_emu(map_id=maps.PALLET_TOWN), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    run(loop, 1)  # picks an option and plans its legs
+    assert loop.navigator.busy
+    emu.mem[ram.wCurMap] = maps.VIRIDIAN_POKECENTER  # the map id changes mid-walk
+    before = emu.frames
+    run(loop, 1)
+    assert loop.option is None and emu.frames - before >= MAP_SETTLE_FRAMES
+
+
 def test_a_map_change_under_a_plan_drops_the_option_and_asks_again():
     """The route was for a map we are not on any more, and so was the option list it came from:
     the next turn generates fresh options rather than charging this one with anything."""
