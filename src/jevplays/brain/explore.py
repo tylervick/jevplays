@@ -77,7 +77,9 @@ def explore_questions(sj: dict) -> dict[str, dict]:
                 "after it means a building whose only way out is back here; "
                 '"tried" means we chose it '
                 "before from here and nothing came of it, so repeat it only if nothing else is "
-                'worth doing. "readiness", when present, says how the lead measures up to the '
+                'worth doing. An exit or door ending in "towards" a place lies that way: nearer '
+                "to it on the town map than here is. "
+                '"readiness", when present, says how the lead measures up to the '
                 "fight the milestone walks into: training first is worth more than a milestone "
                 'the party is outmatched for. "party_size" says how many of the three Pokémon '
                 "the standing goal asks for the party has; catching one takes a Poké Ball."

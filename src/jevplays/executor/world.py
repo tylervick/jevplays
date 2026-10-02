@@ -87,6 +87,22 @@ def mart_inventory(emu, map_id: int) -> tuple[str, ...] | None:
     return tuple(item_name(i) for i in items)
 
 
+def town_map_cell(emu, map_id: int) -> tuple[int, int]:
+    """Where `map_id` sits on the game's town map, as (column, row), read from the ROM's own
+    tables: outdoor maps have an entry each, indoor maps fall in ranges (#136)."""
+    if map_id < ram.FIRST_INDOOR_MAP:
+        packed = emu.rom(ram.TOWN_MAP_BANK, ram.TOWN_MAP_OUTDOOR + map_id * ram.TOWN_MAP_OUTDOOR_ENTRY_SIZE)
+        return packed & 0xF, packed >> 4
+    addr = ram.TOWN_MAP_INDOOR
+    for _ in range(ram.TOWN_MAP_INDOOR_MAX_ENTRIES):
+        end = emu.rom(ram.TOWN_MAP_BANK, addr)
+        if map_id < end or end == ram.TOWN_MAP_INDOOR_END:
+            break
+        addr += ram.TOWN_MAP_INDOOR_ENTRY_SIZE
+    packed = emu.rom(ram.TOWN_MAP_BANK, addr + 1)
+    return packed & 0xF, packed >> 4
+
+
 def read_warps(mem: ram.Memory) -> tuple[Warp, ...]:
     out = []
     for i in range(mem[ram.wNumberOfWarps]):

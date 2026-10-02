@@ -656,3 +656,73 @@ def test_the_nurse_is_not_offered_when_the_whole_party_is_at_full_hp():
     hurt_lead(emu, hp=19, max_hp=20)
     nurse = next(o for o in generate(emu, snapshot(emu), memory, None) if o.id == "npc_3")
     assert nurse.after == "heal"
+
+
+TOWN_MAP = {
+    maps.PEWTER_CITY: (2, 3),
+    maps.ROUTE_2: (2, 6),
+    14: (4, 3),  # Route 3
+    maps.CERULEAN_CITY: (10, 2),
+    maps.PEWTER_GYM: (2, 3),
+    maps.CERULEAN_GYM: (10, 2),
+}
+"""The real town-map cells of the maps around Pewter, as the ROM has them."""
+
+
+def pewter(**kwargs):
+    emu, state, memory = town(
+        map_id=maps.PEWTER_CITY,
+        connections={"north": maps.ROUTE_2, "east": 14},
+        warps=[(7, 7, 0, maps.PEWTER_GYM)],
+        **kwargs,
+    )
+    from tests.support import install_town_map
+
+    install_town_map(emu, TOWN_MAP)
+    return emu, state, memory
+
+
+def test_an_exit_nearer_the_milestones_town_on_the_town_map_says_so():
+    """Past Brock every exit read "(visited)" and nothing said which way Cerulean lay: all 8
+    probe runs got into Mt. Moon and drifted back west (#136). The word is a bucket -- nearer
+    on the game's own town map, or nothing -- never a coordinate."""
+    from dataclasses import replace as with_fields
+
+    far = with_fields(milestone_stub(dest="cerulean_gym", after="talk_leader"), destination="cerulean_gym")
+    emu, state, memory = pewter()
+    texts = {o.id: o.text for o in generate(emu, state, memory, far)}
+    assert texts["exit_east"] == "go east to Route 3, towards Cerulean City"
+    assert texts["exit_north"] == "go north to Route 2"
+    # A building in the same town is no nearer than the town itself.
+    assert texts["door_54"] == "enter Pewter Gym"
+
+
+def test_no_direction_word_without_a_milestone_that_names_where_it_happens():
+    emu, state, memory = pewter()
+    for milestone in (None, milestone_stub(dest="pewter_gym", after="talk_leader")):
+        texts = [o.text for o in generate(emu, state, memory, milestone)]
+        assert not any("towards" in t for t in texts), texts
+
+
+def test_the_direction_word_leaves_the_memory_word_and_the_leg_label_alone():
+    from dataclasses import replace as with_fields
+
+    far = with_fields(milestone_stub(dest="cerulean_gym", after="talk_leader"), destination="cerulean_gym")
+    memory = Memory.empty()
+    memory.note_map(14)
+    emu, state, memory = pewter(memory=memory)
+    east = next(o for o in generate(emu, state, memory, far) if o.id == "exit_east")
+    assert east.labelled() == "go east to Route 3, towards Cerulean City (visited)"
+    assert east.legs[0].label == "go east to Route 3"
+
+
+def test_the_direction_word_names_the_outdoor_map_at_the_destinations_cell():
+    """The milestone happens in the gym; the word names the town the gym is in, read off the
+    town map rather than typed in, and falls back to the destination's own name when no outdoor
+    map shares its cell."""
+    from jevplays.executor.options import towards_name
+
+    emu, _state, _memory = pewter()
+    assert towards_name(emu, maps.CERULEAN_GYM) == "Cerulean City"
+    emu.mem.rom[(0x1C, 0x5313 + 3 * 3)] = 0  # Cerulean City moved off the gym's cell
+    assert towards_name(emu, maps.CERULEAN_GYM) == "Cerulean Gym"

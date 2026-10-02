@@ -69,3 +69,19 @@ def test_route1_has_a_path_from_the_south_entry_to_the_north_exit(rom, state_pat
         assert read_connections(emu.mem) == {"north": 1, "south": 0}
         path = astar(grid, (10, 33), (10, 0))
         assert path is not None and path[-1] == (10, 0)
+
+
+def test_town_map_cells_match_the_games_tables(rom, state_path):
+    """Read off the ROM (bank 0x1C): the outdoor table and the indoor ranges. Cerulean lies east
+    and north of Pewter; Mt. Moon's three floors share a cell between Route 3 and Route 4; the
+    Mt. Moon Pokémon Center sits at Route 4's west end, not on Route 4's own cell (#136)."""
+    from jevplays.executor.world import town_map_cell
+
+    with Emulator(rom) as emu:
+        emu.load(state_path("route1"))
+        cells = {m: town_map_cell(emu, m) for m in (0, 1, 2, 3, 13, 14, 15, 54, 59, 60, 61, 65, 68)}
+    assert cells[0] == (2, 11) and cells[1] == (2, 8) and cells[2] == (2, 3) and cells[3] == (10, 2)
+    assert cells[13] == (2, 6) and cells[14] == (4, 3) and cells[15] == (8, 2)
+    assert cells[54] == (2, 3) and cells[65] == (10, 2)
+    assert cells[59] == cells[60] == cells[61] == (6, 2)
+    assert cells[68] == (5, 2)

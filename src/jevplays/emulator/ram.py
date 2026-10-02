@@ -188,6 +188,22 @@ def pp_current(pp: int) -> int:
     return pp & 0b0011_1111
 
 
+TOWN_MAP_BANK = 0x1C
+TOWN_MAP_OUTDOOR = 0x5313
+"""pokered's `ExternalMapEntries`: one entry per outdoor map (ids below `FIRST_INDOOR_MAP`), in
+id order: a byte packing the map's town-map cell as (row << 4) | column, then a pointer to its
+name. Read off the ROM (#136): Pallet Town is (2, 11), Cerulean City (10, 2)."""
+TOWN_MAP_OUTDOOR_ENTRY_SIZE = 3
+TOWN_MAP_INDOOR = 0x5382
+"""pokered's `InternalMapEntries`, right after the outdoor table: ranges of indoor map ids in
+ascending order, each a byte holding the first map id *past* the range, the packed cell, and a
+name pointer. The game takes the first range whose end the map id is below; the last ends at
+0xFF."""
+TOWN_MAP_INDOOR_ENTRY_SIZE = 4
+TOWN_MAP_INDOOR_END = 0xFF
+TOWN_MAP_INDOOR_MAX_ENTRIES = 128  # the table holds 62; a bound against reading past it
+FIRST_INDOOR_MAP = 37  # REDS_HOUSE_1F
+
 MART_SCRIPT = 0xFE
 """The first byte of a Mart's inventory in the ROM (pokered's `script_mart`): then a count, that
 many item ids, and 0xFF."""

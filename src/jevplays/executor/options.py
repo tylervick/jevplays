@@ -569,6 +569,44 @@ def _milestone_option(
     )
 
 
+def towards_name(emu, dest_map: int) -> str:
+    """What the direction word calls the place a milestone happens in: the outdoor map that shares
+    its town-map cell -- the gym's town, not the gym -- or its own name when none does."""
+    cell = world.town_map_cell(emu, dest_map)
+    for map_id in range(ram.FIRST_INDOOR_MAP):
+        if map_id in MAP_NAMES and world.town_map_cell(emu, map_id) == cell:
+            return map_name(map_id)
+    return _place_name(dest_map)
+
+
+def _towards(emu, state: GameState, milestone: Goal | None, drafts: list[Option]) -> list[Option]:
+    """An exit or door nearer the milestone's town on the town map than here ends ", towards
+    <town>" (#136). The word is a bucket on the game's own map, not a bearing or a distance: past
+    Brock every exit read "(visited)" and nothing said which way Cerulean lay, so all 8 probe runs
+    got into Mt. Moon and drifted back west. Only a milestone that names where it happens
+    (`Goal.destination`) has a town to point at; the hand-routed ones are offered as a route."""
+    if milestone is None or milestone.destination is None:
+        return drafts
+    goal_map = maps.map_id_of(milestone.destination)
+    if goal_map is None:
+        return drafts
+    goal = world.town_map_cell(emu, goal_map)
+    here = _town_map_distance(world.town_map_cell(emu, state.map_id), goal)
+    name = towards_name(emu, goal_map)
+    out = []
+    for option in drafts:
+        if option.kind in ("exit", "door") and option.dest_map is not None:
+            there = _town_map_distance(world.town_map_cell(emu, option.dest_map), goal)
+            if there < here:
+                option = replace(option, text=f"{option.text}, towards {name}")
+        out.append(option)
+    return out
+
+
+def _town_map_distance(a: tuple[int, int], b: tuple[int, int]) -> int:
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
 GRASS_TEXT = "train in the tall grass here"
 PARTY_GOAL = 3
 """The party the standing goal asks for (`goals.STANDING_CLAUSE`)."""
@@ -618,4 +656,5 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
         )
 
     memory.note_exits(state.map_id, drafts)
+    drafts = _towards(emu, state, milestone, drafts)
     return [replace(option, memory=memory.word(state.map_id, option)) for option in drafts]
