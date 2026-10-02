@@ -68,19 +68,22 @@ _OPPOSITE = {"north": "south", "south": "north", "east": "west", "west": "east"}
 """The way back along a map connection. Gen 1's are symmetric."""
 
 
-Landing = tuple[str, int, int | str | None]
+Landing = tuple[str, int, int, int | str | None]
 """The identity of a way out as the option generator sees it, before anyone knows where it lands:
-("warp", destination map, destination warp id or None) for a door, ("edge", destination map,
-direction) for a map connection. `Memory.landings` records the place each one led to (#137)."""
+("warp", map it is on, destination map, destination warp id or None) for a door, ("edge", map
+it is on, destination map, direction) for a map connection. The map it is on is part of it: Mt.
+Moon 1F and B1F each have a "go back outside" to Route 4 with one landing, and keyed without
+their source the two were one, so B1F's untaken way on to Route 4's east side read as 1F's taken
+way back. `Memory.landings` records the place each one led to (#137)."""
 
 
-def option_landing(option: "Option") -> Landing | None:
+def option_landing(option: "Option", map_id: int) -> Landing | None:
     if option.kind not in ("exit", "door") or option.dest_map is None or not option.legs:
         return None
     leg = option.legs[0]
     if option.kind == "exit":
-        return ("edge", option.dest_map, leg.direction)
-    return ("warp", option.dest_map, leg.warp_id)
+        return ("edge", map_id, option.dest_map, leg.direction)
+    return ("warp", map_id, option.dest_map, leg.warp_id)
 
 
 def _outdoors(place: str) -> bool:
@@ -151,7 +154,7 @@ class Memory:
                 if not str(place).isdigit()
             },
             landings={
-                **{("warp", dest, warp_id): None for _map, dest, warp_id in d.get("ladders", [])},
+                **{("warp", map_id, dest, warp_id): None for map_id, dest, warp_id in d.get("ladders", [])},
                 **{tuple(way): place for way, place in d.get("landings", [])},
             },
         )
@@ -209,9 +212,9 @@ class Memory:
             return
         here.append(link)
 
-    def note_exits(self, place: str, options: "list[Option]") -> None:
+    def note_exits(self, place: str, map_id: int, options: "list[Option]") -> None:
         """Remember the ways out this place offered."""
-        offered = {landing for o in options if (landing := option_landing(o)) is not None}
+        offered = {landing for o in options if (landing := option_landing(o, map_id)) is not None}
         self.exits.setdefault(place, set()).update(offered)
 
     def note_landing(self, landing: Landing, place: str | None) -> None:
@@ -264,14 +267,16 @@ class Memory:
         if option.kind == "npc":
             slot = int(option.id.split("_", 1)[1])
             return "talked already" if (map_id, slot) in self.talked else "new"
-        landing = option_landing(option)
+        landing = option_landing(option, map_id)
         if option.kind == "door" and option.legs[0].warp_id is not None:
             # One of several ladders to the same floor: the floor being visited says nothing
-            # about where this one lands (#129).
-            return "visited" if landing in self.landings else "new"
-        if option.kind in ("exit", "door"):
+            # about where this one lands (#129), so "visited" is this ladder having been taken.
+            if landing not in self.landings:
+                return "new"
+        elif option.kind in ("exit", "door"):
             if option.dest_map not in self.visited_maps:
                 return "new"
+        if option.kind in ("exit", "door"):
             # Only the dead end is said. "visited, leads on to new places" was tried and drew Jev
             # harder than "new" did: 4 of 4 probe runs went Pewter <-> Route 2 thousands of times,
             # both ways reading so, with Route 3 "(new)" at 0.20 against 0.72.
@@ -675,7 +680,10 @@ def _towards(
         if o.kind in ("exit", "door")
         and o.dest_map is not None
         and o.legs[0].dest_map != ram.WARP_LAST_MAP
-        and not ((way := option_landing(o)) is not None and memory.leads_nowhere_new(goals_node(state), way))
+        and not (
+            (way := option_landing(o, state.map_id)) is not None
+            and memory.leads_nowhere_new(goals_node(state), way)
+        )
     ]
     if not candidates:
         return drafts
@@ -744,6 +752,6 @@ def generate(emu, state: GameState, memory: Memory, milestone: Goal | None) -> l
             )
         )
 
-    memory.note_exits(node, drafts)
+    memory.note_exits(node, state.map_id, drafts)
     drafts = _towards(emu, state, memory, milestone, connections, drafts)
     return [replace(option, memory=memory.word(state.map_id, node, option)) for option in drafts]
