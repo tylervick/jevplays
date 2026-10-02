@@ -1,7 +1,7 @@
 # The demo supervisor (Scripts/demo-loop.py) and the package it runs, headless. No game data:
 # .dockerignore keeps it out of the context and the COPY lines below name everything that goes in.
 # The ROM is on the Fly volume at /data/rom (see fly.toml and README.md "Production").
-FROM ghcr.io/astral-sh/uv:0.12.17-python3.14-trixie-slim@sha256:63018e7b676ef735eee4da4f9c2e7b5f5e3851fa023745d78ce91d1a099a35fd
+FROM ghcr.io/astral-sh/uv:0.12.22-python3.14-trixie-slim@sha256:8390ef751cf17813d7a30e73bb9316d43adeab121ed3ee655bb1d344393a8046
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
