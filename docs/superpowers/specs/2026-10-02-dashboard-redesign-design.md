@@ -328,9 +328,11 @@ the id, with a trailing parenthesised memory word split into `memory`; otherwise
 
 ### 3.7 Late joiners get the recent decisions
 
-`Broadcaster` keeps the last 10 decision events in a deque and, on connect, sends them oldest
+`Broadcaster` keeps the last 10 decision events in a deque and, on connect, sends them newest
 first after the latest frame, state and status, so a new tab's Recent list and Jev card start
-populated. The latest-per-type behaviour is unchanged for every other type. Each decision is
+populated. Newest first keeps what a late joiner always got: the first decision it receives is
+the latest. The page files a decision older than its card below it instead of replacing the
+card. The latest-per-type behaviour is unchanged for every other type, and each decision is
 still sent once to a connected tab.
 
 ### 3.8 Clock offset for "ago"
