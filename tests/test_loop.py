@@ -1977,3 +1977,66 @@ def test_the_exits_a_map_offers_are_written_to_the_run_dir(tmp_path):
     loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), run_dir=run_dir)
     run(loop, 1)
     assert maps.ROUTE_1 in run_dir.load_memory()["exits"][str(maps.PALLET_TOWN)]
+
+
+def door(option_id, text="a door"):
+    return Option(id=option_id, kind="door", text=text, memory="visited", legs=(), after=None)
+
+
+def test_an_exit_that_leads_straight_back_here_is_remembered_as_tried():
+    """Probe rounds 8 and 9: Route 3 -> Route 4 -> Route 3 5,600 times, then Mt. Moon 1F ->
+    Route 4 -> 1F 1,160 times, both answers cached, nothing in between. An exit or door whose
+    next decision is the one that brings the run straight back is an option nothing came of,
+    which is what `tried` means (#53); the round trip is the stamp."""
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    cave, outside = 59, 15
+    # "go back outside" taken in the cave, arriving outside...
+    emu.mem[ram.wCurMap] = outside
+    start_option(loop, door("door_255", "go back outside"), cave, arrived_on=outside)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert loop.memory.tried == set()
+    # ...then "enter the cave" taken outside, arriving back in the cave: the first was for nothing.
+    emu.mem[ram.wCurMap] = cave
+    start_option(loop, door("door_59", "enter Mt. Moon 1F"), outside, arrived_on=cave)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert loop.memory.tried == {(cave, "door_255")}
+    messages = [e["message"] for e in bc.events if e["type"] == "status"]
+    assert any("tried: go back outside" in m and "straight back" in m for m in messages)
+
+
+def test_a_round_trip_with_something_done_in_between_is_not_tried():
+    """Out to the Pokémon Center, the nurse, and back in: the trip was for the heal, and the
+    door that started it led somewhere worth going."""
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    route, center = 15, 68
+    emu.mem[ram.wCurMap] = center
+    start_option(loop, door("door_68", "enter the center"), route, arrived_on=center)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    nurse = Option(id="npc_3", kind="npc", text="talk to the nurse", memory="new", legs=(), after="talk_3")
+    asyncio.run(loop._start_option(nurse, snapshot(emu)))
+    loop._clear_option()
+    emu.mem[ram.wCurMap] = route
+    start_option(loop, door("door_255", "go back outside"), center, arrived_on=route)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert loop.memory.tried == set()
+
+
+def test_only_the_option_that_started_the_round_trip_is_tried():
+    """The way back is not stamped: leaving the cave to heal later is still a way out."""
+    emu, bc = explore_emu(), RecordingBroadcaster()
+    loop = Loop(emu, bc, LoopConfig(paced=False))
+    a, b = 14, 15
+    emu.mem[ram.wCurMap] = b
+    start_option(loop, door("exit_north", "go north"), a, arrived_on=b)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    emu.mem[ram.wCurMap] = a
+    start_option(loop, door("exit_south", "go south"), b, arrived_on=a)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert loop.memory.tried == {(a, "exit_north")}
+    # A third hop onward is a new trip, not a second round trip.
+    emu.mem[ram.wCurMap] = b
+    start_option(loop, door("exit_north", "go north"), a, arrived_on=b)
+    asyncio.run(loop._run_macro(snapshot(emu)))
+    assert loop.memory.tried == {(a, "exit_north")}

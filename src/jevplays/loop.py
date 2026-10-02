@@ -211,6 +211,10 @@ class Loop:
         self._announced_no_options = False
         """Whether the "nothing to do here" pause has already been published for this map."""
         self._option_map: int | None = None
+        self._last_hop: tuple[int, int, str, str] | None = None
+        """(map it started on, map it arrived on, option id, option text) of the last exit or door
+        that arrived, while nothing else has been done since: the first half of a round trip
+        (#136)."""
         """The map the option was generated on: where `tried` and `talked already` are keyed,
         even when the option's own legs have since carried us onto another map."""
         self._seen_map: int | None = None
@@ -657,6 +661,10 @@ class Loop:
         self.option_started_at = self._game_clock()
         self._battled = False
         self._option_map = state.map_id
+        if option.kind not in ("exit", "door"):
+            # Anything else done in between -- a nurse, the grass, a trainer -- means the next
+            # hop back is not a round trip for nothing.
+            self._last_hop = None
         self._arrived = not option.legs
         self._arrived_map = state.map_id if self._arrived else None
         await self.broadcaster.publish(status_event("running", f"option: {option.text}"))
@@ -766,6 +774,26 @@ class Loop:
         await self.broadcaster.publish(status_event("running", message))
         return self.emu.tick(self.config.idle_frames)
 
+    async def _note_hop(self, option: Option) -> None:
+        """An exit or door just arrived. If the one before it started where this one landed and
+        landed where this one started, with nothing done in between, the first was a round trip
+        for nothing: it is marked `tried` on the map it was chosen from, which is what `tried`
+        means (#53). Probe rounds 8 and 9 past Brock were two such pairs, both answers cached:
+        Route 3 <-> Route 4 5,600 times, then Mt. Moon 1F <-> Route 4 1,160 times (#136). Only
+        the option that started the trip is stamped: the way back is still a way out."""
+        started_on, arrived_on = self._option_map, self.emu.mem[ram.wCurMap]
+        if started_on is None:
+            return
+        previous = self._last_hop
+        if previous is not None and previous[0] == arrived_on and previous[1] == started_on:
+            self.memory.note_tried(previous[0], previous[2])
+            self._save_memory()
+            self._last_hop = None
+            message = f"tried: {previous[3]} (led straight back here)"
+            await self.broadcaster.publish(status_event("running", message))
+            return
+        self._last_hop = (started_on, arrived_on, option.id, option.text)
+
     def _clear_option(self) -> None:
         self.option = None
         self.option_started_at = 0
@@ -792,6 +820,7 @@ class Loop:
                 return await self._option_tried("it went nowhere")
             # An exit or a door: arriving is the whole of it.
             await self.broadcaster.publish(status_event("running", f"done: {option.text}"))
+            await self._note_hop(option)
             self._clear_option()
             return self.emu.tick(self.config.idle_frames)
         if macro == "wander" and self._battled:
