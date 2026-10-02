@@ -67,6 +67,10 @@ from jevplays.state.snapshot import GameState, rows_of, snapshot
 FRAMES_PER_SECOND = 60
 
 NAV_STEP_FRAMES = 56
+MAP_SETTLE_FRAMES = 30
+"""Frames to let a warp finish loading. `wCurMap` changes a few frames before the warp table,
+the position and the sprites do (5 on a Mt. Moon ladder), and anything that reads them in between
+reads the old map under the new id (#134)."""
 """What one navigator step costs, near enough: an 8-frame hold plus up to 48 frames waiting for
 wWalkCounter to come back to zero. The navigator ticks the emulator itself, so this is only what
 the pacer is told; under-reporting makes the loop sleep less, never stall."""
@@ -666,6 +670,13 @@ class Loop:
         from_map, from_tile = self.navigator.start_map, self.navigator.start_tile
         leg = self.navigator.current
         result = self.navigator.step(self.emu, state)
+        if from_map is not None and self.emu.mem[ram.wCurMap] != from_map:
+            # The map changed under this leg, as a crossing or as `lost`. Nothing after this -- the
+            # crossing's way back, the ladder underfoot, the next turn's options -- may read RAM
+            # until the new map has loaded: a probe run past Brock was offered Mt. Moon 1F's
+            # ladders under B1F's name, because `lost` returned without a frame passing and the
+            # next turn no longer counted the map as new (#134).
+            self.emu.tick(MAP_SETTLE_FRAMES)
         if result in ("leg_done", "done"):
             self._note_crossing(leg, from_map, from_tile)
         if result == "stuck":
