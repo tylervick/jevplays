@@ -93,6 +93,11 @@ class GameState:
     sprites: tuple[Sprite, ...]
     map_size: tuple[int, int]
 
+    disabled_move: str | None = None
+    """The name of our active Pokémon's move the enemy's DISABLE is on, or None. The game refuses
+    it at the menu with no turn passing, so DISABLE never runs down while it keeps being chosen:
+    Jev chose EMBER 13,000 times against a Jigglypuff (#140)."""
+
     def to_dict(self) -> dict:
         d = _listify(asdict(self))
         d["mode"] = str(self.mode)
@@ -259,7 +264,7 @@ def snapshot(emu: EmulatorLike) -> GameState:
     mode = detect(rows, in_battle=in_battle, blank=is_blank(raw))
     map_id = mem[ram.wCurMap]
     party = read_party(mem)
-    battle = active = enemy = active_slot = None
+    battle = active = enemy = active_slot = disabled_move = None
     if in_battle:
         kind = "trainer" if mem[ram.wIsInBattle] == 2 else "wild"
         trainer = trainer_class_name(mem[ram.wTrainerClass]) if kind == "trainer" else None
@@ -269,6 +274,9 @@ def snapshot(emu: EmulatorLike) -> GameState:
         active_slot = mem[ram.wPlayerMonNumber]
         if active_slot >= len(party):
             active_slot = 0
+        slot = mem[ram.wPlayerDisabledMove] >> 4
+        if 0 < slot <= len(active.moves):
+            disabled_move = active.moves[slot - 1].name
     return GameState(
         mode=mode,
         map_id=map_id,
@@ -287,6 +295,7 @@ def snapshot(emu: EmulatorLike) -> GameState:
         party=party,
         active=active,
         active_slot=active_slot,
+        disabled_move=disabled_move,
         enemy=enemy,
         battle=battle,
         flags=flags_set(mem),
