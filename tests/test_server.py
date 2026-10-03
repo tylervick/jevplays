@@ -152,3 +152,64 @@ def test_health_reports_the_latest_status_and_how_many_are_watching():
     bc.latest["status"] = status_event("unwatched", "nobody is watching")
     with client.websocket_connect("/ws"):
         assert client.get("/health").json() == {"status": "unwatched", "viewers": 1}
+
+
+def test_a_late_joiner_gets_the_recent_decisions_newest_first_after_the_latest_of_each_other_type():
+    """Spec 2026-10-02 dashboard redesign, 3.7: a tab opened mid-run starts with a populated
+    recent list, not just the last decision; the last ten, newest first so the first decision it
+    receives is still the latest, after the frame, state and status that bring it up to date."""
+    from jevplays.dashboard.events import decision_event_from_dict
+
+    def decision(i: int) -> dict:
+        return decision_event_from_dict(
+            {
+                "id": f"d{i}",
+                "ts": float(i),
+                "kind": "prompt",
+                "state_summary": {},
+                "questions": {},
+                "answers": {},
+                "action": "answer YES",
+            }
+        )
+
+    async def scenario():
+        bc = Broadcaster()
+        await bc.publish(status_event("running", "walking"))
+        for i in range(12):
+            await bc.publish(decision(i))
+        await bc.publish(status_event("running", "pressing"))
+        late = FakeSocket()
+        await bc.connect(late)
+        return [json.loads(m) for m in late.sent]
+
+    events = asyncio.run(scenario())
+    assert [e["type"] for e in events] == ["status"] + ["decision"] * 10
+    assert events[0]["message"] == "pressing"
+    assert [e["decision"]["id"] for e in events[1:]] == [f"d{i}" for i in range(11, 1, -1)]
+
+
+def test_a_connected_tab_gets_each_decision_once():
+    from jevplays.dashboard.events import decision_event_from_dict
+
+    async def scenario():
+        bc = Broadcaster()
+        sock = FakeSocket()
+        await bc.connect(sock)
+        await bc.publish(
+            decision_event_from_dict(
+                {
+                    "id": "d0",
+                    "ts": 0.0,
+                    "kind": "prompt",
+                    "state_summary": {},
+                    "questions": {},
+                    "answers": {},
+                    "action": "answer YES",
+                }
+            )
+        )
+        return [json.loads(m) for m in sock.sent]
+
+    events = asyncio.run(scenario())
+    assert [e["type"] for e in events] == ["decision"]
