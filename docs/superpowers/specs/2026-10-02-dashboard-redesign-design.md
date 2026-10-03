@@ -260,8 +260,9 @@ The header pill shows a dot and a word, from `data-status`, in the reserved stat
 | (code 1013)     | demo full       | critical |
 
 `#status` keeps its id and `data-status` values (`record-demo.py` reads them; `connecting`,
-`reconnecting`, `full` and `replay` are new values the page sets itself, and the script only
-looks for `finished` and `stopped`).
+`reconnecting`, `full` and `replay` are new values the page sets itself, and the script now
+stops on `reconnecting` as well as `finished` and `stopped`, since a run's server going away
+used to read as `stopped` and now reads as `reconnecting`).
 
 Everything that is not `running` also puts a translucent card over the game screen, because
 the screen is where a viewer looks and a frozen frame must never pass for live:

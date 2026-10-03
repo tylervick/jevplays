@@ -187,11 +187,20 @@ function alsoAsked(questions, label) {
   return line;
 }
 
+let lastCardAt = 0;
+
 function renderCard(d, view) {
   decisionEl.replaceChildren();
   decisionEl.classList.remove("empty", "is-new");
-  void decisionEl.offsetWidth; // restart the arrival animation
-  decisionEl.classList.add("is-new");
+  // The arrival animation marks a decision landing while the game plays; in an unpaced run
+  // (a recording, a measurement) decisions come faster than it, so every bar would be caught
+  // half-grown. A card that follows another within a second arrives still.
+  const now = performance.now();
+  if (now - lastCardAt > 1000) {
+    void decisionEl.offsetWidth; // restart the arrival animation
+    decisionEl.classList.add("is-new");
+  }
+  lastCardAt = now;
 
   const where = el("div", "where");
   where.append(tag(view.actor === "code" ? "code" : view.kind, `kind ${view.actor}`));

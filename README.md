@@ -4,11 +4,12 @@ Jev, TypeSafe's System One model, plays Pokémon Red on a headless emulator whil
 dashboard shows the game next to live probability bars for every decision. Code reads the game's
 memory, asks Jev narrow typed questions, and presses the buttons; Jev supplies the judgment.
 
-![The dashboard mid-battle: the game on the left, and on the right the move Jev chose with the
-probability it gave each option, alongside the run and faint questions](docs/media/jevplays-demo.webp)
+![The dashboard mid-run: the game on the left with the party, what code is doing, and the goal;
+on the right the question Jev was asked, the options as it saw them with the probability it
+gave each one, and the line handing the answer back to code](docs/media/jevplays-demo.webp)
 
 *[`docs/media/jevplays-demo.mp4`](docs/media/jevplays-demo.mp4) is the whole run, start to the
-Boulder Badge, in 24 seconds — 105 decisions, unpaced, recorded at 25fps. The loop above is eight
+Boulder Badge, in 39 seconds — 147 decisions, unpaced, recorded at 25fps. The loop above is eight
 seconds of it. `Scripts/record-demo.py` regenerates both.*
 
 Design: `docs/superpowers/specs/2026-09-20-jevplays-design.md`, amended by
