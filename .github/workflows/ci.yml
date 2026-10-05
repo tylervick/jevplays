@@ -22,7 +22,7 @@ jobs:
         with: {persist-credentials: false, fetch-depth: 0}
       # mise installs the uv/hk/linter versions mise.toml pins, so `hk check --all`
       # below runs the same tools as the local pre-commit hook.
-      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with: {cache: true}
       - name: Cache uv packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
