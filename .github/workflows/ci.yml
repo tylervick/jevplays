@@ -14,7 +14,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         # Nothing in this job pushes; leaving the token in .git/config only widens
         # what a compromised later step could reach. fetch-depth 0 because hk's
         # gitleaks step scans commit history rather than the working tree, and a
@@ -37,7 +37,7 @@ jobs:
   image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {persist-credentials: false}
       - run: docker build -t jevplays .
       # The whole filesystem, not just /app: a dependency or a cache could leave a copy anywhere.
@@ -65,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     concurrency: {group: deploy, cancel-in-progress: false}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: {persist-credentials: false}
       - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
         with: {version: 0.4.107}
