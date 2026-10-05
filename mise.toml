@@ -29,7 +29,7 @@ actionlint = "1.7.12"
 gitleaks = "8.30.1"
 zizmor = "1.30.1"
 # Only needed when a workflow gains or bumps an action; see `mise run pin-actions`.
-pinact = "4.1.1"
+pinact = "5.0.0"
 # For the one-time Fly setup and `fly logs`; the deploy job pins the same version.
 "aqua:superfly/flyctl" = "0.4.107"
 
