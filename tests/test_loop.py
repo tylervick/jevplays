@@ -1102,8 +1102,8 @@ def test_both_ends_of_a_ladder_the_run_used_are_remembered_as_landings():
     here = (emu.mem[ram.wXCoord], emu.mem[ram.wYCoord])
     emu.mem[ram.wWarpEntries : ram.wWarpEntries + 4] = [here[1], here[0], 5, UNMAPPED_MAP]  # ...on a ladder
     run(loop, 1)
-    assert loop.memory.landings[("warp", maps.PALLET_TOWN, None)] == "pallet_town"
-    assert loop.memory.landings[("warp", UNMAPPED_MAP, 5)] == f"map_{UNMAPPED_MAP}"
+    assert loop.memory.landings[("warp", UNMAPPED_MAP, maps.PALLET_TOWN, None)] == "pallet_town"
+    assert loop.memory.landings[("warp", maps.PALLET_TOWN, UNMAPPED_MAP, 5)] == f"map_{UNMAPPED_MAP}"
 
 
 def test_a_resumed_loop_starts_from_the_memory_it_is_handed():
@@ -1979,7 +1979,7 @@ def test_the_exits_a_map_offers_are_written_to_the_run_dir(tmp_path):
     emu = explore_emu(map_id=maps.PALLET_TOWN, connections={"north": maps.ROUTE_1})
     loop = Loop(emu, RecordingBroadcaster(), LoopConfig(paced=False), run_dir=run_dir)
     run(loop, 1)
-    assert ["edge", maps.ROUTE_1, "north"] in run_dir.load_memory()["exits"]["pallet_town"]
+    assert ["edge", maps.PALLET_TOWN, maps.ROUTE_1, "north"] in run_dir.load_memory()["exits"]["pallet_town"]
 
 
 def door(option_id, text="a door"):

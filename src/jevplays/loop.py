@@ -738,22 +738,25 @@ class Loop:
             dest_map=None if leg.kind == "edge" else to_map,
             back_dest_map=from_map if straight_back else maps.WARP_LAST_MAP,
         )
-        self._note_landings(leg, to_map, from_node, to_node)
+        self._note_landings(leg, from_map, to_map, from_node, to_node)
         if len(self.memory.links.get(from_node, ())) != before:
             self._save_memory()
 
-    def _note_landings(self, leg, to_map: int, from_place: str, to_place: str) -> None:
+    def _note_landings(self, leg, from_map: int, to_map: int, from_place: str, to_place: str) -> None:
         """Where the way out just taken lands, and where the warp under our feet on arrival leads
-        back to (#129, #137). The leg's destination is read as the map arrived on, which is what
-        the option generator will key the same door by next time (`option_landing`)."""
+        back to (#129, #137). Keys are what the option generator will key the same door by next
+        time (`option_landing`): the map the door is on, its destination read as the map actually
+        arrived on, and for the warp underfoot a "back the way you came in" destination resolved
+        through `wLastMap` the way the option's is."""
         if leg.kind == "edge":
-            self.memory.note_landing(("edge", to_map, leg.direction), to_place)
+            self.memory.note_landing(("edge", from_map, to_map, leg.direction), to_place)
         else:
-            self.memory.note_landing(("warp", to_map, leg.warp_id), to_place)
+            self.memory.note_landing(("warp", from_map, to_map, leg.warp_id), to_place)
             here = (self.emu.mem[ram.wXCoord], self.emu.mem[ram.wYCoord])
             for warp in world.read_warps(self.emu.mem):
                 if (warp.x, warp.y) == here:
-                    self.memory.note_landing(("warp", warp.dest, warp.warp_id), from_place)
+                    dest = self.emu.mem[ram.wLastMap] if warp.dest == ram.WARP_LAST_MAP else warp.dest
+                    self.memory.note_landing(("warp", to_map, dest, warp.warp_id), from_place)
         self._save_memory()
 
     async def _option_budget_spent(self) -> int:
