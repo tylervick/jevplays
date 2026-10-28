@@ -1,5 +1,9 @@
 # jevplays
 
+> **Parked as a proof of concept on 2026-10-27.** The project is not being actively developed.
+> `docs/STATUS.md` says what works, what was measured, what is still open, and how to pick it
+> up again. Everything below describes the code as it stands.
+
 Jev, TypeSafe's System One model, plays Pokémon Red on a headless emulator while a local web
 dashboard shows the game next to live probability bars for every decision. Code reads the game's
 memory, asks Jev narrow typed questions, and presses the buttons; Jev supplies the judgment.

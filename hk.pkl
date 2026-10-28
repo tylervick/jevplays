@@ -40,7 +40,9 @@ local pytest: Step = new Step {
 local fast = new Mapping<String, Step> {
   ["ruff"] = ruff
   ["ruff-format"] = ruffFormat
-  ["trailing-whitespace"] = Builtins.trailing_whitespace
+  // A unified diff writes a blank context line as one space; the probe patch under
+  // docs/probes/ keeps it so `git apply` still reads it.
+  ["trailing-whitespace"] = (Builtins.trailing_whitespace) { exclude = "docs/probes/*.patch" }
   ["newlines"] = Builtins.newlines
   ["merge-conflict"] = Builtins.check_merge_conflict
   ["private-key"] = Builtins.detect_private_key
