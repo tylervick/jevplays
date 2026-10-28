@@ -53,3 +53,23 @@ def test_flags_set_reads_only_tracked_flags():
         mem[ram.wEventFlags + n // 8] = mem[ram.wEventFlags + n // 8] | (1 << (n % 8))
     assert flags_set(mem) == frozenset({"got_starter", "battled_rival_in_oaks_lab"})
     assert set(TRACKED_FLAGS) >= flags_set(mem)
+
+
+def test_decision_event_carries_the_view_the_page_renders_from():
+    """Spec 2026-10-02 dashboard redesign, 3.6: the loop and the replay both go through
+    `decision_event_from_dict`, so every decision reaches the page with its `view`."""
+    from jevplays.dashboard.events import decision_event_from_dict
+
+    d = {
+        "id": "abc",
+        "ts": 1.0,
+        "kind": "battle",
+        "state_summary": {"goal": "Challenge Brock"},
+        "questions": {},
+        "answers": {},
+        "action": "use SCRATCH",
+        "model": "jev-1.13.0",
+    }
+    ev = decision_event_from_dict(d)
+    assert ev["decision"] == d
+    assert ev["view"]["handoff"] == "code presses: use SCRATCH" and ev["view"]["goal"] == "Challenge Brock"

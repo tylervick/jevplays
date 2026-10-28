@@ -260,8 +260,9 @@ The header pill shows a dot and a word, from `data-status`, in the reserved stat
 | (code 1013)     | demo full       | critical |
 
 `#status` keeps its id and `data-status` values (`record-demo.py` reads them; `connecting`,
-`reconnecting` and `full` are new values the page sets itself, and the script only looks for
-`finished` and `stopped`).
+`reconnecting`, `full` and `replay` are new values the page sets itself, and the script now
+stops on `reconnecting` as well as `finished` and `stopped`, since a run's server going away
+used to read as `stopped` and now reads as `reconnecting`).
 
 Everything that is not `running` also puts a translucent card over the game screen, because
 the screen is where a viewer looks and a frozen frame must never pass for live:
@@ -328,9 +329,11 @@ the id, with a trailing parenthesised memory word split into `memory`; otherwise
 
 ### 3.7 Late joiners get the recent decisions
 
-`Broadcaster` keeps the last 10 decision events in a deque and, on connect, sends them oldest
+`Broadcaster` keeps the last 10 decision events in a deque and, on connect, sends them newest
 first after the latest frame, state and status, so a new tab's Recent list and Jev card start
-populated. The latest-per-type behaviour is unchanged for every other type. Each decision is
+populated. Newest first keeps what a late joiner always got: the first decision it receives is
+the latest. The page files a decision older than its card below it instead of replacing the
+card. The latest-per-type behaviour is unchanged for every other type, and each decision is
 still sent once to a connected tab.
 
 ### 3.8 Clock offset for "ago"

@@ -4,6 +4,7 @@ import base64
 import json
 
 from jevplays.brain.decision import Decision
+from jevplays.dashboard.present import present
 from jevplays.state.snapshot import GameState
 
 
@@ -24,7 +25,8 @@ def status_event(status: str, message: str = "") -> dict:
 
 
 def decision_event_from_dict(d: dict) -> dict:
-    return {"type": "decision", "decision": d}
+    """The record as logged, plus the `view` the page renders from (spec 2026-10-02, 3.6)."""
+    return {"type": "decision", "decision": d, "view": present(d)}
 
 
 def decision_event(decision: Decision) -> dict:

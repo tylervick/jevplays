@@ -1,6 +1,7 @@
 """A Starlette app: the static page, and a websocket that fans events out to every open tab."""
 
 import asyncio
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
@@ -19,6 +20,9 @@ STATIC = Path(__file__).parent / "static"
 TRY_AGAIN_LATER = 1013
 """The close code a socket past `max_viewers` gets; the page reads it as "the demo is full"."""
 
+RECENT_DECISIONS = 10
+"""How many decisions a new tab is caught up on (spec 2026-10-02 dashboard redesign, 3.7)."""
+
 
 class Broadcaster:
     """Holds the open sockets and the last event of each type, so a new tab is current at once."""
@@ -26,6 +30,8 @@ class Broadcaster:
     def __init__(self, *, max_viewers: int | None = None, clock: Callable[[], float] = monotonic) -> None:
         self.clients: set = set()
         self.latest: dict[str, dict] = {}
+        self.recent: deque[dict] = deque(maxlen=RECENT_DECISIONS)
+        """The last few decisions, so a tab opened mid-run starts with a recent list."""
         self.first_client = asyncio.Event()
         """Set the first time a tab connects, so `replay` can hold off until someone is watching."""
         self.max_viewers = max_viewers
@@ -56,6 +62,11 @@ class Broadcaster:
         self.first_client.set()
         self._watched.set()
         for event in self.latest.values():
+            if event["type"] != "decision":
+                await self._send(ws, event)
+        # Newest first: the first decision a tab receives is the latest, as it always was, and
+        # the ones after it are older, which the page files below it.
+        for event in reversed(self.recent):
             await self._send(ws, event)
 
     def disconnect(self, ws) -> None:
@@ -68,6 +79,8 @@ class Broadcaster:
 
     async def publish(self, event: dict) -> None:
         self.latest[event["type"]] = event
+        if event["type"] == "decision":
+            self.recent.append(event)
         for ws in list(self.clients):
             await self._send(ws, event)
 

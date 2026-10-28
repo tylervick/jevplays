@@ -3,40 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
   <title>Jev plays Pokémon</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <header>
-    <h1>Jev plays Pokémon</h1>
-    <span id="status" class="status" data-status="stopped">stopped</span>
+    <div class="title">
+      <h1>Jev plays Pokémon</h1>
+      <p class="tagline">Jev, an AI model, answers narrow questions about the game. Code reads the game's memory, asks, and presses the buttons.</p>
+    </div>
+    <span id="status" class="status" data-status="connecting">connecting</span>
   </header>
   <main>
-    <section class="screen">
-      <img id="screen" width="640" height="576" alt="Game screen" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
-      <div class="party" id="party"></div>
+    <section class="game" aria-label="The game">
+      <h2>The game <small>code executes</small></h2>
+      <div class="stage">
+        <img id="screen" width="640" height="576" alt="Game screen" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        <div id="overlay" class="overlay" data-status="connecting"><p id="overlay-text">Connecting…</p></div>
+      </div>
+      <div class="under">
+        <div class="party" id="party"></div>
+        <div class="lines">
+          <div class="line"><span class="k">Code is</span> <span id="activity">waiting to connect</span> <span id="note" class="note" hidden></span></div>
+          <div class="line"><span class="k">Goal</span> <span id="goal">–</span></div>
+        </div>
+      </div>
     </section>
-    <section class="panel">
-      <h2>Decision</h2>
-      <div id="decision" class="decision"><p class="muted">waiting for the first decision…</p></div>
-      <h2>Goal</h2>
-      <p id="goal">–</p>
-      <p id="leg" class="leg">–</p>
-      <h2>Log</h2>
+    <section class="jev" aria-label="Jev">
+      <h2>Jev <small>judges</small></h2>
+      <div id="decision" class="card empty"><p class="muted">waiting for the first decision…</p></div>
+      <h3>Recent decisions</h3>
       <ol id="log" class="log"></ol>
-      <details class="state-block">
-        <summary>State</summary>
-        <dl id="summary">
-          <dt>Mode</dt><dd id="mode">–</dd>
-          <dt>Map</dt><dd id="map">–</dd>
-          <dt>Text</dt><dd id="text">–</dd>
-          <dt>Menu</dt><dd id="menu">–</dd>
-          <dt>Flags</dt><dd id="flags">–</dd>
-        </dl>
-        <pre id="state">waiting for the first snapshot…</pre>
-      </details>
     </section>
   </main>
+  <details id="debug" class="debug" hidden>
+    <summary>State</summary>
+    <dl id="summary">
+      <dt>Mode</dt><dd id="mode">–</dd>
+      <dt>Map</dt><dd id="map">–</dd>
+      <dt>Text</dt><dd id="text">–</dd>
+      <dt>Menu</dt><dd id="menu">–</dd>
+      <dt>Flags</dt><dd id="flags">–</dd>
+    </dl>
+    <pre id="state">waiting for the first snapshot…</pre>
+  </details>
   <script type="module" src="/static/app.js"></script>
 </body>
 </html>
