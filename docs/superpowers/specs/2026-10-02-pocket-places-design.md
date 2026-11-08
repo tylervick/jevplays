@@ -58,8 +58,12 @@ another rule.
 - **`Memory.links`** already keys by node name, so crossings between pockets are recorded for free
   once `node_of` names pockets. The way back out of a cave pocket is the warp the run took, as now.
 - **`Memory.exits`** (what was offered where) becomes `exits: dict[str, set[Landing]]` keyed by
-  place, with a `Landing` being `("edge", dest_map, direction)` or `("warp", dest_map, warp_id)`:
-  the identity of a way out as the option generator sees it, before it is known where it lands.
+  place, with a `Landing` being `("edge", map_id, dest_map, direction)` or
+  `("warp", map_id, dest_map, warp_id)`: the identity of a way out as the option generator sees it,
+  before it is known where it lands. The map the way out is on is part of the identity (added in
+  review): Mt. Moon 1F and B1F each have a "go back outside" to Route 4 with a single landing, and
+  keyed without their source the two were one key, so B1F's untaken way on to Route 4's east side
+  read as 1F's taken way back to the west.
 - **`Memory.landings: dict[Landing, str]`** records the place each landing was found to lead to,
   written at the same moment as the crossing. `Memory.ladders` is subsumed: a ladder is "visited"
   when its landing has a recorded place.
