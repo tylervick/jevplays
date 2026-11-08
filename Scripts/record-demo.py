@@ -11,7 +11,7 @@ seconds of wall clock instead of the hours real-time pacing would need.
 
 Start this first and the run second -- it retries until the dashboard answers, so nothing of the
 run is missed. It stops when the run's status turns `finished`, or when `--max` runs out; the
-page flips to `disconnected` the moment the run's server exits, which is the real end of the
+page flips to `reconnecting` the moment the run's server exits, which is the real end of the
 footage, and the last line printed says when that happened so the tail can be trimmed.
 
 Then, with the printed LIVE and END seconds:
@@ -60,7 +60,7 @@ async def record(url: str, out: Path, max_seconds: float, width: int, height: in
         end = None
         while time.monotonic() - started < max_seconds:
             state = await page.evaluate("document.getElementById('status')?.dataset?.status || ''")
-            if state in ("finished", "stopped"):
+            if state in ("finished", "stopped", "reconnecting"):
                 end = time.monotonic() - started
                 await page.wait_for_timeout(1500)  # a beat on the last frame
                 break
@@ -80,7 +80,7 @@ def main() -> None:
     ap.add_argument("out", type=Path)
     ap.add_argument("--max", type=float, default=300.0, help="give up after this many seconds")
     ap.add_argument("--width", type=int, default=1600)
-    ap.add_argument("--height", type=int, default=820)
+    ap.add_argument("--height", type=int, default=920)
     args = ap.parse_args()
     asyncio.run(record(args.url, args.out, args.max, args.width, args.height))
 
