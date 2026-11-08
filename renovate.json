@@ -66,6 +66,42 @@
     },
     {
       "description": [
+        "Minor, patch and digest bumps land on their own once every check on the",
+        "branch is green. platformAutomerge is off, so Renovate itself merges after",
+        "reading the checks, rather than GitHub auto-merge, which this repo leaves",
+        "disabled and which would merge at once if no check were required. The",
+        "automerge:false rule below still holds back zizmor, actionlint and ruff."
+      ],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+      "automerge": true,
+      "automergeType": "pr"
+    },
+    {
+      "description": [
+        "uv is pinned twice: mise.toml for the hooks and CI, the Dockerfile's base",
+        "image for the deployed app. One PR, so the two never drift apart."
+      ],
+      "matchDepNames": ["uv", "ghcr.io/astral-sh/uv"],
+      "groupName": "uv"
+    },
+    {
+      "description": [
+        "flyctl is pinned in mise.toml (aqua) and in ci.yml's setup-flyctl input."
+      ],
+      "matchDepNames": ["aqua:superfly/flyctl", "flyctl", "superfly/flyctl"],
+      "groupName": "flyctl"
+    },
+    {
+      "description": [
+        "Action majors arrive as one PR for a person to read; majors never automerge."
+      ],
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "github-actions majors",
+      "automerge": false
+    },
+    {
+      "description": [
         "A new zizmor or actionlint release can add an audit that fires on a",
         "workflow which was clean the day before, and a new ruff minor can add a",
         "lint or change formatting. That is a real finding worth reading, not a",
@@ -85,5 +121,7 @@
       "matchPackageNames": ["http:blink", "blink"],
       "enabled": false
     }
-  ]
+  ],
+  "minimumReleaseAge": "3 days",
+  "platformAutomerge": false
 }
