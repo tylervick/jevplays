@@ -31,7 +31,7 @@ zizmor = "1.32.0"
 # Only needed when a workflow gains or bumps an action; see `mise run pin-actions`.
 pinact = "4.1.1"
 # For the one-time Fly setup and `fly logs`; the deploy job pins the same version.
-"aqua:superfly/flyctl" = "0.5.10"
+"aqua:superfly/flyctl" = "0.5.14"
 
 # Blink (https://blink.review) reviews each Claude Code turn's diff and hands the
 # findings back to the agent. Its own installer drops an unpinned "latest" in
